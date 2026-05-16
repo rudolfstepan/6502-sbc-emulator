@@ -9,7 +9,5 @@ sbc6502
 .DS_Store
 __pycache__/
 *.pyc
-roms/*.bin
-roms/*.rom
 !roms/.gitkeep
 tools/roms/

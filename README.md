@@ -243,6 +243,10 @@ Contributions are welcome. Please read `CONTRIBUTING.md` before opening a pull r
 
 If you find a security issue, follow the reporting guidance in `SECURITY.md`.
 
+## Third-Party ROM Notes
+
+Some optional ROM workflows use third-party upstream sources. See `docs/THIRD_PARTY.md` before redistributing generated ROM artifacts.
+
 ## License
 
 This project is licensed under the MIT License. See `LICENSE` for details.
