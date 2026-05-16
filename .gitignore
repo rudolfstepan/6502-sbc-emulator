@@ -1,0 +1,15 @@
+build/
+sbc6502
+*.o
+*.out
+*.log
+*.tmp
+*.swp
+*.swo
+.DS_Store
+__pycache__/
+*.pyc
+roms/*.bin
+roms/*.rom
+!roms/.gitkeep
+tools/roms/
