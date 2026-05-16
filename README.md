@@ -1,8 +1,19 @@
 # 6502 SBC Emulator
 
+[![CI](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 A cycle-accurate MOS 6502 Single Board Computer emulator written in C99.
 
 This project emulates a small 6502-based single board computer with a cycle-aware CPU core, memory-mapped peripherals, configurable address decoding, and an interactive machine monitor for debugging ROMs and firmware.
+
+## Highlights
+
+- Full MOS 6502 core with all 151 official opcodes
+- Memory-mapped MOS 6522 VIA and MOS 6551 ACIA peripherals
+- Interactive monitor with register view, disassembly, memory dump, stepping, and breakpoints
+- Configurable board layout through `sbc.ini`
+- Runs against stdio or a TCP-backed serial console
 
 ## Project Status
 
@@ -19,6 +30,18 @@ python3 tools/make_test_rom.py
 ```
 
 Press `CTRL+C` during emulation to enter the built-in monitor/debugger.
+
+Example monitor session:
+
+```text
+[SIGINT - entering monitor]
+
+[monitor] r
+  PC:C008  A:00  X:FF  Y:00  SP:FF  P:nv-bdIZc  cycles:3490965
+
+[monitor] m c000 16
+  C000: A2 FF 9A AD 11 80 29 08 F0 F9 AD 10 80 8D 10 80  |......).........|
+```
 
 ## Features
 
@@ -61,6 +84,16 @@ python3 tools/make_test_rom.py
 
 # Run the emulator with the default config
 ./sbc6502 sbc.ini
+```
+
+## Included ROM Helpers
+
+```sh
+# Generate a simple UART hello-world ROM
+python3 tools/make_test_rom.py
+
+# Generate a minimal echo monitor ROM
+python3 tools/gen_echo_rom.py
 ```
 
 ## Usage
@@ -161,6 +194,13 @@ python3 tools/make_test_rom.py
 ```
 
 This creates `roms/rom.bin` that prints `Hello, 6502 SBC!` via the UART.
+
+## Roadmap
+
+- Add more bundled test programs and firmware samples
+- Extend the monitor with memory write and patch commands
+- Add automated CPU regression tests
+- Document board variants and example configurations
 
 ## Open Source Project Layout
 

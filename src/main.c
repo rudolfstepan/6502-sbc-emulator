@@ -78,13 +78,14 @@ int main(int argc, char *argv[])
         if (strcmp(argv[i], "-d") == 0) { debug_flag = true; continue; }
         if (strcmp(argv[i], "-m") == 0) { show_map = true; continue; }
         if (strcmp(argv[i], "-r") == 0 && i+1 < argc) {
-            strncpy(rom_override, argv[++i], sizeof(rom_override)-1); continue;
+            snprintf(rom_override, sizeof(rom_override), "%s", argv[++i]);
+            continue;
         }
         if (strcmp(argv[i], "-s") == 0 && i+1 < argc) {
             speed_override = atoi(argv[++i]); continue;
         }
         /* positional: config file */
-        strncpy(cfg_file, argv[i], sizeof(cfg_file)-1);
+        snprintf(cfg_file, sizeof(cfg_file), "%s", argv[i]);
     }
 
     /* ── Load config ─────────────────────────────────────── */
@@ -103,8 +104,8 @@ int main(int argc, char *argv[])
     if (rom_override[0]) {
         for (int i = 0; i < cfg.num_devs; i++) {
             if (cfg.devs[i].type == DEV_ROM) {
-                strncpy(cfg.devs[i].rom_file, rom_override,
-                        CFG_STR_MAX - 1);
+                snprintf(cfg.devs[i].rom_file, CFG_STR_MAX, "%s",
+                         rom_override);
                 break;
             }
         }
