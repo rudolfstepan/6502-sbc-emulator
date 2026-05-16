@@ -3,7 +3,7 @@
 [![CI](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A cycle-accurate MOS 6502 Single Board Computer emulator written in C99.
+A cycle-counted MOS 6502 Single Board Computer emulator written in C99.
 
 This project emulates a small 6502-based single board computer with a cycle-aware CPU core, memory-mapped peripherals, configurable address decoding, and an interactive machine monitor for debugging ROMs and firmware.
 
