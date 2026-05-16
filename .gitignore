@@ -11,3 +11,5 @@ __pycache__/
 *.pyc
 !roms/.gitkeep
 tools/roms/
+data/disk/*.prg
+!data/disk/.gitkeep

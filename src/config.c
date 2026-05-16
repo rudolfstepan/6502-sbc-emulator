@@ -23,7 +23,9 @@ void config_defaults(Config *cfg)
         cfg->devs[2] = (DevConfig){ .type=DEV_VIA,  .base=0x8000 };
         cfg->devs[3] = (DevConfig){ .type=DEV_UART, .base=0x8010,
                                     .uart_mode="stdio" };
-        cfg->num_devs = 4;
+        cfg->devs[4] = (DevConfig){ .type=DEV_DISK, .base=0x8020,
+                                    .disk_path="data/disk" };
+        cfg->num_devs = 5;
     }
     if (cfg->cpu_speed_hz == 0)
         cfg->cpu_speed_hz = 1000000; /* 1 MHz */
@@ -64,6 +66,7 @@ int config_load(Config *cfg, const char *filename)
             else if (strcmp(section, "rom")  == 0) { cur.type = DEV_ROM;  in_dev = true; }
             else if (strcmp(section, "via")  == 0) { cur.type = DEV_VIA;  in_dev = true; }
             else if (strcmp(section, "uart") == 0) { cur.type = DEV_UART; in_dev = true; }
+            else if (strcmp(section, "disk") == 0) { cur.type = DEV_DISK; in_dev = true; }
             continue;
         }
 
@@ -92,6 +95,8 @@ int config_load(Config *cfg, const char *filename)
                 strncpy(cur.uart_mode, val, sizeof(cur.uart_mode) - 1);
             else if (strcmp(key, "port") == 0)
                 cur.uart_port = atoi(val);
+            else if (strcmp(key, "path") == 0)
+                strncpy(cur.disk_path, val, CFG_STR_MAX - 1);
         }
     }
 
@@ -104,7 +109,7 @@ int config_load(Config *cfg, const char *filename)
 
 void config_dump(const Config *cfg)
 {
-    static const char *type_names[] = {"sram","rom","via","uart"};
+    static const char *type_names[] = {"sram","rom","via","uart","disk"};
     printf("Configuration:\n");
     printf("  cpu speed : %u Hz\n", cfg->cpu_speed_hz);
     printf("  debug     : %s\n", cfg->debug ? "yes" : "no");
@@ -115,6 +120,7 @@ void config_dump(const Config *cfg)
         if (d->rom_file[0]) printf(" file=%s", d->rom_file);
         if (d->uart_mode[0]) printf(" mode=%s", d->uart_mode);
         if (d->uart_port)    printf(" port=%d", d->uart_port);
+        if (d->disk_path[0]) printf(" path=%s", d->disk_path);
         printf("\n");
     }
 }

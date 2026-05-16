@@ -21,8 +21,3 @@ WIDTH2          := 56
 
 ; memory layout
 RAMSTART2 := $0300
-
-; load/save stubs
-SAVE:
-LOAD:
-        rts

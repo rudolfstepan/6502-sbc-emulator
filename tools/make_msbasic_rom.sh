@@ -22,6 +22,7 @@ fi
 cp "$PORT_DIR/defines_sbc6502.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502_extra.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502_iscntc.s" "$SRC_DIR/"
+cp "$PORT_DIR/sbc6502_loadsave.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502.cfg" "$SRC_DIR/"
 
 python3 - "$SRC_DIR" <<'PY'
@@ -34,10 +35,18 @@ def patch_once(path: Path, needle: str, add: str):
     t = path.read_text()
     if add.strip() in t:
         return
-    if needle not in t:
-        raise RuntimeError(f"needle not found in {path}")
-    t = t.replace(needle, needle + add)
-    path.write_text(t)
+
+    targets = [needle]
+    if needle.endswith("\n"):
+        targets.append(needle[:-1])
+
+    for target in targets:
+        if target in t:
+            t = t.replace(target, target + ("\n" if not target.endswith("\n") else "") + add, 1)
+            path.write_text(t)
+            return
+
+    raise RuntimeError(f"needle not found in {path}")
 
 patch_once(
     src / "defines.s",
@@ -55,6 +64,12 @@ patch_once(
     src / "iscntc.s",
     '.ifdef W65C816SXB\n.include "w65c816sxb_iscntc.s"\n.endif\n',
     '.ifdef SBC6502\n.include "sbc6502_iscntc.s"\n.endif\n',
+)
+
+patch_once(
+    src / "loadsave.s",
+    '.ifdef SYM1\n.include "sym1_loadsave.s"\n.endif\n',
+    '.ifdef SBC6502\n.include "sbc6502_loadsave.s"\n.endif\n',
 )
 
 patch_once(

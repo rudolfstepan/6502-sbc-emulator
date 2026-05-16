@@ -12,6 +12,7 @@
 #include "rom.h"
 #include "via6522.h"
 #include "uart6551.h"
+#include "diskdev.h"
 #include "monitor.h"
 #include "config.h"
 #include "disasm.h"
@@ -59,6 +60,7 @@ static void usage(const char *prog)
         "  $0000-$7FFF  SRAM  (32KB)\n"
         "  $8000-$800F  VIA 6522\n"
         "  $8010-$8013  UART 6551 (ACIA)\n"
+        "  $8020-$802F  DISK MVP\n"
         "  $C000-$FFFF  ROM  (16KB)\n",
         prog);
 }
@@ -119,7 +121,8 @@ int main(int argc, char *argv[])
     ROM     roms[CFG_MAX_DEVS];
     VIA6522 vias[CFG_MAX_DEVS];
     UART6551 uarts[CFG_MAX_DEVS];
-    int ns = 0, nr = 0, nv = 0, nu = 0;
+    DiskDev  disks[CFG_MAX_DEVS];
+    int ns = 0, nr = 0, nv = 0, nu = 0, nd = 0;
 
     Bus bus;
     bus_init(&bus);
@@ -179,6 +182,15 @@ int main(int argc, char *argv[])
             nu++;
             break;
         }
+
+        case DEV_DISK:
+            if (nd >= CFG_MAX_DEVS) { fprintf(stderr,"Too many DISKs\n"); break; }
+            if (diskdev_init(&disks[nd], &bus, dc->disk_path) != 0) return 1;
+            bus_register(&bus, "DISK-MVP", &disks[nd],
+                         dc->base, 16,
+                         diskdev_read, diskdev_write, NULL);
+            nd++;
+            break;
         }
     }
 

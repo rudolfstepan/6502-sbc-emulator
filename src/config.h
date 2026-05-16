@@ -10,6 +10,7 @@ typedef enum {
     DEV_ROM,
     DEV_VIA,
     DEV_UART,
+    DEV_DISK,
 } DevType;
 
 typedef struct {
@@ -19,6 +20,7 @@ typedef struct {
     char     rom_file[CFG_STR_MAX];   /* ROM only */
     char     uart_mode[32];  /* "stdio" or "tcp" */
     int      uart_port;      /* TCP mode */
+    char     disk_path[CFG_STR_MAX];  /* DISK root path */
 } DevConfig;
 
 typedef struct {
