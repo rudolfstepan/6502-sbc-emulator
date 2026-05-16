@@ -20,6 +20,7 @@ MONRDKEY:
 @retry:
         jsr MONRDKEY_NB
         bcc @retry
+        jsr MONCOUT
         rts
 
 MONCOUT:
