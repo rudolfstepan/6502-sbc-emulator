@@ -185,22 +185,35 @@ void vic_bus_tick(void *dev, uint32_t cycles) {
 // VIC register interface: read from VIC control registers
 uint8_t vic_reg_read(void *dev, uint16_t offset) {
     (void)dev;  // Unused
-    
-    // Only register 0 is implemented (graphics mode control)
-    if (offset == 0) {
-        return vic_state.graphics_mode & 0x01;
+
+    switch (offset) {
+        case 0:
+            return vic_state.graphics_mode & 0x01;
+        case 1:
+            return (uint8_t)vic_state.cursor_x;
+        case 2:
+            return (uint8_t)vic_state.cursor_y;
+        default:
+            return 0;
     }
-    
-    return 0;  // Other registers return 0
 }
 
 // VIC register interface: write to VIC control registers
 void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
     (void)dev;  // Unused
-    
-    // Only register 0 is implemented (graphics mode control)
-    if (offset == 0) {
-        vic_state.graphics_mode = val & 0x01;  // Bit 0 = graphics mode (0=text, 1=bitmap)
+
+    switch (offset) {
+        case 0:
+            vic_state.graphics_mode = val & 0x01;  // Bit 0 = graphics mode (0=text, 1=bitmap)
+            break;
+        case 1:
+            vic_state.cursor_x = val;
+            break;
+        case 2:
+            vic_state.cursor_y = val;
+            break;
+        default:
+            break;
     }
 }
 
