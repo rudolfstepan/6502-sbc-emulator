@@ -28,6 +28,10 @@
 static uint8_t video_ram[VIDEO_RAM_SIZE];    // Text mode: 2KB
 static uint8_t bitmap_ram[BITMAP_RAM_SIZE];  // Bitmap mode: 8000 bytes
 
+// Dirty tracking (40x25 text cells)
+static uint8_t dirty_cells[1000];
+static int dirty_flag = 0;
+
 // VIC control registers
 static struct {
     uint8_t enabled;
@@ -183,6 +187,8 @@ void vic_init() {
     // Clear video RAM
     memset(video_ram, 0x20, VIDEO_RAM_SIZE);  // Fill with spaces
     memset(bitmap_ram, 0x00, BITMAP_RAM_SIZE); // Clear bitmap RAM
+    memset(dirty_cells, 0, sizeof(dirty_cells));
+    dirty_flag = 1;  // Mark as dirty on init
     
     // Initialize VIC state
     vic_state.enabled = 1;
@@ -285,6 +291,7 @@ void vic_bitmap_write(void *dev, uint16_t offset, uint8_t val) {
 void vic_write_video_ram(uint16_t address, uint8_t data) {
     if (address < VIDEO_RAM_SIZE) {
         video_ram[address] = data;
+        vic_mark_dirty(address, 1);
     }
 }
 
@@ -439,4 +446,30 @@ uint8_t vic_get_graphics_mode(void) {
 // Set graphics mode
 void vic_set_graphics_mode(uint8_t mode) {
     vic_state.graphics_mode = mode & 0x01;
+}
+
+// Dirty tracking
+void vic_mark_dirty(uint16_t addr, uint8_t len) {
+    if (addr < VIDEO_RAM_SIZE) {
+        uint16_t end = (uint16_t)((addr + len) > VIDEO_RAM_SIZE ? VIDEO_RAM_SIZE : (addr + len));
+        for (uint16_t a = addr; a < end; a++) {
+            if (a < sizeof(dirty_cells)) {
+                dirty_cells[a] = 1;
+            }
+        }
+        dirty_flag = 1;
+    }
+}
+
+void vic_clear_dirty(void) {
+    memset(dirty_cells, 0, sizeof(dirty_cells));
+    dirty_flag = 0;
+}
+
+int vic_is_dirty(void) {
+    return dirty_flag;
+}
+
+uint8_t* vic_get_dirty_array(void) {
+    return dirty_cells;
 }
