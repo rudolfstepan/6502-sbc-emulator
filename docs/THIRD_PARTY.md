@@ -13,6 +13,16 @@ Recommended publication practice:
 - Include a note that the ROM was generated from `mist64/msbasic`.
 - Include or link upstream license text/reference from the upstream README.
 
+## 6502 Chess (maksimKorzh/6502-chess)
+
+- Upstream: https://github.com/maksimKorzh/6502-chess
+- License signal from upstream repository: MIT
+- Local usage: adapted standalone ROM source in `tools/chess/chess.s` produces `roms/chess.rom`.
+
+Recommended publication practice:
+- Keep attribution to upstream project and author.
+- Preserve the MIT license notice/reference for the adapted chess ROM source.
+
 ## Practical Summary
 
 - Publishing MS BASIC integration is generally feasible with attribution.
