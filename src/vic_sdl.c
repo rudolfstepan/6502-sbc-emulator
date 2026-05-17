@@ -11,6 +11,7 @@
 #define CHAR_HEIGHT 8
 #define SCREEN_COLS 40
 #define SCREEN_ROWS 25
+#define COLOR_RAM_OFFSET 1024
 #define WINDOW_WIDTH  (SCREEN_COLS * CHAR_WIDTH * SCREEN_SCALE)
 #define WINDOW_HEIGHT (SCREEN_ROWS * CHAR_HEIGHT * SCREEN_SCALE)
 
@@ -197,10 +198,10 @@ void vic_sdl_shutdown(void) {
 }
 
 // Render a single character to the framebuffer
-static void render_char(uint8_t char_code, int x, int y, bool invert) {
+static void render_char(uint8_t char_code, int x, int y, uint8_t text_attr, bool invert) {
     const uint8_t *pattern = vic_get_char_pattern(char_code);
-    uint32_t text_color = vic_palette[vic_get_text_color() & 0x0F];
-    uint32_t background_color = vic_palette[vic_get_background_color() & 0x0F];
+    uint32_t text_color = vic_palette[text_attr & 0x0F];
+    uint32_t background_color = vic_palette[(text_attr >> 4) & 0x0F];
     uint32_t fg = invert ? background_color : text_color;
     uint32_t bg = invert ? text_color : background_color;
     
@@ -252,8 +253,9 @@ void vic_sdl_render(void) {
         for (int row = 0; row < SCREEN_ROWS; row++) {
             for (int col = 0; col < SCREEN_COLS; col++) {
                 uint8_t char_code = vic_read_video_ram(row * SCREEN_COLS + col);
+                uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + row * SCREEN_COLS + col);
                 bool invert = cursor_visible && col == cursor_x && row == cursor_y;
-                render_char(char_code, col, row, invert);
+                render_char(char_code, col, row, text_attr, invert);
             }
         }
     } else {

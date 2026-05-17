@@ -8,7 +8,7 @@ OBJDIR  = build
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms test-diskdir
+.PHONY: all clean run check roms chess-rom test-chess-rom test-diskdir
 
 all: $(TARGET)
 
@@ -25,15 +25,24 @@ $(TARGET): $(OBJS)
 clean:
 	rm -rf $(OBJDIR) $(TARGET)
 
-check: all test-diskdir
+check: all test-diskdir test-chess-rom
 
 test-diskdir: $(OBJDIR)
 	$(CC) -std=c99 -Wall -Wextra -O2 -g -I$(SRCDIR) tests/test_diskdev_dir.c src/bus.c src/sram.c src/diskdev.c -o $(OBJDIR)/test_diskdev_dir
 	./$(OBJDIR)/test_diskdev_dir
 
+test-chess-rom: $(OBJDIR)
+	bash tools/make_chess_rom.sh
+	$(CC) -std=c99 -Wall -Wextra -O2 -g -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/sram.c src/rom.c src/vic.c src/via6522.c -o $(OBJDIR)/test_chess_rom
+	./$(OBJDIR)/test_chess_rom
+
 roms:
 	bash tools/make_kernel_rom.sh
 	bash tools/make_msbasic_rom.sh
+	bash tools/make_chess_rom.sh
+
+chess-rom:
+	bash tools/make_chess_rom.sh
 
 run: all
 	./$(TARGET) sbc.ini

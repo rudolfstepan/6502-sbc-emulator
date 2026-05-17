@@ -8,6 +8,8 @@
 #define VIDEO_RAM_SIZE 2048   // 2KB for text mode
 #define TEXT_RAM_SIZE 2048    // 2KB for 40x25 text mode
 #define BITMAP_RAM_SIZE 8000  // 8000 bytes for 320x200 bitmap
+#define TEXT_CELL_COUNT (VIC_SCREEN_COLS * VIC_SCREEN_ROWS)
+#define COLOR_RAM_OFFSET 1024
 
 #define VIDEO_RAM_BASE 0x8000
 
@@ -35,6 +37,12 @@ static struct {
     uint8_t text_color;
     uint8_t background_color;
 } vic_state;
+
+static uint8_t default_text_attr(void)
+{
+    return (uint8_t)(((vic_state.background_color & 0x0F) << 4) |
+                     (vic_state.text_color & 0x0F));
+}
 
 // Character ROM (8x8 pixel font for 256 ASCII characters)
 // Font data is LSB-first (bit 0 = leftmost pixel)
@@ -161,6 +169,7 @@ void vic_init() {
     vic_state.cursor_y = 0;
     vic_state.text_color = 15;        // brighter startup text
     vic_state.background_color = 6;   // C64-style blue
+    memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
     
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
 }
@@ -295,8 +304,9 @@ void vic_write_char(char ch) {
         }
     } else {
         // Regular character
-        if (pos < VIDEO_RAM_SIZE) {
+        if (pos < TEXT_CELL_COUNT) {
             video_ram[pos] = (uint8_t)ch;
+            video_ram[COLOR_RAM_OFFSET + pos] = default_text_attr();
         }
         vic_state.cursor_x++;
         
@@ -323,8 +333,8 @@ void vic_write_string(const char* str) {
 
 // Clear screen
 void vic_clear_screen() {
-    // Clear text RAM area (first 2KB)
     memset(video_ram, 0x20, TEXT_RAM_SIZE);  // Fill with spaces
+    memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
     vic_state.cursor_x = 0;
     vic_state.cursor_y = 0;
 }
@@ -334,10 +344,15 @@ void vic_scroll_up() {
     // Move all lines up
     memmove(video_ram, video_ram + VIC_SCREEN_COLS, 
             VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1));
+    memmove(video_ram + COLOR_RAM_OFFSET,
+        video_ram + COLOR_RAM_OFFSET + VIC_SCREEN_COLS,
+        VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1));
     
     // Clear bottom line
     memset(video_ram + VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1), 
            0x20, VIC_SCREEN_COLS);
+    memset(video_ram + COLOR_RAM_OFFSET + VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1),
+            default_text_attr(), VIC_SCREEN_COLS);
 }
 
 // Set cursor position
