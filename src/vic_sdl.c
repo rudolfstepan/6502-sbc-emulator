@@ -91,6 +91,10 @@ int vic_sdl_init(void) {
     }
     
     sdl_initialized = true;
+    
+    // Enable text input for international keyboard support
+    SDL_StartTextInput();
+    
     printf("SDL2 VIC display initialized: %dx%d\n", WINDOW_WIDTH, WINDOW_HEIGHT);
     
     return 0;
@@ -122,6 +126,7 @@ void vic_sdl_shutdown(void) {
         window = NULL;
     }
     
+    SDL_StopTextInput();
     SDL_Quit();
     sdl_initialized = false;
     
@@ -194,60 +199,42 @@ bool vic_sdl_handle_events(void) {
             case SDL_QUIT:
                 return false;  // User wants to quit
                 
+            case SDL_TEXTINPUT: {
+                // Handle text input (works with all keyboard layouts)
+                VIA6522 *via = get_keyboard_via();
+                if (via && event.text.text[0] != 0) {
+                    // SDL_TEXTINPUT gives us the actual character typed
+                    uint8_t ascii = (uint8_t)event.text.text[0];
+                    // Only accept printable ASCII (0x20-0x7E)
+                    if (ascii >= 0x20 && ascii <= 0x7E) {
+                        via_keyboard_push(via, ascii);
+                    }
+                }
+                break;
+            }
+            
             case SDL_KEYDOWN: {
-                // Handle special keys
+                // Handle special keys (non-printable)
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     return false;  // ESC to quit
                 }
                 
-                // Forward keyboard events to VIA
                 VIA6522 *via = get_keyboard_via();
                 if (via) {
                     SDL_Keycode key = event.key.keysym.sym;
                     uint8_t ascii = 0;
                     
-                    // Convert SDL key to ASCII
-                    if (key >= SDLK_a && key <= SDLK_z) {
-                        // Letters
-                        ascii = (uint8_t)key;
-                        if (event.key.keysym.mod & (KMOD_LSHIFT | KMOD_RSHIFT)) {
-                            ascii = (uint8_t)(key - 32);  // Convert to uppercase
-                        }
-                    } else if (key >= SDLK_0 && key <= SDLK_9) {
-                        // Numbers (with Shift for symbols)
-                        if (event.key.keysym.mod & (KMOD_LSHIFT | KMOD_RSHIFT)) {
-                            // Shift + number key
-                            const char shift_nums[] = "!@#$%^&*()";
-                            ascii = shift_nums[key - SDLK_0];
-                        } else {
-                            ascii = (uint8_t)key;
-                        }
-                    } else if (key == SDLK_SPACE) {
-                        ascii = ' ';
-                    } else if (key == SDLK_RETURN) {
-                        ascii = '\r';  // Carriage return
-                    } else if (key == SDLK_BACKSPACE) {
-                        ascii = '\b';  // Backspace
-                    } else if (key >= SDLK_KP_0 && key <= SDLK_KP_9) {
-                        // Keypad numbers
-                        ascii = '0' + (key - SDLK_KP_0);
-                    } else {
-                        // Other special characters
-                        bool shifted = event.key.keysym.mod & (KMOD_LSHIFT | KMOD_RSHIFT);
-                        switch (key) {
-                            case SDLK_PERIOD:      ascii = shifted ? '>' : '.'; break;
-                            case SDLK_COMMA:       ascii = shifted ? '<' : ','; break;
-                            case SDLK_SEMICOLON:   ascii = shifted ? ':' : ';'; break;
-                            case SDLK_QUOTE:       ascii = shifted ? '"' : '\''; break;
-                            case SDLK_SLASH:       ascii = shifted ? '?' : '/'; break;
-                            case SDLK_BACKSLASH:   ascii = shifted ? '|' : '\\'; break;
-                            case SDLK_LEFTBRACKET: ascii = shifted ? '{' : '['; break;
-                            case SDLK_RIGHTBRACKET: ascii = shifted ? '}' : ']'; break;
-                            case SDLK_MINUS:       ascii = shifted ? '_' : '-'; break;
-                            case SDLK_EQUALS:      ascii = shifted ? '+' : '='; break;
-                            case SDLK_BACKQUOTE:   ascii = shifted ? '~' : '`'; break;
-                            default: break;
-                        }
+                    // Only handle non-printable keys here
+                    switch (key) {
+                        case SDLK_RETURN:
+                        case SDLK_KP_ENTER:
+                            ascii = '\r';  // Carriage return
+                            break;
+                        case SDLK_BACKSPACE:
+                            ascii = '\b';  // Backspace
+                            break;
+                        default:
+                            break;
                     }
                     
                     // Push to VIA keyboard buffer
