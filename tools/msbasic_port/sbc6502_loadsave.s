@@ -21,8 +21,10 @@ DISK_ST_OK     := $02
 ; Temporary buffer for filename
 FNAME_BUF      := $0280
 FNAME_MAX      := 31
-LINNUM_LO      := $02A0
-LINNUM_HI      := $02A1
+; Reuse disk length registers as temporary line number storage while
+; building a directory listing after DISK_CMD_DIR has already completed.
+LINNUM_LO      := DISK_LEN_LO
+LINNUM_HI      := DISK_LEN_HI
 
 SAVE:
         ; Check for string parameter (SAVE "filename",8)
@@ -130,6 +132,7 @@ save_lowercase_loop:
 :       iny
         bne     save_lowercase_loop
 save_lowercase_done:
+        jsr     consume_trailing_args
         
         ; Write to disk device
         jsr     write_filename_to_disk
@@ -163,12 +166,14 @@ do_save:
 
         lda     #<QT_SAVED
         ldy     #>QT_SAVED
-        jmp     STROUT
+        jsr     STROUT
+        rts
 
 SAVE_ERR:
         lda     #<QT_IOERR
         ldy     #>QT_IOERR
-        jmp     STROUT
+        jsr     STROUT
+        rts
 
 LOAD:
         ; Check if there's a parameter
@@ -216,6 +221,7 @@ check_special:
 is_special:
         ; Single non-alphanumeric character → directory
         pla                     ; clean up stack
+        jsr     consume_trailing_args
         jmp     load_is_dir
 
 load_default_pop:
@@ -328,6 +334,7 @@ lowercase_loop:
 :       iny
         bne     lowercase_loop
 lowercase_done:
+        jsr     consume_trailing_args
         
         ; Write filename to disk device
         jsr     write_filename_to_disk
@@ -382,25 +389,30 @@ do_load:
         lda     #<QT_LOADED
         ldy     #>QT_LOADED
         jsr     STROUT
-        jmp     FIX_LINKS
+        jsr     FIX_LINKS
+        rts
 
 LOAD_ERR:
         lda     #<QT_IOERR
         ldy     #>QT_IOERR
-        jmp     STROUT
+        jsr     STROUT
+        rts
 
 ; Directory listing (LOAD "$",8)
-; Converts directory to BASIC program format like C64
+; Disk device returns a ready-to-list BASIC program at TXTTAB.
 do_dir:
-        ; First get directory listing to $0400
-        lda     #$00
+        ; Request BASIC directory listing directly at TXTTAB
+        lda     TXTTAB
         sta     DISK_ADDR_LO
-        lda     #$04
+        lda     TXTTAB+1
         sta     DISK_ADDR_HI
         
-        lda     #$00
+        sec
+        lda     MEMSIZ
+        sbc     TXTTAB
         sta     DISK_LEN_LO
-        lda     #$10            ; 4KB max
+        lda     MEMSIZ+1
+        sbc     TXTTAB+1
         sta     DISK_LEN_HI
         
         lda     #DISK_CMD_DIR
@@ -411,79 +423,14 @@ do_dir:
         bne     dir_ok
         jmp     dir_err
 dir_ok:
-        
-        ; Now convert directory to BASIC program format
-        ; Start at TXTTAB ($0300)
+        clc
         lda     TXTTAB
-        sta     TEMPPT
-        lda     TXTTAB+1
-        sta     TEMPPT+1
-        
-        ; Source pointer at $0400
-        lda     #$00
-        sta     INDEX
-        lda     #$04
-        sta     INDEX+1
-        
-        ; Start line number at 10
-        lda     #10
-        sta     LINNUM_LO
-        lda     #0
-        sta     LINNUM_HI
-        
-dir_convert_loop:
-        ; Check if end of directory (null byte)
-        ldy     #0
-        lda     (INDEX),y
-        beq     dir_convert_done
-        
-        ; Create BASIC line: LINK, LINE#, REM, "filename", 0
-        jsr     dir_create_line
-        
-        ; Move to next filename (skip to CR)
-dir_skip_to_cr:
-        ldy     #0
-        lda     (INDEX),y
-        beq     dir_convert_done
-        cmp     #CR
-        beq     dir_skip_cr
-        inc     INDEX
-        bne     dir_skip_to_cr
-        inc     INDEX+1
-        jmp     dir_skip_to_cr
-dir_skip_cr:
-        ; Skip the CR itself
-        inc     INDEX
-        bne     dir_next_line
-        inc     INDEX+1
-dir_next_line:
-        ; Increment line number by 10
-        clc
-        lda     LINNUM_LO
-        adc     #10
-        sta     LINNUM_LO
-        lda     LINNUM_HI
-        adc     #0
-        sta     LINNUM_HI
-        jmp     dir_convert_loop
-        
-dir_convert_done:
-        ; Add end marker (link=0)
-        ldy     #0
-        lda     #0
-        sta     (TEMPPT),y
-        iny
-        sta     (TEMPPT),y
-        
-        ; Set VARTAB to end of program
-        clc
-        lda     TEMPPT
-        adc     #2
+        adc     DISK_ACT_LO
         sta     VARTAB
         sta     ARYTAB
         sta     STREND
-        lda     TEMPPT+1
-        adc     #0
+        lda     TXTTAB+1
+        adc     DISK_ACT_HI
         sta     VARTAB+1
         sta     ARYTAB+1
         sta     STREND+1
@@ -496,7 +443,7 @@ dir_convert_done:
         lda     #<QT_LOADED
         ldy     #>QT_LOADED
         jsr     STROUT
-        jmp     FIX_LINKS
+        rts
 
 ; Create one BASIC line for directory
 ; Format: LINK(2) LINENUM(2) REM(1) "filename" 00
@@ -516,25 +463,22 @@ dir_len_done:
         tya
         clc
         adc     #7
-        tax                     ; X = line length, save it
+        pha                     ; Save line length on stack (will be used at end)
         
         ; Calculate LINK = TEMPPT + line_length
         clc
-        txa                     ; get line length back
         adc     TEMPPT
-        pha                     ; save link low
+        tax                     ; X = link low
         lda     TEMPPT+1
         adc     #0
-        pha                     ; save link high
+        pha                     ; save link high on stack
         
         ; Write LINK
         ldy     #0
-        pla                     ; link high
-        tax
-        pla                     ; link low
+        txa                     ; link low
         sta     (TEMPPT),y
         iny
-        txa
+        pla                     ; link high
         sta     (TEMPPT),y
         
         ; Write line number
@@ -552,7 +496,7 @@ dir_len_done:
         
         ; Write space after REM
         iny
-        lda     #$20            ; space character
+        lda     #$20
         sta     (TEMPPT),y
         
         ; Copy filename - use DEST as temp pointer to source
@@ -580,9 +524,8 @@ dir_fname_done:
         lda     #0
         sta     (TEMPPT),y
         
-        ; Advance output pointer past this line
-        iny
-        tya
+        ; Advance output pointer by the calculated line length (saved on stack)
+        pla                     ; get line length back from stack
         clc
         adc     TEMPPT
         sta     TEMPPT
@@ -594,7 +537,21 @@ dir_fname_done:
 dir_err:
         lda     #<QT_IOERR
         ldy     #>QT_IOERR
-        jmp     STROUT
+        jsr     STROUT
+        rts
+
+consume_trailing_args:
+        jsr     CHRGOT
+consume_trailing_args_loop:
+        beq     consume_trailing_args_done
+        cmp     #':'
+        beq     consume_trailing_args_done
+        jsr     CHRGET
+        jsr     CHRGOT
+        jmp     consume_trailing_args_loop
+
+consume_trailing_args_done:
+        rts
 
 ; Write filename from FNAME_BUF to disk device
 write_filename_to_disk:
