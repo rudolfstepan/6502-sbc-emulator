@@ -197,9 +197,6 @@ void vic_sdl_shutdown(void) {
     printf("SDL2 VIC display shutdown\n");
 }
 
-// Forward declaration for dirty array access
-extern uint8_t* vic_get_dirty_array(void);
-
 // Render a single character to the framebuffer
 static void render_char(uint8_t char_code, int x, int y, uint8_t text_attr, bool invert) {
     const uint8_t *pattern = vic_get_char_pattern(char_code);
@@ -232,7 +229,7 @@ static void render_char(uint8_t char_code, int x, int y, uint8_t text_attr, bool
     }
 }
 
-// Render the VIC screen to SDL window (with dirty cell optimization)
+// Render the VIC screen to SDL window
 void vic_sdl_render(void) {
     if (!sdl_initialized) {
         return;
@@ -242,86 +239,29 @@ void vic_sdl_render(void) {
     uint8_t gfx_mode = vic_get_graphics_mode();
     
     if (gfx_mode == 0) {
-        // Text mode: 40x25 characters with dirty tracking
         uint32_t background = vic_palette[vic_get_background_color() & 0x0F];
-        uint8_t *dirty_array = vic_get_dirty_array();
-        
-        // Get cursor state for blinking effect
+        for (int i = 0; i < WINDOW_WIDTH * WINDOW_HEIGHT; i++) {
+            framebuffer[i] = background;
+        }
+
+        // Text mode: 40x25 characters
         uint8_t cursor_x = 0;
         uint8_t cursor_y = 0;
         bool cursor_visible = ((SDL_GetTicks() / CURSOR_BLINK_MS) & 1u) == 0;
         vic_get_cursor(&cursor_x, &cursor_y);
-        
-        // First pass: if first render or major change, fill background
-        static int render_count = 0;
-        if (render_count == 0) {
-            for (int i = 0; i < WINDOW_WIDTH * WINDOW_HEIGHT; i++) {
-                framebuffer[i] = background;
-            }
-        }
-        render_count++;
-        
-        // Second pass: render only dirty cells + cursor
+
         for (int row = 0; row < SCREEN_ROWS; row++) {
             for (int col = 0; col < SCREEN_COLS; col++) {
-                int cell_idx = row * SCREEN_COLS + col;
-                
-                // Only render if dirty or cursor needs update
-                if (dirty_array && dirty_array[cell_idx]) {
-                    uint8_t char_code = vic_read_video_ram(cell_idx);
-                    uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + cell_idx);
-                    bool invert = cursor_visible && col == cursor_x && row == cursor_y;
-                    
-                    // Clear background for this cell first
-                    for (int py = 0; py < CHAR_HEIGHT; py++) {
-                        for (int px = 0; px < CHAR_WIDTH; px++) {
-                            int screen_x = (col * CHAR_WIDTH + px) * SCREEN_SCALE;
-                            int screen_y = (row * CHAR_HEIGHT + py) * SCREEN_SCALE;
-                            for (int sy = 0; sy < SCREEN_SCALE; sy++) {
-                                for (int sx = 0; sx < SCREEN_SCALE; sx++) {
-                                    int fb_x = screen_x + sx;
-                                    int fb_y = screen_y + sy;
-                                    if (fb_x < WINDOW_WIDTH && fb_y < WINDOW_HEIGHT) {
-                                        framebuffer[fb_y * WINDOW_WIDTH + fb_x] = background;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Then render the character
-                    render_char(char_code, col, row, text_attr, invert);
-                } else if (cursor_visible && col == cursor_x && row == cursor_y) {
-                    // Cursor position - redraw for blink even if not dirty
-                    uint8_t char_code = vic_read_video_ram(cell_idx);
-                    uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + cell_idx);
-                    
-                    // Clear cell
-                    for (int py = 0; py < CHAR_HEIGHT; py++) {
-                        for (int px = 0; px < CHAR_WIDTH; px++) {
-                            int screen_x = (col * CHAR_WIDTH + px) * SCREEN_SCALE;
-                            int screen_y = (row * CHAR_HEIGHT + py) * SCREEN_SCALE;
-                            for (int sy = 0; sy < SCREEN_SCALE; sy++) {
-                                for (int sx = 0; sx < SCREEN_SCALE; sx++) {
-                                    int fb_x = screen_x + sx;
-                                    int fb_y = screen_y + sy;
-                                    if (fb_x < WINDOW_WIDTH && fb_y < WINDOW_HEIGHT) {
-                                        framebuffer[fb_y * WINDOW_WIDTH + fb_x] = background;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Render with cursor invert
-                    render_char(char_code, col, row, text_attr, true);
-                }
+                uint8_t char_code = vic_read_video_ram(row * SCREEN_COLS + col);
+                uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + row * SCREEN_COLS + col);
+                bool invert = cursor_visible && col == cursor_x && row == cursor_y;
+                render_char(char_code, col, row, text_attr, invert);
             }
         }
     } else {
         memset(framebuffer, 0, WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
 
-        // Bitmap mode: 320x200 pixels (full render for now)
+        // Bitmap mode: 320x200 pixels
         for (int y = 0; y < 200; y++) {
             for (int x = 0; x < 320; x++) {
                 // Calculate byte and bit position
