@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Refreshed project documentation for current architecture and runtime behavior.
+- Updated memory-map docs to include fixed VIC register/bitmap regions and SOUND device registers.
+- Added explicit chess workflow coverage (`chess.ini`, standalone ROM flow) in documentation.
+- Cleaned obsolete or inconsistent statements across README and docs.
+
 ## 1.0.0 - 2026-05-16
 
 - Initial public release of the 6502 SBC emulator.
