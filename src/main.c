@@ -284,15 +284,16 @@ int main(int argc, char *argv[])
     signal(SIGINT, handle_sigint);
     printf("\n6502 SBC Emulator running. Press CTRL+C for monitor.\n\n");
 
-    /* ── Frame rate limiter (60 FPS = 16.67ms per frame) ────── */
-    struct timespec render_ts_start;
-    long render_frame_ns = 16666667L;  /* ~16.67ms for 60 Hz */
-
     /* ── Main loop ────────────────────────────────────────── */
     clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
-    clock_gettime(CLOCK_MONOTONIC, &render_ts_start);
 
     while (!cpu.stopped) {
+        /* Handle SDL events */
+        if (use_sdl && !vic_sdl_handle_events()) {
+            printf("\nSDL window closed, exiting...\n");
+            break;
+        }
+        
         /* Check SIGINT frequently (after every ~1000 instructions) */
         static uint64_t sigint_check_cycles = 0;
         if (cpu.cycles - sigint_check_cycles >= 1000) {
@@ -316,7 +317,6 @@ int main(int argc, char *argv[])
             for (int i = 0; i < nu; i++) uart_stdio_resume(&uarts[i]);
             /* Restart speed timer after monitor */
             clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
-            clock_gettime(CLOCK_MONOTONIC, &render_ts_start);
             batch_start_cycle = cpu.cycles;
         }
 
@@ -333,7 +333,8 @@ int main(int argc, char *argv[])
         if (irq) cpu6502_irq(&cpu);
         else     cpu6502_irq_clear(&cpu);
 
-        /* Speed throttle: once per batch */
+        /* Speed throttle and render: once per batch */
+        static uint64_t last_render_cycle = 0;
         if (batch_ns > 0 && (cpu.cycles - batch_start_cycle) >= cycles_per_batch) {
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
@@ -343,31 +344,27 @@ int main(int argc, char *argv[])
             if (sleep_ns > 1000L) ns_sleep(sleep_ns);
             batch_start_cycle = cpu.cycles;
             clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
-        }
+            last_render_cycle = cpu.cycles;
 
-        /* 60Hz frame rate limiter for rendering */
-        if (use_sdl) {
-            struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
-            long elapsed_render_ns = (long)((now.tv_sec  - render_ts_start.tv_sec)  * 1000000000L
-                                           + (now.tv_nsec - render_ts_start.tv_nsec));
-            
-            if (elapsed_render_ns >= render_frame_ns) {
+            /* Render VIC display */
+            if (use_sdl) {
                 /* Handle SDL events (keyboard, quit, etc.) */
                 if (!vic_sdl_handle_events()) {
                     printf("\n[SDL window closed - exiting]\n");
                     goto done;
                 }
-                
-                /* Render only if dirty or 60Hz boundary reached */
-                if (vic_is_dirty()) {
-                    vic_sdl_render();
-                    vic_clear_dirty();
-                }
-                
-                /* Reset frame timer */
-                clock_gettime(CLOCK_MONOTONIC, &render_ts_start);
+                vic_sdl_render();
             }
+        }
+        /* Also render periodically when throttle not active (unlimited speed) */
+        if (use_sdl && batch_ns == 0 && (cpu.cycles - last_render_cycle) >= 50000) {
+            /* Handle SDL events */
+            if (!vic_sdl_handle_events()) {
+                printf("\n[SDL window closed - exiting]\n");
+                goto done;
+            }
+            vic_sdl_render();
+            last_render_cycle = cpu.cycles;
         }
     }
 

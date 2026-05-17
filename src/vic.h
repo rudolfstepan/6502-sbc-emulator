@@ -41,12 +41,6 @@ void vic_scroll_up();
 uint8_t vic_get_graphics_mode(void);  // Returns 0=text, 1=bitmap
 void vic_set_graphics_mode(uint8_t mode);
 
-// Dirty tracking for optimized rendering
-void vic_mark_dirty(uint16_t addr, uint8_t len);
-void vic_clear_dirty(void);
-int  vic_is_dirty(void);
-uint8_t* vic_get_dirty_array(void);
-
 // Cursor control
 void vic_set_cursor(uint8_t x, uint8_t y);
 void vic_get_cursor(uint8_t* x, uint8_t* y);
