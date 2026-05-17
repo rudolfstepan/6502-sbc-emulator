@@ -164,6 +164,7 @@ done:
 
 ; ------------------------------------------------------------
 ; CHRIN -- blocking keyboard read with echo; returns char in A
+;          Converts lowercase a-z to uppercase A-Z
 ; ------------------------------------------------------------
 .proc CHRIN
 loop:
@@ -172,6 +173,13 @@ loop:
     pha             ; save the character (CHROUT will clobber A)
     jsr CHROUT      ; echo
     pla             ; restore original character into A
+    ; convert lowercase to uppercase (a-z -> A-Z)
+    cmp #'a'
+    bcc done
+    cmp #'z'+1
+    bcs done
+    and #$DF        ; clear bit 5 -> uppercase
+done:
     rts
 .endproc
 
