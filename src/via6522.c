@@ -4,6 +4,9 @@
 void via_init(VIA6522 *via)
 {
     memset(via, 0, sizeof(*via));
+    via->kb_read_pos = 0;
+    via->kb_write_pos = 0;
+    via->kb_count = 0;
 }
 
 static void via_update_irq(VIA6522 *via)
@@ -33,6 +36,17 @@ uint8_t via_read(void *dev, uint16_t offset)
     case VIA_ORA2:
         via->ifr &= ~(VIA_IRQ_CA1 | VIA_IRQ_CA2);
         via_update_irq(via);
+        /* If Port A is configured as input, read from keyboard buffer */
+        if (via->ddra == 0x00 && via->kb_count > 0) {
+            uint8_t key = via_keyboard_pop(via);
+            /* Re-assert CA1 if more keys remain in the buffer so that
+             * the next CHRIN_NB poll still sees data-available. */
+            if (via->kb_count > 0) {
+                via->ifr |= VIA_IRQ_CA1;
+                via_update_irq(via);
+            }
+            return key;
+        }
         return (via->ora & via->ddra) | (via->ira & ~via->ddra);
 
     case VIA_DDRB: return via->ddrb;
@@ -185,4 +199,50 @@ uint8_t via_get_porta_output(const VIA6522 *via)
 uint8_t via_get_portb_output(const VIA6522 *via)
 {
     return via->orb & via->ddrb;
+}
+
+/* ── Keyboard buffer functions ────────────────────────── */
+
+/* Push a key into the keyboard buffer and trigger CA1 interrupt */
+bool via_keyboard_push(VIA6522 *via, uint8_t keycode)
+{
+    if (via->kb_count >= VIA_KB_BUFFER_SIZE) {
+        return false;  /* Buffer full */
+    }
+    
+    via->kb_buffer[via->kb_write_pos] = keycode;
+    via->kb_write_pos = (via->kb_write_pos + 1) % VIA_KB_BUFFER_SIZE;
+    via->kb_count++;
+    
+    /* Trigger CA1 interrupt (keyboard data available) */
+    via->ifr |= VIA_IRQ_CA1;
+    via_update_irq(via);
+    
+    return true;
+}
+
+/* Check if keyboard data is available */
+bool via_keyboard_available(const VIA6522 *via)
+{
+    return via->kb_count > 0;
+}
+
+/* Pop a key from the keyboard buffer */
+uint8_t via_keyboard_pop(VIA6522 *via)
+{
+    if (via->kb_count == 0) {
+        return 0;  /* No data available */
+    }
+    
+    uint8_t keycode = via->kb_buffer[via->kb_read_pos];
+    via->kb_read_pos = (via->kb_read_pos + 1) % VIA_KB_BUFFER_SIZE;
+    via->kb_count--;
+    
+    /* Clear CA1 interrupt if buffer is now empty */
+    if (via->kb_count == 0) {
+        via->ifr &= ~VIA_IRQ_CA1;
+        via_update_irq(via);
+    }
+    
+    return keycode;
 }

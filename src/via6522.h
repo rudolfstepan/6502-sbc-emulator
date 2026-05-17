@@ -52,6 +52,9 @@
 #define VIA_IRQ_T1  (1 << 6)
 #define VIA_IRQ_ANY (1 << 7)
 
+/* Keyboard buffer size */
+#define VIA_KB_BUFFER_SIZE 16
+
 typedef struct {
     uint8_t  orb, ora;         /* output registers */
     uint8_t  irb, ira;         /* input registers (driven externally) */
@@ -68,6 +71,12 @@ typedef struct {
     bool     t1_running;
     bool     t2_running;
     bool     irq_active;       /* current /IRQ output state */
+    
+    /* Keyboard buffer (Port A used for keyboard input) */
+    uint8_t  kb_buffer[VIA_KB_BUFFER_SIZE];
+    uint8_t  kb_read_pos;
+    uint8_t  kb_write_pos;
+    uint8_t  kb_count;
 } VIA6522;
 
 void    via_init(VIA6522 *via);
@@ -81,3 +90,8 @@ void    via_set_porta_input(VIA6522 *via, uint8_t val);
 void    via_set_portb_input(VIA6522 *via, uint8_t val);
 uint8_t via_get_porta_output(const VIA6522 *via);
 uint8_t via_get_portb_output(const VIA6522 *via);
+
+/* Keyboard buffer functions (Port A) */
+bool    via_keyboard_push(VIA6522 *via, uint8_t keycode);
+bool    via_keyboard_available(const VIA6522 *via);
+uint8_t via_keyboard_pop(VIA6522 *via);
