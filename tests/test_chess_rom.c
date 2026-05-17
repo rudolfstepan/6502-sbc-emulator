@@ -43,6 +43,11 @@ static uint8_t screen_background(Bus *bus, int row, int col)
     return (bus_read(bus, (uint16_t)(0x8400 + row * 40 + col)) >> 4) & 0x0F;
 }
 
+static uint8_t screen_char(Bus *bus, int row, int col)
+{
+    return bus_read(bus, (uint16_t)(0x8000 + row * 40 + col));
+}
+
 int main(void)
 {
     Bus bus;
@@ -108,14 +113,14 @@ int main(void)
         return 1;
     }
 
-    if (!screen_contains(&bus, "TYPE MOVE LIKE E7E5")) {
+    if (!screen_contains(&bus, "TYPE MOVE LIKE D7D5")) {
         fprintf(stderr, "demo banner not found in VIC output\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
     }
 
-    if (!screen_contains(&bus, "A   B   C   D   E   F   G   H")) {
+    if (!screen_contains(&bus, "H   G   F   E   D   C   B   A")) {
         fprintf(stderr, "file labels not found in VIC output\n");
         rom_free(&rom);
         sram_free(&ram);
@@ -129,22 +134,22 @@ int main(void)
         return 1;
     }
 
-    if (!screen_contains(&bus, "8 | R | N | B | Q | K | B | N | R | 8")) {
-        fprintf(stderr, "expected board row not found in VIC output\n");
+    if (screen_char(&bus, 6, 6) != 0x83) {
+        fprintf(stderr, "expected white rook glyph not found in top-left corner\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
     }
 
-    if (screen_color(&bus, 6, 6) != 0x00) {
-        fprintf(stderr, "expected black rook cell color not found\n");
-        rom_free(&rom);
-        sram_free(&ram);
-        return 1;
-    }
-
-    if (screen_color(&bus, 20, 6) != 0x01) {
+    if (screen_color(&bus, 6, 6) != 0x01) {
         fprintf(stderr, "expected white rook cell color not found\n");
+        rom_free(&rom);
+        sram_free(&ram);
+        return 1;
+    }
+
+    if (screen_color(&bus, 20, 6) != 0x00) {
+        fprintf(stderr, "expected black rook cell color not found\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
@@ -157,10 +162,10 @@ int main(void)
         return 1;
     }
 
-    via_keyboard_push(&via, 'e');
+    via_keyboard_push(&via, 'h');
     via_keyboard_push(&via, '7');
-    via_keyboard_push(&via, 'e');
-    via_keyboard_push(&via, '5');
+    via_keyboard_push(&via, 'h');
+    via_keyboard_push(&via, '6');
     via_keyboard_push(&via, '\r');
 
     for (int step = 0; step < 300000; step++) {
@@ -175,29 +180,29 @@ int main(void)
         return 1;
     }
 
-    if (!screen_contains(&bus, "ENGINE MOVE D4-E5")) {
-        fprintf(stderr, "expected engine response move not found in VIC output\n");
+    if (screen_contains(&bus, "INVALID MOVE")) {
+        fprintf(stderr, "player move was rejected in rotated black perspective\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
     }
 
-    if (!screen_contains(&bus, "7 | P | P | P | P |   | P | P | P | 7")) {
-        fprintf(stderr, "expected cleared E7 square not found in VIC output\n");
+    if (screen_char(&bus, 18, 6) != 0x20) {
+        fprintf(stderr, "expected visible H7 square to be cleared after H7-H6\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
     }
 
-    if (!screen_contains(&bus, "5 |   |   |   |   | P |   |   |   | 5")) {
-        fprintf(stderr, "expected white pawn on E5 not found in VIC output\n");
+    if (screen_char(&bus, 18, 34) != 0x80 || screen_char(&bus, 16, 34) != 0x20) {
+        fprintf(stderr, "expected visible A-file to remain unchanged after H7-H6\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
     }
 
-    if (screen_color(&bus, 12, 22) != 0x01) {
-        fprintf(stderr, "expected white pawn color on E5 not found\n");
+    if (!screen_contains(&bus, "BLACK TO PLAY")) {
+        fprintf(stderr, "ready status not restored after rotated move\n");
         rom_free(&rom);
         sram_free(&ram);
         return 1;
