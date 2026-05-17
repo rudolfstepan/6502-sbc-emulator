@@ -15,11 +15,11 @@ VIA_ORA          = $8801
 VIA_DDRA         = $8803
 VIA_IFR          = $880D
 CA1_BIT          = $02
-UI_BG_ATTR       = $60
-UI_TEXT_ATTR     = $6F
-BORDER_ATTR      = $67
-LIGHT_SQUARE_BG  = $70
-DARK_SQUARE_BG   = $50
+UI_BG_ATTR       = $B0
+UI_TEXT_ATTR     = $BF
+BORDER_ATTR      = $BC
+LIGHT_SQUARE_BG  = $F0
+DARK_SQUARE_BG   = $B0
 WHITE_PIECE_FG   = $01
 BLACK_PIECE_FG   = $00
 
@@ -81,8 +81,8 @@ white_side_mask:
     .byte $08
 
 pieces:
-    .byte $20, $00, $50, $4B, $4E, $42, $52, $51, $00
-    .byte $50, $00, $4B, $4E, $42, $52, $51
+    .byte $20, $00, $80, $85, $81, $82, $83, $84, $00
+    .byte $80, $00, $85, $81, $82, $83, $84
 
 row_offsets:
     .byte $00, $10, $20, $30, $40, $50, $60, $70
@@ -105,8 +105,14 @@ white_msg:
 demo_msg:
     .byte "TYPE MOVE LIKE E7E5", $00
 
+demo_black_msg:
+    .byte "TYPE MOVE LIKE D7D5", $00
+
 files_msg:
     .byte "    A   B   C   D   E   F   G   H", $00
+
+files_rev_msg:
+    .byte "    H   G   F   E   D   C   B   A", $00
 
 sep_msg:
     .byte "  +---+---+---+---+---+---+---+---+", $00
@@ -116,6 +122,9 @@ footer_msg:
 
 status_ready_msg:
     .byte "BLACK TO PLAY           ", $00
+
+status_white_msg:
+    .byte "WHITE TO PLAY           ", $00
 
 status_invalid_msg:
     .byte "INVALID MOVE - TRY AGAIN", $00
@@ -127,9 +136,9 @@ reset:
     txs
     lda #$00
     sta VIA_DDRA
-    lda #$0e
+    lda #$0f
     sta VIC_TEXT_COLOR
-    lda #$06
+    lda #$0b
     sta VIC_BG_COLOR
     jsr clear_screen
     jsr init_position
@@ -319,17 +328,26 @@ set_draw_attr:
     sta current_color
     rts
 
-set_square_attr:
+compute_square_bg:
     lda tmp1
     eor tmp2
     and #$01
     beq light_square_attr
     lda #DARK_SQUARE_BG
     sta tmp6
-    jmp square_piece_attr
+    rts
 light_square_attr:
     lda #LIGHT_SQUARE_BG
     sta tmp6
+    rts
+
+set_square_bg_attr:
+    jsr compute_square_bg
+    lda tmp6
+    jmp set_draw_attr
+
+set_square_attr:
+    jsr compute_square_bg
 square_piece_attr:
     lda board,y
     beq square_empty_attr
@@ -440,6 +458,8 @@ parse_square_at:
     lda #'8'
     sec
     sbc input_buf,x
+    sta tmp2
+    lda tmp2
     asl a
     asl a
     asl a
@@ -487,8 +507,16 @@ player_move_invalid:
     rts
 
 read_player_move:
+    lda side
+    bit white_side_mask
+    bne read_move_status_white
     lda #<status_ready_msg
     ldy #>status_ready_msg
+    jmp read_move_status_draw
+read_move_status_white:
+    lda #<status_white_msg
+    ldy #>status_white_msg
+read_move_status_draw:
     jsr show_status
     jsr draw_move_prompt
 read_move_loop:
@@ -533,13 +561,46 @@ handle_enter:
 player_move_done:
     rts
 
+print_rank_fill:
+    lda #$07
+    jsr set_draw_color
+    lda #' '
+    jsr putc
+    lda #' '
+    jsr putc
+    lda #' '
+    jsr putc
+    lda #$00
+    sta tmp2
+rank_fill_loop:
+    ldy tmp1
+    lda row_offsets,y
+    clc
+    adc tmp2
+    tay
+    jsr set_square_bg_attr
+    lda #' '
+    jsr putc
+    lda #' '
+    jsr putc
+    lda #' '
+    jsr putc
+    lda #' '
+    jsr putc
+    inc tmp2
+    lda tmp2
+    cmp #$08
+    bne rank_fill_loop
+    rts
+
 print_square:
-    pha
+    sta tmp4
+    lda tmp4
     and #$0f
     clc
     adc #'A'
     jsr putc
-    pla
+    lda tmp4
     lsr a
     lsr a
     lsr a
@@ -553,36 +614,71 @@ print_square:
 print_rank:
     lda #$07
     jsr set_draw_color
+    lda side
+    bit white_side_mask
+    bne rank_left_white
+    lda #'1'
+    clc
+    adc tmp1
+    jmp rank_left_done
+rank_left_white:
     lda #'8'
     sec
     sbc tmp1
+rank_left_done:
     sta tmp3
     jsr putc
     lda #' '
     jsr putc
-    lda #'|'
+    lda #' '
     jsr putc
     lda #$00
     sta tmp2
 rank_file_loop:
-    lda #' '
-    jsr putc
+    lda side
+    bit white_side_mask
+    bne rank_white_coords
+    lda #$07
+    sec
+    sbc tmp1
+    tay
+    lda row_offsets,y
+    sta tmp4
+    lda #$07
+    sec
+    sbc tmp2
+    clc
+    adc tmp4
+    jmp rank_coords_done
+rank_white_coords:
     ldy tmp1
     lda row_offsets,y
     clc
     adc tmp2
+rank_coords_done:
     tay
+    jsr set_square_bg_attr
+    lda #' '
+    jsr putc
+
+    lda board,y
+    beq rank_piece_empty
     jsr set_square_attr
     lda board,y
     and #$0f
     tax
     lda pieces,x
     jsr putc
-    lda #$07
-    jsr set_draw_color
+    jmp rank_piece_done
+rank_piece_empty:
+    jsr set_square_bg_attr
     lda #' '
     jsr putc
-    lda #'|'
+rank_piece_done:
+    jsr set_square_bg_attr
+    lda #' '
+    jsr putc
+    lda #' '
     jsr putc
     inc tmp2
     lda tmp2
@@ -639,8 +735,16 @@ render_side:
     lda #$02
     ldy #$03
     jsr set_cursor
+    lda side
+    bit white_side_mask
+    bne render_demo_white
+    lda #<demo_black_msg
+    ldy #>demo_black_msg
+    jmp render_demo
+render_demo_white:
     lda #<demo_msg
     ldy #>demo_msg
+render_demo:
     jsr print_string
 
     lda #$02
@@ -648,8 +752,16 @@ render_side:
     jsr set_cursor
     lda #$07
     jsr set_draw_color
+    lda side
+    bit white_side_mask
+    bne render_top_files_white
+    lda #<files_rev_msg
+    ldy #>files_rev_msg
+    jmp render_top_files
+render_top_files_white:
     lda #<files_msg
     ldy #>files_msg
+render_top_files:
     jsr print_string
 
     lda #$00
@@ -664,15 +776,12 @@ render_rank_loop:
     lda #$02
     ldy tmp2
     jsr set_cursor
-    lda #$07
-    jsr set_draw_color
-    lda #<sep_msg
-    ldy #>sep_msg
-    jsr print_string
+    jsr print_rank_fill
 
-    lda tmp2
+    lda tmp1
+    asl a
     clc
-    adc #$01
+    adc #$06
     tay
     lda #$02
     jsr set_cursor
@@ -684,21 +793,20 @@ render_rank_loop:
     bne render_rank_loop
 
     lda #$02
-    ldy #$15
-    jsr set_cursor
-    lda #$07
-    jsr set_draw_color
-    lda #<sep_msg
-    ldy #>sep_msg
-    jsr print_string
-
-    lda #$02
     ldy #$16
     jsr set_cursor
     lda #$07
     jsr set_draw_color
+    lda side
+    bit white_side_mask
+    bne render_bottom_files_white
+    lda #<files_rev_msg
+    ldy #>files_rev_msg
+    jmp render_bottom_files
+render_bottom_files_white:
     lda #<files_msg
     ldy #>files_msg
+render_bottom_files:
     jsr print_string
 
     lda #$00
@@ -706,8 +814,16 @@ render_rank_loop:
     jsr set_cursor
     lda #$0f
     jsr set_draw_color
+    lda side
+    bit white_side_mask
+    bne render_status_white
     lda #<status_ready_msg
     ldy #>status_ready_msg
+    jmp render_status
+render_status_white:
+    lda #<status_white_msg
+    ldy #>status_white_msg
+render_status:
     jsr print_string
 
     jsr draw_move_prompt
