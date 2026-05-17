@@ -10,9 +10,15 @@ KLAUS_URL = https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tes
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms chess-rom test-chess-rom test-diskdir test-peek-poke test-klaus-6502
+.PHONY: all clean run check roms chess-rom test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release
 
 all: $(TARGET)
+
+release: CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(shell pkg-config --cflags sdl2)
+release: clean $(TARGET)
+	strip $(TARGET)
+	@echo "Release build complete: $(TARGET) (optimized, stripped)"
+	@ls -lh $(TARGET)
 
 $(OBJDIR):
 	mkdir -p $(OBJDIR)
