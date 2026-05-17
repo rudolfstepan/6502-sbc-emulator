@@ -1,12 +1,12 @@
 # Third-Party Components
 
-This project can generate and run ROM images from external upstream sources.
+This repository includes integrations/adaptations based on external upstream projects.
 
 ## Microsoft BASIC (mist64/msbasic)
 
 - Upstream: https://github.com/mist64/msbasic
 - License signal from upstream README: 2-clause BSD
-- Local usage: build helper script and target-specific port files in this repository produce `roms/msbasic.rom`.
+- Local usage: build helpers and SBC6502-specific port files produce `roms/msbasic.rom`.
 
 Recommended publication practice:
 - Keep attribution to upstream project and authors.
@@ -25,5 +25,5 @@ Recommended publication practice:
 
 ## Practical Summary
 
-- Publishing MS BASIC integration is generally feasible with attribution.
-- WozMon artifacts are intentionally not distributed in this repository.
+- Publishing generated ROM artifacts is generally feasible when upstream attribution and license obligations are kept.
+- Verify third-party license terms before redistribution in binary form.
