@@ -29,6 +29,18 @@ Please include:
 - How it was tested
 - Any emulator behavior or compatibility impact
 
+## Documentation Policy
+
+When behavior, memory maps, or workflows change, keep documentation in the same PR in sync.
+
+Checklist:
+
+- Update [README.md](README.md) for user-visible changes.
+- Update affected docs in [docs](docs) (for example architecture, device, or workflow pages).
+- Remove or rewrite obsolete sections instead of leaving conflicting guidance.
+- Keep addresses, register maps, and command examples aligned with current code/config.
+- Add a short note in [CHANGELOG.md](CHANGELOG.md) under Unreleased for notable user-facing updates.
+
 ## Reporting Bugs
 
 When reporting an issue, include:
