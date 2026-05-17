@@ -141,8 +141,16 @@ int main(int argc, char *argv[])
     /* ── Initialize VIC (Video Interface Controller) ────── */
     vic_init();
     bus_register(&bus, "VIC-VIDEO", NULL,
-                 0x8000, 2048,  /* 2KB video RAM at $8000-$87FF */
+                 0x8000, 2048,  /* 2KB: text video RAM at $8000-$87FF */
                  vic_bus_read, vic_bus_write, vic_bus_tick);
+    
+    bus_register(&bus, "VIC-REGS", NULL,
+                 0x9000, 16,    /* VIC control registers at $9000-$900F */
+                 vic_reg_read, vic_reg_write, NULL);
+    
+    bus_register(&bus, "VIC-BITMAP", NULL,
+                 0x9010, 8000,  /* Bitmap RAM at $9010-$AF4F (320x200 pixels) */
+                 vic_bitmap_read, vic_bitmap_write, NULL);
 
     for (int i = 0; i < cfg.num_devs; i++) {
         DevConfig *dc = &cfg.devs[i];
@@ -331,11 +339,21 @@ int main(int argc, char *argv[])
 
             /* Render VIC display */
             if (use_sdl) {
+                /* Handle SDL events (keyboard, quit, etc.) */
+                if (!vic_sdl_handle_events()) {
+                    printf("\n[SDL window closed - exiting]\n");
+                    goto done;
+                }
                 vic_sdl_render();
             }
         }
         /* Also render periodically when throttle not active (unlimited speed) */
         if (use_sdl && batch_ns == 0 && (cpu.cycles - last_render_cycle) >= 50000) {
+            /* Handle SDL events */
+            if (!vic_sdl_handle_events()) {
+                printf("\n[SDL window closed - exiting]\n");
+                goto done;
+            }
             vic_sdl_render();
             last_render_cycle = cpu.cycles;
         }

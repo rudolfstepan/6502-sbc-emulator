@@ -39,6 +39,19 @@ VIA_IFR     = $880D
 VIA_IER     = $880E
 CA1_BIT     = $02
 
+DISK_BASE   = $8820
+DISK_CMD    = $8820
+DISK_STATUS = $8821
+DISK_ADDR_LO = $8822
+DISK_ADDR_HI = $8823
+DISK_LEN_LO = $8824
+DISK_LEN_HI = $8825
+DISK_ACT_LO = $8826
+DISK_ACT_HI = $8827
+
+DISK_CMD_DIR = $03
+DISK_ST_OK   = $02
+
 CURSOR_X    = $F0
 CURSOR_Y    = $F1
 SCRPTR_LO   = $F2
@@ -92,8 +105,8 @@ IRQ_HANDLER:
     ; jump to the RESET vector ($C000 = INIT), resetting the system.
     jsr CLRSCR
     jsr show_welcome
-    jsr cmd_loop
-    jmp INIT                ; safety: should never reach here
+    ; Auto-start BASIC (like C64)
+    jmp BASIC               ; jump to MS BASIC - never return
 .endproc
 
 ; ------------------------------------------------------------
@@ -115,7 +128,7 @@ IRQ_HANDLER:
     cmp #$0D
     beq newline
     cmp #$0A
-    beq newline
+    beq done                ; ignore LF (0x0A) - only CR (0x0D) triggers newline
     cmp #$08
     beq backspace
     
@@ -460,13 +473,29 @@ cmp_cls:
     lda cmd_cls_str,x
     beq cls_end
     cmp CMD_BUF,x
-    bne try_unknown
+    bne try_dir
     inx
     jmp cmp_cls
 cls_end:
     lda CMD_BUF,x
-    bne try_unknown
+    bne try_dir
     jsr CLRSCR
+    jmp done
+
+    ; ---- DIR ----
+try_dir:
+    ldx #0
+cmp_dir:
+    lda cmd_dir_str,x
+    beq dir_end
+    cmp CMD_BUF,x
+    bne try_unknown
+    inx
+    jmp cmp_dir
+dir_end:
+    lda CMD_BUF,x
+    bne try_unknown
+    jsr do_dir
     jmp done
 
     ; ---- unknown ----
@@ -478,6 +507,49 @@ done:
     rts
 .endproc
 
+; ------------------------------------------------------------
+; do_dir -- execute DIR command via disk device
+; ------------------------------------------------------------
+.proc do_dir
+    ; Setup disk device to write directory listing to $0400
+    lda #$00
+    sta DISK_ADDR_LO
+    lda #$04
+    sta DISK_ADDR_HI
+    
+    ; Max 1024 bytes for directory listing
+    lda #$00
+    sta DISK_LEN_LO
+    lda #$04
+    sta DISK_LEN_HI
+    
+    ; Execute DIR command
+    lda #DISK_CMD_DIR
+    sta DISK_CMD
+    
+    ; Check status
+    lda DISK_STATUS
+    and #DISK_ST_OK
+    beq dir_error
+    
+    ; Print directory listing from $0400
+    lda #<dir_header
+    ldy #>dir_header
+    jsr STROUT
+    
+    ; Print files from $0400
+    lda #$00
+    ldy #$04
+    jsr STROUT
+    rts
+
+dir_error:
+    lda #<dir_err_str
+    ldy #>dir_err_str
+    jsr STROUT
+    rts
+.endproc
+
 ; ============================================================
 ; STRING DATA
 ; ============================================================
@@ -486,20 +558,19 @@ done:
 cmd_basic_str: .byte "BASIC", 0
 cmd_help_str:  .byte "HELP",  0
 cmd_cls_str:   .byte "CLS",   0
+cmd_dir_str:   .byte "DIR",   0
+
+dir_header:
+    .byte $0D, " DIRECTORY:", $0D, 0
+
+dir_err_str:
+    .byte " DIR ERROR", $0D, 0
 
 welcome_str:
     .byte $0D
-    .byte " ***  6502 SBC COMPUTER SYSTEM V1.0  ***", $0D
+    .byte " ***  6502 SBC - 32K RAM SYSTEM  ***", $0D
     .byte $0D
-    .byte " CPU    : MOS 6502 @ 1 MHZ", $0D
-    .byte " RAM    : 32 KB  ($0000-$7FFF)", $0D
-    .byte " VIDEO  : VIC 40X25 TEXT MODE", $0D
-    .byte " BASIC  : MS BASIC V2  ($D000)", $0D
-    .byte $0D
-    .byte " COMMANDS:", $0D
-    .byte "   BASIC  -  START MS BASIC", $0D
-    .byte "   CLS    -  CLEAR SCREEN", $0D
-    .byte "   HELP   -  SHOW THIS HELP", $0D
+    .byte " KERNEL V1.0", $0D
     .byte $0D
     .byte 0
 
@@ -510,6 +581,7 @@ help_str:
     .byte $0D
     .byte " AVAILABLE COMMANDS:", $0D
     .byte "   BASIC  -  START MS BASIC V2", $0D
+    .byte "   DIR    -  SHOW DISK FILES", $0D
     .byte "   CLS    -  CLEAR SCREEN", $0D
     .byte "   HELP   -  SHOW THIS HELP", $0D
     .byte $0D

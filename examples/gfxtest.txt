@@ -1,0 +1,154 @@
+10 REM ================================
+20 REM VIC BITMAP GRAPHICS TEST
+30 REM 320x200 Pixel Display
+40 REM ================================
+50 REM
+60 REM Variables
+70 C=36864: REM Control Register $9000
+80 B=36880: REM Bitmap RAM $9010
+90 REM
+100 REM ================================
+110 REM Activate Bitmap Mode
+120 REM ================================
+130 PRINT "ACTIVATING BITMAP MODE..."
+140 POKE C,1
+150 REM
+160 REM ================================
+170 REM Test 1: Horizontal Lines
+180 REM ================================
+190 FOR Y=0 TO 199 STEP 20
+200 FOR X=0 TO 319
+210 A=B+(Y*40+X/8)
+220 BIT=X AND 7
+230 POKE A,PEEK(A) OR (2^BIT)
+240 NEXT X
+250 NEXT Y
+260 REM Wait 2 seconds (simple delay loop)
+270 FOR W=1 TO 2000: NEXT W
+280 REM
+290 REM ================================
+300 REM Clear Screen
+310 REM ================================
+320 FOR I=0 TO 7999
+330 POKE B+I,0
+340 NEXT I
+350 REM
+360 REM ================================
+370 REM Test 2: Vertical Lines
+380 REM ================================
+390 FOR X=0 TO 319 STEP 32
+400 FOR Y=0 TO 199
+410 A=B+(Y*40+X/8)
+420 BIT=X AND 7
+430 POKE A,PEEK(A) OR (2^BIT)
+440 NEXT Y
+450 NEXT X
+460 FOR W=1 TO 2000: NEXT W
+470 REM
+480 REM ================================
+490 REM Clear Screen
+500 REM ================================
+510 FOR I=0 TO 7999
+520 POKE B+I,0
+530 NEXT I
+540 REM
+550 REM ================================
+560 REM Test 3: Checkerboard Pattern
+570 REM ================================
+580 FOR Y=0 TO 199 STEP 2
+590 FOR X=0 TO 319 STEP 2
+600 IF (X/16+Y/16) AND 1 THEN GOTO 650
+610 A=B+(Y*40+X/8)
+620 BIT=X AND 7
+630 POKE A,PEEK(A) OR (2^BIT)
+640 REM
+650 NEXT X
+660 NEXT Y
+670 FOR W=1 TO 2000: NEXT W
+680 REM
+690 REM ================================
+700 REM Clear Screen
+710 REM ================================
+720 FOR I=0 TO 7999
+730 POKE B+I,0
+740 NEXT I
+750 REM
+760 REM ================================
+770 REM Test 4: Rectangle
+780 REM ================================
+790 REM Top and bottom lines
+800 FOR X=50 TO 270
+810 REM Top line (Y=40)
+820 A=B+(40*40+X/8)
+830 BIT=X AND 7
+840 POKE A,PEEK(A) OR (2^BIT)
+850 REM Bottom line (Y=160)
+860 A=B+(160*40+X/8)
+870 BIT=X AND 7
+880 POKE A,PEEK(A) OR (2^BIT)
+890 NEXT X
+900 REM Left and right lines
+910 FOR Y=40 TO 160
+920 REM Left line (X=50)
+930 A=B+(Y*40+50/8)
+940 BIT=50 AND 7
+950 POKE A,PEEK(A) OR (2^BIT)
+960 REM Right line (X=270)
+970 A=B+(Y*40+270/8)
+980 BIT=270 AND 7
+990 POKE A,PEEK(A) OR (2^BIT)
+1000 NEXT Y
+1010 FOR W=1 TO 2000: NEXT W
+1020 REM
+1030 REM ================================
+1040 REM Clear Screen
+1050 REM ================================
+1060 FOR I=0 TO 7999
+1070 POKE B+I,0
+1080 NEXT I
+1090 REM
+1100 REM ================================
+1110 REM Test 5: Diagonal Line
+1120 REM ================================
+1130 FOR I=0 TO 199
+1140 X=I*319/199
+1150 Y=I
+1160 A=B+(Y*40+X/8)
+1170 BIT=X AND 7
+1180 POKE A,PEEK(A) OR (2^BIT)
+1190 NEXT I
+1200 FOR W=1 TO 2000: NEXT W
+1210 REM
+1220 REM ================================
+1230 REM Clear Screen
+1240 REM ================================
+1250 FOR I=0 TO 7999
+1260 POKE B+I,0
+1270 NEXT I
+1280 REM
+1290 REM ================================
+1300 REM Test 6: Fill Screen
+1310 REM ================================
+1320 FOR I=0 TO 7999
+1330 POKE B+I,255
+1340 NEXT I
+1350 FOR W=1 TO 3000: NEXT W
+1360 REM
+1370 REM ================================
+1380 REM Return to Text Mode
+1390 REM ================================
+1400 POKE C,0
+1410 PRINT
+1420 PRINT "================================"
+1430 PRINT "GRAPHICS TEST COMPLETE!"
+1440 PRINT "================================"
+1450 PRINT
+1460 PRINT "TESTS PERFORMED:"
+1470 PRINT "1. HORIZONTAL LINES"
+1480 PRINT "2. VERTICAL LINES"
+1490 PRINT "3. CHECKERBOARD PATTERN"
+1500 PRINT "4. RECTANGLE"
+1510 PRINT "5. DIAGONAL LINE"
+1520 PRINT "6. FULL SCREEN"
+1530 PRINT
+1540 END
