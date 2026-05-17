@@ -23,11 +23,42 @@ This project emulates a small 6502-based single board computer with a cycle-awar
 
 ## Quick Start
 
+### Running the Emulator
+
 ```sh
 make
-python3 tools/make_test_rom.py
 ./sbc6502 sbc.ini
 ```
+
+The emulator starts with MS BASIC by default, opening an SDL window with graphical VIC display.
+
+### Running MS BASIC
+
+```sh
+./sbc6502 sbc.ini
+```
+
+You'll see:
+```
+6502 SBC - MS BASIC V2
+KEYBOARD & VIC READY
+
+31743 BYTES FREE
+
+READY.
+_
+```
+
+Type BASIC commands directly:
+```basic
+10 PRINT "HELLO WORLD"
+20 GOTO 10
+RUN
+```
+
+See [docs/MSBASIC.md](docs/MSBASIC.md) for detailed MS BASIC documentation.
+
+### Monitor/Debugger
 
 Press `CTRL+C` during emulation to enter the built-in monitor/debugger.
 
@@ -46,21 +77,26 @@ Example monitor session:
 ## Features
 
 - **Full MOS 6502 CPU** – all 151 official opcodes, correct cycle counts, page-crossing penalties, BCD mode, hardware vectors (RESET/NMI/IRQ)
-- **MOS 6522 VIA** – Port A/B with DDR, Timer 1 (free-run & one-shot), Timer 2, interrupt flag/enable registers, IRQ generation
+- **VIC (Video Interface Controller)** – 40x25 text mode, 8x8 pixel font, dual-port 2KB video RAM, SDL2-based graphical output
+- **Keyboard Input** – Full keyboard support via VIA6522 Port A with FIFO buffer and CA1 interrupts (see [docs/KEYBOARD.md](docs/KEYBOARD.md))
+- **MOS 6522 VIA** – Port A/B with DDR, Timer 1 (free-run & one-shot), Timer 2, interrupt flag/enable registers, IRQ generation, keyboard input buffer
 - **MOS 6551 ACIA** – UART with receive FIFO, status register, stdio (raw terminal) or TCP server mode
 - **SRAM** – configurable base address and size
 - **ROM** – loaded from binary file, top-aligned in the address window
 - **Freely configurable address map** – all device base addresses set via `sbc.ini`
 - **Built-in monitor/debugger** – enter with CTRL+C; step, disassemble, hex dump, breakpoints
 - **Speed throttle** – configurable CPU speed in Hz (or unlimited)
+- **SDL2 Graphics** – Real-time graphical display of VIC output with keyboard input
 
 ## Default Memory Map
 
 ```
-$0000–$7FFF   SRAM     (32 KB)
-$8000–$800F   VIA 6522 (16 registers)
-$8010–$8013   UART 6551/ACIA (4 registers)
-$C000–$FFFF   ROM      (16 KB, vectors at $FFFA–$FFFF)
+$0000–$7FFF   SRAM         (32 KB)
+$8000–$87FF   VIC Video RAM (2 KB, dual-port)
+$8800–$880F   VIA 6522     (16 registers)
+$8810–$8813   UART 6551/ACIA (4 registers)
+$8820–$882F   DISK MVP     (16 registers)
+$C000–$FFFF   ROM          (16 KB, vectors at $FFFA–$FFFF)
 ```
 
 All addresses are freely configurable in `sbc.ini`.
@@ -68,10 +104,21 @@ All addresses are freely configurable in `sbc.ini`.
 ## Build
 
 ```sh
+# Install dependencies (Debian/Ubuntu)
+sudo apt-get install build-essential libsdl2-dev
+
+# Build
 make
 ```
 
-Requires GCC (or any C99-compatible compiler), `make`, Python 3 for helper scripts, and standard POSIX headers.
+Requires:
+- GCC (or any C99-compatible compiler)
+- `make`
+- SDL2 development library (`libsdl2-dev`)
+- Python 3 for helper scripts
+- Standard POSIX headers
+
+**Note**: SDL2 is optional. If not available, the VIC will fall back to text-based output.
 
 ## Development
 
@@ -202,6 +249,53 @@ This creates `roms/rom.bin` that prints `Hello, 6502 SBC!` via the UART.
 - Add automated CPU regression tests
 - Document board variants and example configurations
 
+## Keyboard Programming
+
+The emulator includes full keyboard support via the VIA6522 Port A. SDL keyboard events are automatically converted to ASCII and buffered in a 16-character FIFO queue with CA1 interrupt signaling.
+
+**Quick start:**
+
+```assembly
+; Initialize keyboard (Assembly)
+LDA #$00
+STA $8803    ; Set VIA DDRA = 0x00 (input mode)
+LDA #$82
+STA $880E    ; Enable CA1 interrupt
+
+; Read a character
+.wait:
+  LDA $880D    ; Check IFR
+  AND #$02     ; CA1 bit
+  BEQ .wait    ; Wait for key
+  LDA $8801    ; Read character from ORA
+```
+
+**C example:**
+
+```c
+#include <stdint.h>
+
+#define VIA_ORA  (*(volatile uint8_t *)0x8801)
+#define VIA_DDRA (*(volatile uint8_t *)0x8803)
+#define VIA_IFR  (*(volatile uint8_t *)0x880D)
+
+void init_keyboard() {
+    VIA_DDRA = 0x00;  // Input mode
+}
+
+uint8_t getchar() {
+    while (!(VIA_IFR & 0x02));  // Wait for CA1
+    return VIA_ORA;              // Read key
+}
+```
+
+**Resources:**
+- Full documentation: [docs/KEYBOARD.md](docs/KEYBOARD.md)
+- Assembly library: [examples/keyboard_io.s](examples/keyboard_io.s)
+- C library: [examples/keyboard_io.c](examples/keyboard_io.c)
+
+Supported keys: A-Z, a-z, 0-9, Space, Enter, Backspace, and common punctuation. Press **ESC** to quit the emulator.
+
 ## Open Source Project Layout
 
 - `src/` core emulator implementation
@@ -220,16 +314,32 @@ src/
   bus.c/h        Address bus with device registry
   sram.c/h       Static RAM
   rom.c/h        Read-only memory (file-loadable)
-  via6522.c/h    MOS 6522 VIA
+  via6522.c/h    MOS 6522 VIA (with keyboard buffer)
   uart6551.c/h   MOS 6551 ACIA (UART)
+  vic.c/h        Video Interface Controller (40x25 text)
+  vic_sdl.c/h    SDL2 graphics backend for VIC
+  keyboard.h     Keyboard interface via VIA
   disasm.c/h     6502 disassembler
   monitor.c/h    Interactive debugger
   config.c/h     INI config file parser
   main.c         Entry point / emulator loop
 tools/
   make_test_rom.py  Generate a test ROM binary
-roms/            Place your ROM files here
-docs/            Additional project documentation
+  gen_echo_rom.py   Generate echo monitor ROM
+  make_monitor_rom.py  Generate debug monitor ROM
+examples/
+  keyboard_io.s  Assembly keyboard I/O library
+  keyboard_io.c  C keyboard I/O library
+  vic_demo.c     VIC display demo
+  vic_test.s     VIC assembly test
+roms/
+  msbasic.rom    Microsoft BASIC ROM
+  monitor.rom    Debug monitor ROM
+docs/
+  KEYBOARD.md    Keyboard programming guide
+  VIC.md         VIC documentation
+  ARCHITECTURE.md System architecture
+  THIRD_PARTY.md Third-party licenses
 .github/         GitHub community health files and CI
 sbc.ini          Default configuration
 Makefile

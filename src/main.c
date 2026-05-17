@@ -16,14 +16,24 @@
 #include "monitor.h"
 #include "config.h"
 #include "disasm.h"
+#include "vic.h"
+#include "vic_sdl.h"
+#include "keyboard.h"
 
 /* ── Global emulator state ────────────────────────────────── */
 static volatile int g_sigint = 0;
+static VIA6522 *g_keyboard_via = NULL;  /* Global VIA for keyboard input */
 
 static void handle_sigint(int sig)
 {
     (void)sig;
     g_sigint = 1;
+}
+
+/* Get the keyboard VIA for external access (e.g., from SDL) */
+VIA6522* get_keyboard_via(void)
+{
+    return g_keyboard_via;
 }
 
 /* ── Bus read/write wrappers for CPU ─────────────────────── */
@@ -58,9 +68,10 @@ static void usage(const char *prog)
         "Default config: sbc.ini (if present)\n"
         "Default memory map:\n"
         "  $0000-$7FFF  SRAM  (32KB)\n"
-        "  $8000-$800F  VIA 6522\n"
-        "  $8010-$8013  UART 6551 (ACIA)\n"
-        "  $8020-$802F  DISK MVP\n"
+        "  $8000-$87FF  VIC Video RAM (2KB)\n"
+        "  $8800-$880F  VIA 6522\n"
+        "  $8810-$8813  UART 6551 (ACIA)\n"
+        "  $8820-$882F  DISK MVP\n"
         "  $C000-$FFFF  ROM  (16KB)\n",
         prog);
 }
@@ -126,6 +137,12 @@ int main(int argc, char *argv[])
 
     Bus bus;
     bus_init(&bus);
+    
+    /* ── Initialize VIC (Video Interface Controller) ────── */
+    vic_init();
+    bus_register(&bus, "VIC-VIDEO", NULL,
+                 0x8000, 2048,  /* 2KB video RAM at $8000-$87FF */
+                 vic_bus_read, vic_bus_write, vic_bus_tick);
 
     for (int i = 0; i < cfg.num_devs; i++) {
         DevConfig *dc = &cfg.devs[i];
@@ -164,6 +181,11 @@ int main(int argc, char *argv[])
             bus_register(&bus, "VIA-6522", &vias[nv],
                          dc->base, 16,
                          via_read, via_write, via_tick);
+            /* Set the first VIA as keyboard VIA */
+            if (nv == 0) {
+                g_keyboard_via = &vias[nv];
+                printf("VIA #0 configured for keyboard input\n");
+            }
             nv++;
             break;
 
@@ -205,6 +227,25 @@ int main(int argc, char *argv[])
     CPU6502 cpu;
     cpu6502_init(&cpu, cpu_bus_read, cpu_bus_write, &bus);
     cpu6502_reset(&cpu);
+    
+    /* ── VIC Demo messages disabled - MS BASIC will initialize the screen ──── */
+    /* 
+    vic_clear_screen();
+    vic_write_string("6502 SBC with VIC - Video Interface Controller\n");
+    vic_write_string("==============================================\n\n");
+    vic_write_string("System initialized and ready.\n");
+    vic_write_string("Video RAM: $8000-$87FF (2KB)\n\n");
+    vic_write_string("Type text to see it on screen...\n");
+    */
+    
+    /* ── Initialize SDL2 for VIC display ──────────────────── */
+    bool use_sdl = (vic_sdl_init() == 0);
+    if (use_sdl) {
+        printf("SDL2 display enabled. Press ESC to quit.\n");
+        vic_sdl_render();   /* Initial blank render so window appears */
+    } else {
+        printf("SDL2 display not available, using text output.\n");
+    }
 
     /* ── Init monitor ─────────────────────────────────────── */
     Monitor mon;
@@ -230,6 +271,12 @@ int main(int argc, char *argv[])
     clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
 
     while (!cpu.stopped) {
+        /* Handle SDL events */
+        if (use_sdl && !vic_sdl_handle_events()) {
+            printf("\nSDL window closed, exiting...\n");
+            break;
+        }
+        
         /* Check SIGINT frequently (after every ~1000 instructions) */
         static uint64_t sigint_check_cycles = 0;
         if (cpu.cycles - sigint_check_cycles >= 1000) {
@@ -245,6 +292,8 @@ int main(int argc, char *argv[])
         if (mon.active || monitor_check(&mon)) {
             for (int i = 0; i < nu; i++) uart_stdio_suspend(&uarts[i]);
             mon.active = true;
+            /* Render VIC before entering monitor so user sees current state */
+            if (use_sdl) vic_sdl_render();
             while (mon.active) {
                 if (!monitor_run(&mon)) goto done;
             }
@@ -267,7 +316,8 @@ int main(int argc, char *argv[])
         if (irq) cpu6502_irq(&cpu);
         else     cpu6502_irq_clear(&cpu);
 
-        /* Speed throttle: once per batch */
+        /* Speed throttle and render: once per batch */
+        static uint64_t last_render_cycle = 0;
         if (batch_ns > 0 && (cpu.cycles - batch_start_cycle) >= cycles_per_batch) {
             struct timespec now;
             clock_gettime(CLOCK_MONOTONIC, &now);
@@ -277,6 +327,17 @@ int main(int argc, char *argv[])
             if (sleep_ns > 1000L) ns_sleep(sleep_ns);
             batch_start_cycle = cpu.cycles;
             clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
+            last_render_cycle = cpu.cycles;
+
+            /* Render VIC display */
+            if (use_sdl) {
+                vic_sdl_render();
+            }
+        }
+        /* Also render periodically when throttle not active (unlimited speed) */
+        if (use_sdl && batch_ns == 0 && (cpu.cycles - last_render_cycle) >= 50000) {
+            vic_sdl_render();
+            last_render_cycle = cpu.cycles;
         }
     }
 
@@ -285,6 +346,7 @@ done:
            (unsigned long long)cpu.cycles);
 
     /* cleanup */
+    vic_sdl_shutdown();
     for (int i = 0; i < ns; i++) sram_free(&srams[i]);
     for (int i = 0; i < nr; i++) rom_free(&roms[i]);
     for (int i = 0; i < nu; i++) uart_free(&uarts[i]);
