@@ -8,7 +8,7 @@ OBJDIR  = build
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms
+.PHONY: all clean run check roms test-diskdir
 
 all: $(TARGET)
 
@@ -25,7 +25,11 @@ $(TARGET): $(OBJS)
 clean:
 	rm -rf $(OBJDIR) $(TARGET)
 
-check: all
+check: all test-diskdir
+
+test-diskdir: $(OBJDIR)
+	$(CC) -std=c99 -Wall -Wextra -O2 -g -I$(SRCDIR) tests/test_diskdev_dir.c src/bus.c src/sram.c src/diskdev.c -o $(OBJDIR)/test_diskdev_dir
+	./$(OBJDIR)/test_diskdev_dir
 
 roms:
 	bash tools/make_kernel_rom.sh
