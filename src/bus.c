@@ -1,10 +1,12 @@
 #include "bus.h"
+#include "soundchip.h"
 #include <stdio.h>
 #include <string.h>
 
 void bus_init(Bus *bus)
 {
     memset(bus, 0, sizeof(*bus));
+    soundchip_init();
 }
 
 void bus_register(Bus *bus, const char *name, void *device,
@@ -69,4 +71,8 @@ void bus_dump(const Bus *bus)
                d->name ? d->name : "?",
                d->base, (unsigned)(d->base + d->size - 1), d->size);
     }
+}
+
+void bus_shutdown() {
+    soundchip_shutdown();
 }

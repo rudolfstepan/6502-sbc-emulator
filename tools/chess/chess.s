@@ -14,6 +14,12 @@ VIC_BG_COLOR     = $9004
 VIA_ORA          = $8801
 VIA_DDRA         = $8803
 VIA_IFR          = $880D
+SOUND_FREQ_LO    = $8830
+SOUND_FREQ_HI    = $8831
+SOUND_DUR_LO     = $8832
+SOUND_DUR_HI     = $8833
+SOUND_VOL        = $8834
+SOUND_CTRL       = $8835
 CA1_BIT          = $02
 UI_BG_ATTR       = $B0
 UI_TEXT_ATTR     = $BF
@@ -56,6 +62,7 @@ engine_last_src:  .res 1
 engine_last_dst:  .res 1
 input_buf:        .res 4
 input_len:        .res 1
+captured_piece:   .res 1
 
 .segment "RODATA"
 board_init:
@@ -135,6 +142,15 @@ status_white_msg:
 status_invalid_msg:
     .byte "INVALID MOVE - TRY AGAIN", $00
 
+capture_freq_lo:
+    .byte $DC, $26, $5D, $88, $B8, $0B, $93, $10
+
+capture_freq_hi:
+    .byte $00, $01, $01, $01, $01, $02, $02, $03
+
+capture_dur:
+    .byte $64, $6E, $78, $82, $8C, $AA, $D2, $A0
+
 .segment "CODE"
 reset:
     cld
@@ -148,6 +164,7 @@ reset:
     sta VIC_BG_COLOR
     jsr clear_screen
     jsr init_position
+    jsr play_title_melody
     lda #$01
     jsr search
     jsr engine_move
@@ -374,13 +391,11 @@ apply_player_highlight:
 
 set_square_bg_attr:
     jsr compute_square_bg
-    jsr apply_move_highlight
     lda tmp6
     jmp set_draw_attr
 
 set_square_attr:
     jsr compute_square_bg
-    jsr apply_move_highlight
 square_piece_attr:
     lda board,y
     beq square_empty_attr
@@ -500,6 +515,178 @@ parse_square_at:
     ora tmp1
     rts
 
+play_move_beep:
+    lda tmp5
+    bne play_move_capture
+    jmp play_normal_beep
+play_move_capture:
+    jmp play_capture_beep
+
+queue_tone:
+    sta SOUND_FREQ_LO
+    stx SOUND_FREQ_HI
+    sty SOUND_DUR_LO
+    lda #$00
+    sta SOUND_DUR_HI
+    lda #$D8
+    sta SOUND_VOL
+    lda #$01
+    sta SOUND_CTRL
+    rts
+
+queue_rest:
+    lda #$B8
+    sta SOUND_FREQ_LO
+    lda #$01
+    sta SOUND_FREQ_HI
+    sty SOUND_DUR_LO
+    lda #$00
+    sta SOUND_DUR_HI
+    lda #$00
+    sta SOUND_VOL
+    lda #$01
+    sta SOUND_CTRL
+    rts
+
+play_title_melody:
+    ; Heroic retro fanfare with two phrases and cadence.
+    lda #$0B              ; C5
+    ldx #$02
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$93              ; E5
+    ldx #$02
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$10              ; G5
+    ldx #$03
+    ldy #$8C
+    jsr queue_tone
+    ldy #$28
+    jsr queue_rest
+
+    lda #$16              ; C6
+    ldx #$04
+    ldy #$C8
+    jsr queue_tone
+    ldy #$3C
+    jsr queue_rest
+
+    lda #$70              ; A5
+    ldx #$03
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$10              ; G5
+    ldx #$03
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$93              ; E5
+    ldx #$02
+    ldy #$8C
+    jsr queue_tone
+    ldy #$28
+    jsr queue_rest
+
+    lda #$4B              ; D5
+    ldx #$02
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$93              ; E5
+    ldx #$02
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$10              ; G5
+    ldx #$03
+    ldy #$B4
+    jsr queue_tone
+    ldy #$32
+    jsr queue_rest
+
+    lda #$70              ; A5
+    ldx #$03
+    ldy #$8C
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$10              ; G5
+    ldx #$03
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$93              ; E5
+    ldx #$02
+    ldy #$78
+    jsr queue_tone
+    ldy #$1E
+    jsr queue_rest
+
+    lda #$4B              ; D5
+    ldx #$02
+    ldy #$A0
+    jsr queue_tone
+    ldy #$28
+    jsr queue_rest
+
+    lda #$0B              ; C5
+    ldx #$02
+    ldy #$F0
+    jsr queue_tone
+    rts
+
+play_normal_beep:
+    lda #$70              ; 880 Hz (low byte)
+    sta SOUND_FREQ_LO
+    lda #$03              ; 880 Hz (high byte)
+    sta SOUND_FREQ_HI
+    lda #$5A              ; 90 ms
+    sta SOUND_DUR_LO
+    lda #$00
+    sta SOUND_DUR_HI
+    lda #$D0              ; volume
+    sta SOUND_VOL
+    lda #$01              ; trigger beep
+    sta SOUND_CTRL
+    rts
+
+play_capture_beep:
+    lda captured_piece
+    and #$07
+    tax
+    lda capture_freq_lo,x
+    sta SOUND_FREQ_LO
+    lda capture_freq_hi,x
+    sta SOUND_FREQ_HI
+    lda capture_dur,x
+    sta SOUND_DUR_LO
+    lda #$00
+    sta SOUND_DUR_HI
+    lda #$F0              ; louder volume
+    sta SOUND_VOL
+    lda #$01              ; trigger beep
+    sta SOUND_CTRL
+    rts
+
 apply_player_move:
     ldx #$00
     jsr parse_square_at
@@ -516,10 +703,16 @@ apply_player_move:
     beq player_move_invalid
 
     ldy player_dst
+    lda #$00
+    sta tmp5
+    sta captured_piece
     lda board,y
     beq player_move_commit
+    sta captured_piece
     bit side
     bne player_move_invalid
+    lda #$01
+    sta tmp5
 
 player_move_commit:
     lda player_src
@@ -536,6 +729,7 @@ player_move_commit:
     sec
     sbc side
     sta side
+    jsr play_move_beep
     sec
     rts
 
@@ -966,6 +1160,16 @@ end_eval:
     jmp return
 
 engine_move:
+    lda #$00
+    sta tmp5
+    sta captured_piece
+    ldy bestdst
+    lda board,y
+    beq engine_move_apply
+    sta captured_piece
+    lda #$01
+    sta tmp5
+engine_move_apply:
     lda bestsrc
     sta engine_last_src
     lda bestdst
@@ -980,6 +1184,7 @@ engine_move:
     sec
     sbc side
     sta side
+    jsr play_move_beep
     rts
 
 sq_loop:
