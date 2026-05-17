@@ -8,6 +8,7 @@ A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an in
 ## Highlights
 
 - MOS 6502 CPU core (all 151 official opcodes)
+- Integrated Klaus Dormann 6502 functional CPU test in the default test pipeline
 - Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap display, and a simple SOUND device
 - SDL2 display backend for VIC text/bitmap rendering
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
@@ -39,6 +40,8 @@ Run tests:
 ```sh
 make check
 ```
+
+`make check` includes the Klaus Dormann 6502 functional test (`test-klaus-6502`) and downloads the upstream binary automatically on first run.
 
 ## Runtime Options
 
