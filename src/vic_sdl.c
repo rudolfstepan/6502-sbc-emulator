@@ -14,11 +14,24 @@
 #define WINDOW_WIDTH  (SCREEN_COLS * CHAR_WIDTH * SCREEN_SCALE)
 #define WINDOW_HEIGHT (SCREEN_ROWS * CHAR_HEIGHT * SCREEN_SCALE)
 
-// Colors (C64-inspired)
-#define COLOR_BG    0x0000AA    // Blue background (text mode)
-#define COLOR_FG    0x8888FF    // Light blue foreground (text mode)
-#define COLOR_BLACK 0x000000    // Black (bitmap mode)
-#define COLOR_WHITE 0xFFFFFF    // White (bitmap mode)
+static const uint32_t vic_palette[16] = {
+    0xFF000000, // 0 black
+    0xFFFFFFFF, // 1 white
+    0xFF813338, // 2 red
+    0xFF75CEC8, // 3 cyan
+    0xFF8E3C97, // 4 purple
+    0xFF56AC4D, // 5 green
+    0xFF2E2C9B, // 6 blue
+    0xFFEDF171, // 7 yellow
+    0xFF8E5029, // 8 orange
+    0xFF553800, // 9 brown
+    0xFFC46C71, // 10 light red
+    0xFF4A4A4A, // 11 dark gray
+    0xFF7B7B7B, // 12 gray
+    0xFFA9FF9F, // 13 light green
+    0xFF706DEB, // 14 light blue
+    0xFFB2B2B2  // 15 light gray
+};
 
 // SDL objects
 static SDL_Window *window = NULL;
@@ -26,8 +39,54 @@ static SDL_Renderer *renderer = NULL;
 static SDL_Texture *texture = NULL;
 static uint32_t *framebuffer = NULL;
 static bool sdl_initialized = false;
+static bool screen_edit_mode = false;
 
 #define CURSOR_BLINK_MS 500
+
+static bool push_key_sequence(VIA6522 *via, const uint8_t *bytes, size_t len) {
+    for (size_t i = 0; i < len; i++) {
+        if (!via_keyboard_push(via, bytes[i])) {
+            return false;
+        }
+    }
+    return true;
+}
+
+static bool inject_current_screen_line(VIA6522 *via) {
+    uint8_t cursor_x = 0;
+    uint8_t cursor_y = 0;
+    uint8_t line[SCREEN_COLS + 2];
+    size_t len = 0;
+    size_t trimmed_len;
+
+    vic_get_cursor(&cursor_x, &cursor_y);
+    (void)cursor_x;
+
+    for (int col = 0; col < SCREEN_COLS; col++) {
+        line[len++] = vic_read_video_ram((uint16_t)(cursor_y * SCREEN_COLS + col));
+    }
+
+    trimmed_len = len;
+    while (trimmed_len > 0 && line[trimmed_len - 1] == ' ') {
+        trimmed_len--;
+    }
+
+    if (trimmed_len == 0) {
+        uint8_t cr = '\r';
+        return push_key_sequence(via, &cr, 1);
+    }
+
+    /* Move to a fresh input line first, then retype the recalled line and execute it. */
+    line[trimmed_len++] = '\r';
+    if (!push_key_sequence(via, line + (trimmed_len - 1), 1)) {
+        return false;
+    }
+    if (!push_key_sequence(via, line, trimmed_len - 1)) {
+        return false;
+    }
+    line[0] = '\r';
+    return push_key_sequence(via, line, 1);
+}
 
 // Initialize SDL2 rendering
 int vic_sdl_init(void) {
@@ -140,8 +199,10 @@ void vic_sdl_shutdown(void) {
 // Render a single character to the framebuffer
 static void render_char(uint8_t char_code, int x, int y, bool invert) {
     const uint8_t *pattern = vic_get_char_pattern(char_code);
-    uint32_t fg = invert ? COLOR_BG : COLOR_FG;
-    uint32_t bg = invert ? COLOR_FG : COLOR_BG;
+    uint32_t text_color = vic_palette[vic_get_text_color() & 0x0F];
+    uint32_t background_color = vic_palette[vic_get_background_color() & 0x0F];
+    uint32_t fg = invert ? background_color : text_color;
+    uint32_t bg = invert ? text_color : background_color;
     
     // Render each pixel of the 8x8 character
     for (int py = 0; py < CHAR_HEIGHT; py++) {
@@ -173,13 +234,15 @@ void vic_sdl_render(void) {
         return;
     }
     
-    // Clear framebuffer
-    memset(framebuffer, 0, WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
-    
     // Check graphics mode
     uint8_t gfx_mode = vic_get_graphics_mode();
     
     if (gfx_mode == 0) {
+        uint32_t background = vic_palette[vic_get_background_color() & 0x0F];
+        for (int i = 0; i < WINDOW_WIDTH * WINDOW_HEIGHT; i++) {
+            framebuffer[i] = background;
+        }
+
         // Text mode: 40x25 characters
         uint8_t cursor_x = 0;
         uint8_t cursor_y = 0;
@@ -194,6 +257,8 @@ void vic_sdl_render(void) {
             }
         }
     } else {
+        memset(framebuffer, 0, WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
+
         // Bitmap mode: 320x200 pixels
         for (int y = 0; y < 200; y++) {
             for (int x = 0; x < 320; x++) {
@@ -208,7 +273,9 @@ void vic_sdl_render(void) {
                 int screen_x = x * 2;
                 int screen_y = y * 2;
                 
-                uint32_t color = pixel_on ? COLOR_WHITE : COLOR_BLACK;
+                uint32_t color = pixel_on
+                    ? vic_palette[vic_get_text_color() & 0x0F]
+                    : vic_palette[vic_get_background_color() & 0x0F];
                 
                 // Draw 2x2 block
                 for (int dy = 0; dy < 2; dy++) {
@@ -253,7 +320,11 @@ bool vic_sdl_handle_events(void) {
                     uint8_t ascii = (uint8_t)event.text.text[0];
                     // Only accept printable ASCII (0x20-0x7E)
                     if (ascii >= 0x20 && ascii <= 0x7E) {
-                        via_keyboard_push(via, ascii);
+                        if (screen_edit_mode) {
+                            vic_write_char((char)ascii);
+                        } else {
+                            via_keyboard_push(via, ascii);
+                        }
                     }
                 }
                 break;
@@ -278,6 +349,7 @@ bool vic_sdl_handle_events(void) {
                             vic_get_cursor(&cursor_x, &cursor_y);
                             if (cursor_x > 0) {
                                 vic_set_cursor((uint8_t)(cursor_x - 1), cursor_y);
+                                screen_edit_mode = true;
                             }
                             break;
                         }
@@ -287,6 +359,7 @@ bool vic_sdl_handle_events(void) {
                             vic_get_cursor(&cursor_x, &cursor_y);
                             if (cursor_x + 1 < SCREEN_COLS) {
                                 vic_set_cursor((uint8_t)(cursor_x + 1), cursor_y);
+                                screen_edit_mode = true;
                             }
                             break;
                         }
@@ -296,6 +369,7 @@ bool vic_sdl_handle_events(void) {
                             vic_get_cursor(&cursor_x, &cursor_y);
                             if (cursor_y > 0) {
                                 vic_set_cursor(cursor_x, (uint8_t)(cursor_y - 1));
+                                screen_edit_mode = true;
                             }
                             break;
                         }
@@ -305,15 +379,25 @@ bool vic_sdl_handle_events(void) {
                             vic_get_cursor(&cursor_x, &cursor_y);
                             if (cursor_y + 1 < SCREEN_ROWS) {
                                 vic_set_cursor(cursor_x, (uint8_t)(cursor_y + 1));
+                                screen_edit_mode = true;
                             }
                             break;
                         }
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER:
-                            ascii = '\r';  // Carriage return
+                            if (screen_edit_mode) {
+                                inject_current_screen_line(via);
+                                screen_edit_mode = false;
+                            } else {
+                                ascii = '\r';  // Carriage return
+                            }
                             break;
                         case SDLK_BACKSPACE:
-                            ascii = '\b';  // Backspace
+                            if (screen_edit_mode) {
+                                vic_write_char('\b');
+                            } else {
+                                ascii = '\b';  // Backspace
+                            }
                             break;
                         default:
                             break;

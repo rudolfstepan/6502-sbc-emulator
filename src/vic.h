@@ -45,6 +45,12 @@ void vic_set_graphics_mode(uint8_t mode);
 void vic_set_cursor(uint8_t x, uint8_t y);
 void vic_get_cursor(uint8_t* x, uint8_t* y);
 
+// Text-mode color control
+void vic_set_text_color(uint8_t color);
+uint8_t vic_get_text_color(void);
+void vic_set_background_color(uint8_t color);
+uint8_t vic_get_background_color(void);
+
 // Rendering
 void vic_render_screen();
 

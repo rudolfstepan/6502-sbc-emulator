@@ -83,6 +83,13 @@ patch_once(
     '.ifdef SBC6502\n.include "sbc6502_loadsave.s"\n.endif\n',
 )
 
+replace_once(
+    src / "token.s",
+    '\t\tkeyword_rts "NEW", NEW\n',
+    '\t\tkeyword_rts "CLS", CLS\n'
+    '\t\tkeyword_rts "NEW", NEW\n',
+)
+
 patch_once(
     src / "header.s",
     '.ifdef W65C816SXB\n; Disable emulation mode (is left on from the monitor)\n.setcpu "65816"\n        SEC ;set carry for emulation mode\n        XCE ;go into emulation mode\n.setcpu "65C02"\n        jsr INITUSBSERIAL\n\n        ; Add a small delay to allow monitor to connect the terminal after\n        ; starting execution\n        ldy #0\n        ldx #0\n@loop:\n        dex\n        bne @loop\n        dey\n        bne @loop\n        jmp COLD_START\n.endif\n',
@@ -158,6 +165,12 @@ replace_once(
     src / "init.s",
     ".else\n        ldx     #<RAMSTART2\n        ldy     #>RAMSTART2\n.endif\n        stx     TXTTAB\n",
     ".else\nSBC6502_INIT_DONE:\n        ldx     #<RAMSTART2\n        ldy     #>RAMSTART2\n.endif\n        stx     TXTTAB\n",
+)
+
+replace_once(
+    src / "init.s",
+    "  .else\n        .byte   CR,LF,CR,LF\n  .endif\n",
+    "  .else\n        .byte   CR,LF\n  .endif\n",
 )
 PY
 

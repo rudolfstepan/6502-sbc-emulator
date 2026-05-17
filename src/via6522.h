@@ -53,7 +53,7 @@
 #define VIA_IRQ_ANY (1 << 7)
 
 /* Keyboard buffer size */
-#define VIA_KB_BUFFER_SIZE 16
+#define VIA_KB_BUFFER_SIZE 128
 
 typedef struct {
     uint8_t  orb, ora;         /* output registers */
