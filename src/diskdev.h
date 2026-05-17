@@ -2,19 +2,22 @@
 #include <stdint.h>
 #include "bus.h"
 
-#define DISK_REG_CMD      0x00
-#define DISK_REG_STATUS   0x01
-#define DISK_REG_ADDR_LO  0x02
-#define DISK_REG_ADDR_HI  0x03
-#define DISK_REG_LEN_LO   0x04
-#define DISK_REG_LEN_HI   0x05
-#define DISK_REG_ACT_LO   0x06
-#define DISK_REG_ACT_HI   0x07
-#define DISK_REG_ERR      0x08
+#define DISK_REG_CMD       0x00
+#define DISK_REG_STATUS    0x01
+#define DISK_REG_ADDR_LO   0x02
+#define DISK_REG_ADDR_HI   0x03
+#define DISK_REG_LEN_LO    0x04
+#define DISK_REG_LEN_HI    0x05
+#define DISK_REG_ACT_LO    0x06
+#define DISK_REG_ACT_HI    0x07
+#define DISK_REG_ERR       0x08
+#define DISK_REG_FNAME_IDX 0x09
+#define DISK_REG_FNAME_CHR 0x0A
 
-#define DISK_CMD_NONE     0x00
-#define DISK_CMD_SAVE     0x01
-#define DISK_CMD_LOAD     0x02
+#define DISK_CMD_NONE      0x00
+#define DISK_CMD_SAVE      0x01
+#define DISK_CMD_LOAD      0x02
+#define DISK_CMD_DIR       0x03
 
 #define DISK_ST_BUSY      0x01
 #define DISK_ST_OK        0x02
@@ -24,6 +27,8 @@
 typedef struct {
     Bus      *bus;
     char      root_path[256];
+    char      filename[32];      // Current filename
+    uint8_t   fname_idx;          // Index for filename access
     uint16_t  addr;
     uint16_t  len;
     uint16_t  actual;

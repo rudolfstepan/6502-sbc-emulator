@@ -15,8 +15,10 @@
 #define WINDOW_HEIGHT (SCREEN_ROWS * CHAR_HEIGHT * SCREEN_SCALE)
 
 // Colors (C64-inspired)
-#define COLOR_BG 0x0000AA       // Blue background
-#define COLOR_FG 0x8888FF       // Light blue foreground
+#define COLOR_BG    0x0000AA    // Blue background (text mode)
+#define COLOR_FG    0x8888FF    // Light blue foreground (text mode)
+#define COLOR_BLACK 0x000000    // Black (bitmap mode)
+#define COLOR_WHITE 0xFFFFFF    // White (bitmap mode)
 
 // SDL objects
 static SDL_Window *window = NULL;
@@ -170,11 +172,45 @@ void vic_sdl_render(void) {
     // Clear framebuffer
     memset(framebuffer, 0, WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
     
-    // Render each character from video RAM
-    for (int row = 0; row < SCREEN_ROWS; row++) {
-        for (int col = 0; col < SCREEN_COLS; col++) {
-            uint8_t char_code = vic_read_video_ram(row * SCREEN_COLS + col);
-            render_char(char_code, col, row);
+    // Check graphics mode
+    uint8_t gfx_mode = vic_get_graphics_mode();
+    
+    if (gfx_mode == 0) {
+        // Text mode: 40x25 characters
+        for (int row = 0; row < SCREEN_ROWS; row++) {
+            for (int col = 0; col < SCREEN_COLS; col++) {
+                uint8_t char_code = vic_read_video_ram(row * SCREEN_COLS + col);
+                render_char(char_code, col, row);
+            }
+        }
+    } else {
+        // Bitmap mode: 320x200 pixels
+        for (int y = 0; y < 200; y++) {
+            for (int x = 0; x < 320; x++) {
+                // Calculate byte and bit position
+                uint16_t byte_offset = y * 40 + x / 8;
+                uint8_t bit_mask = 0x01 << (x & 7);  // LSB-first
+                
+                uint8_t pixel_byte = vic_read_bitmap_ram(byte_offset);
+                bool pixel_on = (pixel_byte & bit_mask) != 0;
+                
+                // Scale to window size (2x2 pixels per bitmap pixel)
+                int screen_x = x * 2;
+                int screen_y = y * 2;
+                
+                uint32_t color = pixel_on ? COLOR_WHITE : COLOR_BLACK;
+                
+                // Draw 2x2 block
+                for (int dy = 0; dy < 2; dy++) {
+                    for (int dx = 0; dx < 2; dx++) {
+                        int px = screen_x + dx;
+                        int py = screen_y + dy;
+                        if (px < WINDOW_WIDTH && py < WINDOW_HEIGHT) {
+                            framebuffer[py * WINDOW_WIDTH + px] = color;
+                        }
+                    }
+                }
+            }
         }
     }
     

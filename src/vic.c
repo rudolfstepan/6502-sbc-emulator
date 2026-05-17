@@ -5,7 +5,10 @@
 #include <stdio.h>
 
 // Video RAM size and base address
-#define VIDEO_RAM_SIZE 2048
+#define VIDEO_RAM_SIZE 2048   // 2KB for text mode
+#define TEXT_RAM_SIZE 2048    // 2KB for 40x25 text mode
+#define BITMAP_RAM_SIZE 8000  // 8000 bytes for 320x200 bitmap
+
 #define VIDEO_RAM_BASE 0x8000
 
 // Character ROM base address
@@ -15,12 +18,18 @@
 #define VIC_SCREEN_COLS 40
 #define VIC_SCREEN_ROWS 25
 
+// VIC Bitmap mode
+#define VIC_BITMAP_WIDTH 320
+#define VIC_BITMAP_HEIGHT 200
+
 // Video RAM (dual-port RAM)
-static uint8_t video_ram[VIDEO_RAM_SIZE];
+static uint8_t video_ram[VIDEO_RAM_SIZE];    // Text mode: 2KB
+static uint8_t bitmap_ram[BITMAP_RAM_SIZE];  // Bitmap mode: 8000 bytes
 
 // VIC control registers
 static struct {
     uint8_t enabled;
+    uint8_t graphics_mode;  // 0=text, 1=bitmap
     uint16_t cursor_x;
     uint16_t cursor_y;
     uint8_t color;
@@ -142,9 +151,11 @@ static const uint8_t char_rom[256][8] = {
 void vic_init() {
     // Clear video RAM
     memset(video_ram, 0x20, VIDEO_RAM_SIZE);  // Fill with spaces
+    memset(bitmap_ram, 0x00, BITMAP_RAM_SIZE); // Clear bitmap RAM
     
     // Initialize VIC state
     vic_state.enabled = 1;
+    vic_state.graphics_mode = 0;  // Start in text mode
     vic_state.cursor_x = 0;
     vic_state.cursor_y = 0;
     vic_state.color = 0x0F;  // White on black
@@ -152,13 +163,13 @@ void vic_init() {
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
 }
 
-// Bus interface: read from VIC (video RAM mapped to bus)
+// Bus interface: read from VIC video RAM
 uint8_t vic_bus_read(void *dev, uint16_t offset) {
     (void)dev;  // Unused
     return vic_read_video_ram(offset);
 }
 
-// Bus interface: write to VIC (video RAM mapped to bus)
+// Bus interface: write to VIC video RAM
 void vic_bus_write(void *dev, uint16_t offset, uint8_t val) {
     (void)dev;  // Unused
     vic_write_video_ram(offset, val);
@@ -169,6 +180,47 @@ void vic_bus_tick(void *dev, uint32_t cycles) {
     (void)dev;    // Unused
     (void)cycles; // Unused for now
     // Could use this for vsync/refresh timing
+}
+
+// VIC register interface: read from VIC control registers
+uint8_t vic_reg_read(void *dev, uint16_t offset) {
+    (void)dev;  // Unused
+    
+    // Only register 0 is implemented (graphics mode control)
+    if (offset == 0) {
+        return vic_state.graphics_mode & 0x01;
+    }
+    
+    return 0;  // Other registers return 0
+}
+
+// VIC register interface: write to VIC control registers
+void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
+    (void)dev;  // Unused
+    
+    // Only register 0 is implemented (graphics mode control)
+    if (offset == 0) {
+        vic_state.graphics_mode = val & 0x01;  // Bit 0 = graphics mode (0=text, 1=bitmap)
+    }
+}
+
+// VIC bitmap RAM interface: read from bitmap RAM
+uint8_t vic_bitmap_read(void *dev, uint16_t offset) {
+    (void)dev;  // Unused
+    
+    if (offset < BITMAP_RAM_SIZE) {
+        return bitmap_ram[offset];
+    }
+    return 0;
+}
+
+// VIC bitmap RAM interface: write to bitmap RAM
+void vic_bitmap_write(void *dev, uint16_t offset, uint8_t val) {
+    (void)dev;  // Unused
+    
+    if (offset < BITMAP_RAM_SIZE) {
+        bitmap_ram[offset] = val;
+    }
 }
 
 // Write to video RAM (CPU access)
@@ -182,6 +234,14 @@ void vic_write_video_ram(uint16_t address, uint8_t data) {
 uint8_t vic_read_video_ram(uint16_t address) {
     if (address < VIDEO_RAM_SIZE) {
         return video_ram[address];
+    }
+    return 0;
+}
+
+// Read from bitmap RAM (for rendering)
+uint8_t vic_read_bitmap_ram(uint16_t address) {
+    if (address < BITMAP_RAM_SIZE) {
+        return bitmap_ram[address];
     }
     return 0;
 }
@@ -238,7 +298,8 @@ void vic_write_string(const char* str) {
 
 // Clear screen
 void vic_clear_screen() {
-    memset(video_ram, 0x20, VIDEO_RAM_SIZE);  // Fill with spaces
+    // Clear text RAM area (first 2KB)
+    memset(video_ram, 0x20, TEXT_RAM_SIZE);  // Fill with spaces
     vic_state.cursor_x = 0;
     vic_state.cursor_y = 0;
 }
@@ -288,4 +349,14 @@ void vic_render_screen() {
         }
         printf("==================\n");
     }
+}
+
+// Get current graphics mode
+uint8_t vic_get_graphics_mode(void) {
+    return vic_state.graphics_mode;
+}
+
+// Set graphics mode
+void vic_set_graphics_mode(uint8_t mode) {
+    vic_state.graphics_mode = mode & 0x01;
 }
