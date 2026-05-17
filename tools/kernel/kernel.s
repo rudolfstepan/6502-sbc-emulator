@@ -571,7 +571,6 @@ dir_err_str:
 welcome_str:
     .byte $0D
     .byte " ***  6502 SBC - 32K RAM SYSTEM  ***", $0D
-    .byte $0D
     .byte " KERNEL V1.0", $0D
     .byte $0D
     .byte 0

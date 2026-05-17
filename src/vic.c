@@ -32,7 +32,8 @@ static struct {
     uint8_t graphics_mode;  // 0=text, 1=bitmap
     uint16_t cursor_x;
     uint16_t cursor_y;
-    uint8_t color;
+    uint8_t text_color;
+    uint8_t background_color;
 } vic_state;
 
 // Character ROM (8x8 pixel font for 256 ASCII characters)
@@ -158,7 +159,8 @@ void vic_init() {
     vic_state.graphics_mode = 0;  // Start in text mode
     vic_state.cursor_x = 0;
     vic_state.cursor_y = 0;
-    vic_state.color = 0x0F;  // White on black
+    vic_state.text_color = 15;        // brighter startup text
+    vic_state.background_color = 6;   // C64-style blue
     
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
 }
@@ -193,6 +195,10 @@ uint8_t vic_reg_read(void *dev, uint16_t offset) {
             return (uint8_t)vic_state.cursor_x;
         case 2:
             return (uint8_t)vic_state.cursor_y;
+        case 3:
+            return vic_state.text_color & 0x0F;
+        case 4:
+            return vic_state.background_color & 0x0F;
         default:
             return 0;
     }
@@ -211,6 +217,12 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
             break;
         case 2:
             vic_state.cursor_y = val;
+            break;
+        case 3:
+            vic_state.text_color = val & 0x0F;
+            break;
+        case 4:
+            vic_state.background_color = val & 0x0F;
             break;
         default:
             break;
@@ -340,6 +352,22 @@ void vic_set_cursor(uint8_t x, uint8_t y) {
 void vic_get_cursor(uint8_t* x, uint8_t* y) {
     if (x) *x = vic_state.cursor_x;
     if (y) *y = vic_state.cursor_y;
+}
+
+void vic_set_text_color(uint8_t color) {
+    vic_state.text_color = color & 0x0F;
+}
+
+uint8_t vic_get_text_color(void) {
+    return vic_state.text_color & 0x0F;
+}
+
+void vic_set_background_color(uint8_t color) {
+    vic_state.background_color = color & 0x0F;
+}
+
+uint8_t vic_get_background_color(void) {
+    return vic_state.background_color & 0x0F;
 }
 
 // Render the screen (called periodically)
