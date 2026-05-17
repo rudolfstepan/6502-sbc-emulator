@@ -19,6 +19,7 @@
 #include "vic.h"
 #include "vic_sdl.h"
 #include "keyboard.h"
+#include "soundchip.h"
 
 /* ── Global emulator state ────────────────────────────────── */
 static volatile int g_sigint = 0;
@@ -72,6 +73,7 @@ static void usage(const char *prog)
         "  $8800-$880F  VIA 6522\n"
         "  $8810-$8813  UART 6551 (ACIA)\n"
         "  $8820-$882F  DISK MVP\n"
+        "  $8830-$8835  SOUND (freq/duration/volume/control)\n"
         "  $C000-$FFFF  ROM  (16KB)\n",
         prog);
 }
@@ -151,6 +153,10 @@ int main(int argc, char *argv[])
     bus_register(&bus, "VIC-BITMAP", NULL,
                  0x9010, 8000,  /* Bitmap RAM at $9010-$AF4F (320x200 pixels) */
                  vic_bitmap_read, vic_bitmap_write, NULL);
+
+    bus_register(&bus, "SOUND", NULL,
+                 0x8830, 6,
+                 soundchip_bus_read, soundchip_bus_write, NULL);
 
     for (int i = 0; i < cfg.num_devs; i++) {
         DevConfig *dc = &cfg.devs[i];
@@ -254,6 +260,9 @@ int main(int argc, char *argv[])
     } else {
         printf("SDL2 display not available, using text output.\n");
     }
+
+    /* Startup chirp so audio path can be verified quickly. */
+    soundchip_beep(880.0f, 100);
 
     /* ── Init monitor ─────────────────────────────────────── */
     Monitor mon;
@@ -364,6 +373,7 @@ done:
            (unsigned long long)cpu.cycles);
 
     /* cleanup */
+    bus_shutdown();
     vic_sdl_shutdown();
     for (int i = 0; i < ns; i++) sram_free(&srams[i]);
     for (int i = 0; i < nr; i++) rom_free(&roms[i]);
