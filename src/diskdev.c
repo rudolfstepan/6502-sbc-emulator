@@ -3,6 +3,7 @@
 #include <string.h>
 #include <sys/stat.h>
 #include <sys/types.h>
+#include <dirent.h>
 #include <errno.h>
 
 static void set_status(DiskDev *d, uint8_t st, uint8_t err)
@@ -31,7 +32,8 @@ static int mkdir_p(const char *path)
 
 static int build_target_path(const DiskDev *d, char *out, size_t out_sz)
 {
-    int n = snprintf(out, out_sz, "%s/basic.prg", d->root_path);
+    const char *fname = d->filename[0] ? d->filename : "basic.prg";
+    int n = snprintf(out, out_sz, "%s/%s", d->root_path, fname);
     return (n > 0 && (size_t)n < out_sz) ? 0 : -1;
 }
 
@@ -99,6 +101,56 @@ static void execute_load(DiskDev *d)
     fclose(f);
 }
 
+static void execute_dir(DiskDev *d)
+{
+    DIR *dir = opendir(d->root_path);
+    if (!dir) {
+        set_status(d, DISK_ST_ERR, 6);
+        return;
+    }
+
+    d->actual = 0;
+    uint16_t offset = 0;
+
+    struct dirent *entry;
+    while ((entry = readdir(dir)) != NULL) {
+        // Skip . and ..
+        if (strcmp(entry->d_name, ".") == 0 || strcmp(entry->d_name, "..") == 0) {
+            continue;
+        }
+        
+        // Skip hidden files
+        if (entry->d_name[0] == '.') {
+            continue;
+        }
+
+        // Write filename + newline to memory
+        const char *name = entry->d_name;
+        size_t len = strlen(name);
+        
+        for (size_t i = 0; i < len && offset < d->len; i++) {
+            bus_write(d->bus, (uint16_t)(d->addr + offset), (uint8_t)name[i]);
+            offset++;
+        }
+        
+        // Add newline
+        if (offset < d->len) {
+            bus_write(d->bus, (uint16_t)(d->addr + offset), 0x0D);
+            offset++;
+        }
+    }
+
+    // Null-terminate
+    if (offset < d->len) {
+        bus_write(d->bus, (uint16_t)(d->addr + offset), 0x00);
+        offset++;
+    }
+
+    closedir(dir);
+    d->actual = offset;
+    set_status(d, DISK_ST_OK, 0);
+}
+
 int diskdev_init(DiskDev *d, Bus *bus, const char *root_path)
 {
     memset(d, 0, sizeof(*d));
@@ -122,6 +174,12 @@ uint8_t diskdev_read(void *dev, uint16_t offset)
     case DISK_REG_ACT_LO:  return (uint8_t)(d->actual & 0xFF);
     case DISK_REG_ACT_HI:  return (uint8_t)(d->actual >> 8);
     case DISK_REG_ERR:     return d->err;
+    case DISK_REG_FNAME_IDX: return d->fname_idx;
+    case DISK_REG_FNAME_CHR:
+        if (d->fname_idx < sizeof(d->filename)) {
+            return (uint8_t)d->filename[d->fname_idx];
+        }
+        return 0;
     default:               return 0;
     }
 }
@@ -133,8 +191,16 @@ void diskdev_write(void *dev, uint16_t offset, uint8_t val)
     case DISK_REG_CMD:
         d->status = 0;
         d->err = 0;
+        // Clear filename if not set (will use default)
+        if (d->filename[0] == 0) {
+            // Filename will be handled by build_target_path
+        }
         if (val == DISK_CMD_SAVE) execute_save(d);
         else if (val == DISK_CMD_LOAD) execute_load(d);
+        else if (val == DISK_CMD_DIR) execute_dir(d);
+        // Clear filename after command for next operation
+        d->filename[0] = 0;
+        d->fname_idx = 0;
         break;
     case DISK_REG_ADDR_LO:
         d->addr = (uint16_t)((d->addr & 0xFF00) | val);
@@ -147,6 +213,16 @@ void diskdev_write(void *dev, uint16_t offset, uint8_t val)
         break;
     case DISK_REG_LEN_HI:
         d->len = (uint16_t)((d->len & 0x00FF) | ((uint16_t)val << 8));
+        break;
+    case DISK_REG_FNAME_IDX:
+        d->fname_idx = val;
+        break;
+    case DISK_REG_FNAME_CHR:
+        if (d->fname_idx < sizeof(d->filename) - 1) {
+            d->filename[d->fname_idx] = (char)val;
+            // Auto null-terminate on index increment
+            d->filename[d->fname_idx + 1] = 0;
+        }
         break;
     default:
         break;
