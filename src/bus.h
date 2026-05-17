@@ -3,6 +3,7 @@
 #include <stddef.h>
 
 #define BUS_MAX_DEVICES 16
+#define BUS_PAGE_COUNT 256
 
 typedef uint8_t (*bus_read_fn)(void *dev, uint16_t offset);
 typedef void    (*bus_write_fn)(void *dev, uint16_t offset, uint8_t val);
@@ -16,11 +17,16 @@ typedef struct {
     bus_read_fn  read;
     bus_write_fn write;
     bus_tick_fn  tick;   /* optional, may be NULL */
+    uint8_t     *linear_data; /* optional direct byte-addressable backing */
+    uint8_t      linear_flags;
 } BusDevice;
+
+#define BUS_LINEAR_WRITABLE 0x01u
 
 typedef struct {
     BusDevice devices[BUS_MAX_DEVICES];
     int       num_devices;
+    BusDevice *page_map[BUS_PAGE_COUNT];
 } Bus;
 
 void    bus_init(Bus *bus);

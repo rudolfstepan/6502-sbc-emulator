@@ -67,6 +67,16 @@ The monitor supports:
 - breakpoints (`b`, `bl`, `bc`)
 - stepping (`s`) and continue (`c`)
 
+## CPU Correctness Validation
+
+The project includes Klaus Dormann's 6502 functional test as an integrated regression check.
+
+- Make target: `test-klaus-6502`
+- Included in: `make check`
+- Test binary source: downloaded from the upstream Klaus2m5 repository into the local build directory
+
+This provides broad opcode/flag behavior validation in addition to emulator integration tests.
+
 ## ROM Workflows
 
 - `sbc.ini`: split ROM setup (`kernel.rom` + `msbasic.rom`)

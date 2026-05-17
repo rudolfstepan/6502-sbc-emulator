@@ -93,7 +93,32 @@ static void do_adc(CPU6502 *cpu, uint8_t m)
 
 static void do_sbc(CPU6502 *cpu, uint8_t m)
 {
-    do_adc(cpu, (uint8_t)(~m));
+    uint8_t a = cpu->A;
+    uint8_t c = TST_FLAG(FLAG_C) ? 1u : 0u;
+    uint16_t diff = (uint16_t)a - (uint16_t)m - (uint16_t)(1u - c);
+    uint8_t bres = (uint8_t)diff;
+
+    /* Overflow and NZ follow the binary subtraction result. */
+    if (((a ^ bres) & (a ^ m) & 0x80) != 0) SET_FLAG(FLAG_V); else CLR_FLAG(FLAG_V);
+    set_nz(cpu, bres);
+    if (diff < 0x100) SET_FLAG(FLAG_C); else CLR_FLAG(FLAG_C); /* no borrow */
+
+    if (cpu->P & FLAG_D) {
+        int16_t lo = (int16_t)(a & 0x0F) - (int16_t)(m & 0x0F) - (int16_t)(1u - c);
+        int16_t hi = (int16_t)(a >> 4) - (int16_t)(m >> 4);
+
+        if (lo < 0) {
+            lo -= 6;
+            hi -= 1;
+        }
+        if (hi < 0) {
+            hi -= 6;
+        }
+
+        cpu->A = (uint8_t)(((uint8_t)hi << 4) | ((uint8_t)lo & 0x0F));
+    } else {
+        cpu->A = bres;
+    }
 }
 
 /* ── CMP / CPX / CPY ─────────────────────────────────────── */

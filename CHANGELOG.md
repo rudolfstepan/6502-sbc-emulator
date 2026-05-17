@@ -2,6 +2,10 @@
 
 All notable changes to this project will be documented in this file.
 
+## Unreleased
+
+- Added and documented integration of Klaus Dormann's 6502 functional test in the default `make check` pipeline.
+
 ## 1.1.0 - 2026-05-17
 
 - Refreshed project documentation for current architecture and runtime behavior.
