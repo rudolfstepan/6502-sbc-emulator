@@ -130,7 +130,18 @@ RUN
 1. **Keine Ctrl+C Unterbrechung**: Programme können nicht mit Ctrl+C gestoppt werden (nur durch Schließen des Fensters)
 2. **40-Zeichen-Breite**: Zeilen werden nach 40 Zeichen umgebrochen
 3. **Auto-Scroll**: Bildschirm scrollt automatisch nach unten
-4. **Keine Cursor-Tasten**: Pfeiltasten werden noch nicht unterstützt
+4. **VIC-POKE-Liste**: Farben und Cursor werden ueber `$9000-$9004` gesteuert, siehe [docs/VIC.md](docs/VIC.md)
+
+## SBC6502 Erweiterungen
+
+- `CLS` loescht den Bildschirm und setzt den Cursor auf `(0,0)`.
+
+Beispiel:
+
+```basic
+PRINT "HELLO"
+CLS
+```
 
 ## Technische Details
 

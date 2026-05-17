@@ -23,7 +23,7 @@ Der VIC (Video Interface Controller) ist ein einfacher Text-Modus-Videochip für
 ### Bildschirm-Modus
 - **Text-Modus**: 40 Spalten × 25 Zeilen
 - **Gesamt**: 1000 Zeichen pro Bildschirm
-- **Farbunterstützung**: Vorbereitet (aktuell nicht implementiert)
+- **Farbunterstützung**: 16 Farben ueber VIC-Register und `POKE`/`PEEK`
 
 ## Memory Map
 
@@ -138,6 +138,57 @@ LDA #$20        ; Space
 LDX #$00
 clear_loop:
     STA VIC_BASE,X
+
+### VIC-Register fuer BASIC (`POKE` / `PEEK`)
+
+Der Registerblock liegt bei `$9000-$900F`.
+
+```
+Hex      Dezimal  Bedeutung
+-----------------------------------------------
+$9000    36864    Grafikmodus (0 = Text, 1 = Bitmap)
+$9001    36865    Cursor X (0-39)
+$9002    36866    Cursor Y (0-24)
+$9003    36867    Textfarbe (0-15)
+$9004    36868    Hintergrundfarbe (0-15)
+```
+
+### Farbwerte
+
+```
+0 schwarz       8 orange
+1 weiss         9 braun
+2 rot          10 hellrot
+3 cyan         11 dunkelgrau
+4 violett      12 grau
+5 gruen        13 hellgruen
+6 blau         14 hellblau
+7 gelb         15 hellgrau
+```
+
+### BASIC-Beispiele
+
+```basic
+REM Textmodus
+POKE 36864,0
+
+REM Farben setzen
+POKE 36867,1
+POKE 36868,6
+
+REM Cursor setzen
+POKE 36865,10
+POKE 36866,5
+
+REM Cursor lesen
+PRINT PEEK(36865),PEEK(36866)
+
+REM Farben lesen
+PRINT PEEK(36867),PEEK(36868)
+
+REM Bitmapmodus
+POKE 36864,1
+```
     STA VIC_BASE+$100,X
     STA VIC_BASE+$200,X
     STA VIC_BASE+$300,X
