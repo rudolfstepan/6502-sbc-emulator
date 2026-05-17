@@ -20,6 +20,8 @@ UI_TEXT_ATTR     = $BF
 BORDER_ATTR      = $BC
 LIGHT_SQUARE_BG  = $F0
 DARK_SQUARE_BG   = $B0
+PLAYER_HL_BG     = $60
+ENGINE_HL_BG     = $80
 WHITE_PIECE_FG   = $01
 BLACK_PIECE_FG   = $00
 
@@ -48,6 +50,10 @@ tsrc:             .res 1
 tdst:             .res 1
 player_src:       .res 1
 player_dst:       .res 1
+player_last_src:  .res 1
+player_last_dst:  .res 1
+engine_last_src:  .res 1
+engine_last_dst:  .res 1
 input_buf:        .res 4
 input_len:        .res 1
 
@@ -173,6 +179,11 @@ copy_board:
     sta tsrc
     sta tdst
     sta input_len
+    lda #$ff
+    sta player_last_src
+    sta player_last_dst
+    sta engine_last_src
+    sta engine_last_dst
     lda #UI_TEXT_ATTR
     sta current_color
     lda #$08
@@ -341,13 +352,35 @@ light_square_attr:
     sta tmp6
     rts
 
+apply_move_highlight:
+    tya
+    cmp engine_last_src
+    beq apply_engine_highlight
+    cmp engine_last_dst
+    beq apply_engine_highlight
+    cmp player_last_src
+    beq apply_player_highlight
+    cmp player_last_dst
+    beq apply_player_highlight
+    rts
+apply_engine_highlight:
+    lda #ENGINE_HL_BG
+    sta tmp6
+    rts
+apply_player_highlight:
+    lda #PLAYER_HL_BG
+    sta tmp6
+    rts
+
 set_square_bg_attr:
     jsr compute_square_bg
+    jsr apply_move_highlight
     lda tmp6
     jmp set_draw_attr
 
 set_square_attr:
     jsr compute_square_bg
+    jsr apply_move_highlight
 square_piece_attr:
     lda board,y
     beq square_empty_attr
@@ -489,6 +522,10 @@ apply_player_move:
     bne player_move_invalid
 
 player_move_commit:
+    lda player_src
+    sta player_last_src
+    lda player_dst
+    sta player_last_dst
     ldy player_dst
     lda tmp3
     sta board,y
@@ -929,6 +966,10 @@ end_eval:
     jmp return
 
 engine_move:
+    lda bestsrc
+    sta engine_last_src
+    lda bestdst
+    sta engine_last_dst
     ldx bestsrc
     ldy bestdst
     lda board,x
