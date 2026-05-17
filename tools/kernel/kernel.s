@@ -14,9 +14,7 @@
 ;   $C018  JMP SETCURS     Set cursor  (X=col, Y=row)
 ;   $C01B  JMP SCROLL      Scroll screen up one line
 ;
-; Zero page (kernel uses $F0-$F7 -- MS BASIC uses only $00-$8B):
-;   $F0  CURSOR_X   cursor column  (0-39)
-;   $F1  CURSOR_Y   cursor row     (0-24)
+; Zero page (kernel uses $F2-$F7 -- MS BASIC uses only $00-$8B):
 ;   $F2  SCRPTR_LO  screen pointer, low byte
 ;   $F3  SCRPTR_HI  screen pointer, high byte
 ;   $F4  TMPPTR_LO  temp/scroll pointer, low byte
@@ -49,11 +47,15 @@ DISK_LEN_HI = $8825
 DISK_ACT_LO = $8826
 DISK_ACT_HI = $8827
 
+VIC_GFX_MODE = $9000
+VIC_CURSOR_X = $9001
+VIC_CURSOR_Y = $9002
+
 DISK_CMD_DIR = $03
 DISK_ST_OK   = $02
 
-CURSOR_X    = $F0
-CURSOR_Y    = $F1
+CURSOR_X    = VIC_CURSOR_X
+CURSOR_Y    = VIC_CURSOR_Y
 SCRPTR_LO   = $F2
 SCRPTR_HI   = $F3
 TMPPTR_LO   = $F4
