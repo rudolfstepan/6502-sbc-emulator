@@ -16,8 +16,9 @@ USR := $000A
 ; constants
 STACK_TOP       := $FC
 SPACE_FOR_GOSUB := $33
-WIDTH           := 72
-WIDTH2          := 56
+WIDTH           := 40
+WIDTH2          := 28
 
 ; memory layout
 RAMSTART2 := $0300
+

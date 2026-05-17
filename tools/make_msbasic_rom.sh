@@ -19,6 +19,9 @@ else
   git -C "$SRC_DIR" pull --ff-only
 fi
 
+# Reset source files to pristine state so patches apply cleanly
+git -C "$SRC_DIR" checkout -- header.s defines.s extra.s iscntc.s loadsave.s init.s 2>/dev/null || true
+
 cp "$PORT_DIR/defines_sbc6502.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502_extra.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502_iscntc.s" "$SRC_DIR/"
@@ -30,6 +33,14 @@ from pathlib import Path
 import sys
 
 src = Path(sys.argv[1])
+
+def replace_once(path: Path, old: str, new: str):
+    t = path.read_text()
+    if new.strip() in t:
+        return  # already patched
+    if old not in t:
+        raise RuntimeError(f"needle not found in {path}: {repr(old[:60])}")
+    path.write_text(t.replace(old, new, 1))
 
 def patch_once(path: Path, needle: str, add: str):
     t = path.read_text()
@@ -77,6 +88,77 @@ patch_once(
     '.ifdef W65C816SXB\n; Disable emulation mode (is left on from the monitor)\n.setcpu "65816"\n        SEC ;set carry for emulation mode\n        XCE ;go into emulation mode\n.setcpu "65C02"\n        jsr INITUSBSERIAL\n\n        ; Add a small delay to allow monitor to connect the terminal after\n        ; starting execution\n        ldy #0\n        ldx #0\n@loop:\n        dex\n        bne @loop\n        dey\n        bne @loop\n        jmp COLD_START\n.endif\n',
     '.ifdef SBC6502\n        jmp COLD_START\n.endif\n',
 )
+
+# SBC6502: replace the entire memory-size prompt block (.ifndef CONFIG_CBM_ALL)
+# with a SBC6502 / .else / original-code structure so that:
+#   - For SBC6502 builds: MEMSIZ is pre-set to $7FFF (top of SRAM), FRETOP set
+#     likewise, then jump past both prompts to SBC6502_INIT_DONE.
+#   - The 'beq PR_WRITTEN_BY' branch is NOT assembled for SBC6502 (avoiding the
+#     out-of-range branch error caused by the extra bytes).
+#   - For all other builds: original code unchanged.
+replace_once(
+    src / "init.s",
+    ".ifndef CONFIG_CBM_ALL\n"
+    "        lda     #<QT_MEMORY_SIZE\n"
+    "        ldy     #>QT_MEMORY_SIZE\n"
+    "        jsr     STROUT\n"
+    "  .ifdef APPLE\n"
+    "        jsr     INLINX\n"
+    "  .else\n"
+    "        jsr     NXIN\n"
+    "  .endif\n"
+    "        stx     TXTPTR\n"
+    "        sty     TXTPTR+1\n"
+    "        jsr     CHRGET\n"
+    "  .ifndef AIM65\n"
+    "    .ifndef SYM1\n"
+    "        cmp     #$41\n"
+    "        beq     PR_WRITTEN_BY\n"
+    "    .endif\n"
+    "  .endif\n"
+    "        tay\n"
+    "        bne     L40EE\n"
+    ".endif\n",
+    ".ifndef CONFIG_CBM_ALL\n"
+    ".ifdef SBC6502\n"
+    "        ; SBC6502: pre-set memory to $7FFF (top of 32KB SRAM), skip prompts\n"
+    "        lda     #$FF\n"
+    "        sta     MEMSIZ\n"
+    "        sta     FRETOP\n"
+    "        lda     #$7F\n"
+    "        sta     MEMSIZ+1\n"
+    "        sta     FRETOP+1\n"
+    "        jmp     SBC6502_INIT_DONE\n"
+    ".else\n"
+    "        lda     #<QT_MEMORY_SIZE\n"
+    "        ldy     #>QT_MEMORY_SIZE\n"
+    "        jsr     STROUT\n"
+    "  .ifdef APPLE\n"
+    "        jsr     INLINX\n"
+    "  .else\n"
+    "        jsr     NXIN\n"
+    "  .endif\n"
+    "        stx     TXTPTR\n"
+    "        sty     TXTPTR+1\n"
+    "        jsr     CHRGET\n"
+    "  .ifndef AIM65\n"
+    "    .ifndef SYM1\n"
+    "        cmp     #$41\n"
+    "        beq     PR_WRITTEN_BY\n"
+    "    .endif\n"
+    "  .endif\n"
+    "        tay\n"
+    "        bne     L40EE\n"
+    ".endif\n"
+    ".endif\n",
+)
+
+# SBC6502_INIT_DONE: entry point after all prompts — at RAMSTART2 setup
+replace_once(
+    src / "init.s",
+    ".else\n        ldx     #<RAMSTART2\n        ldy     #>RAMSTART2\n.endif\n        stx     TXTTAB\n",
+    ".else\nSBC6502_INIT_DONE:\n        ldx     #<RAMSTART2\n        ldy     #>RAMSTART2\n.endif\n        stx     TXTTAB\n",
+)
 PY
 
 mkdir -p "$SRC_DIR/tmp"
@@ -95,22 +177,23 @@ bin_path = Path(sys.argv[1])
 out_path = Path(sys.argv[2])
 
 payload = bin_path.read_bytes()
-if len(payload) > 0x4000:
-    raise SystemExit(f"msbasic binary too large: {len(payload)} bytes")
+if len(payload) > 0x3000:
+    raise SystemExit(f"msbasic binary too large: {len(payload)} bytes (max 12288)")
 
-rom = bytearray([0xEA] * 0x4000)
+rom = bytearray([0xEA] * 0x3000)   # 12 KB at $D000-$FFFF
 rom[0:len(payload)] = payload
 
-# Standard 6502 vectors inside the 16KB ROM window ($C000-$FFFF).
-rom[0x3FFA] = 0x00  # NMI low  -> $C000
-rom[0x3FFB] = 0xC0
-rom[0x3FFC] = 0x00  # RESET low -> $C000
-rom[0x3FFD] = 0xC0
-rom[0x3FFE] = 0x00  # IRQ low   -> $C000
-rom[0x3FFF] = 0xC0
+# 6502 vectors at end of 12KB ROM ($FFFA = $D000 + $2FFA).
+# RESET points to kernel init at $C000; NMI and IRQ also handled by kernel.
+rom[0x2FFA] = 0x1E  # NMI   low  -> $C01E  (NMI_HANDLER: RTI)
+rom[0x2FFB] = 0xC0
+rom[0x2FFC] = 0x00  # RESET low  -> $C000  (kernel INIT)
+rom[0x2FFD] = 0xC0
+rom[0x2FFE] = 0x1F  # IRQ   low  -> $C01F  (IRQ_HANDLER: RTI)
+rom[0x2FFF] = 0xC0
 
 out_path.write_bytes(rom)
-print(f"Packed 16KB ROM: {out_path} ({len(rom)} bytes)")
+print(f"Packed 12KB ROM: {out_path} ({len(rom)} bytes)")
 PY
 
 echo "Built MS BASIC ROM: $OUT_ROM"
