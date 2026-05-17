@@ -32,3 +32,4 @@ uint8_t bus_read(Bus *bus, uint16_t addr);
 void    bus_write(Bus *bus, uint16_t addr, uint8_t val);
 void    bus_tick(Bus *bus, uint32_t cycles);
 void    bus_dump(const Bus *bus);
+void    bus_shutdown(void);
