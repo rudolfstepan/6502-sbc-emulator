@@ -44,6 +44,22 @@ static uint8_t default_text_attr(void)
                      (vic_state.text_color & 0x0F));
 }
 
+static void refresh_text_attr_foreground(void)
+{
+    for (int i = 0; i < TEXT_CELL_COUNT; i++) {
+        uint8_t attr = video_ram[COLOR_RAM_OFFSET + i];
+        video_ram[COLOR_RAM_OFFSET + i] = (uint8_t)((attr & 0xF0) | (vic_state.text_color & 0x0F));
+    }
+}
+
+static void refresh_text_attr_background(void)
+{
+    for (int i = 0; i < TEXT_CELL_COUNT; i++) {
+        uint8_t attr = video_ram[COLOR_RAM_OFFSET + i];
+        video_ram[COLOR_RAM_OFFSET + i] = (uint8_t)(((vic_state.background_color & 0x0F) << 4) | (attr & 0x0F));
+    }
+}
+
 // Character ROM (8x8 pixel font for 256 ASCII characters)
 // Font data is LSB-first (bit 0 = leftmost pixel)
 static const uint8_t char_rom[256][8] = {
@@ -235,9 +251,11 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
             break;
         case 3:
             vic_state.text_color = val & 0x0F;
+            refresh_text_attr_foreground();
             break;
         case 4:
             vic_state.background_color = val & 0x0F;
+            refresh_text_attr_background();
             break;
         default:
             break;

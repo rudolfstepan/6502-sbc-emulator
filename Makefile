@@ -8,7 +8,7 @@ OBJDIR  = build
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms chess-rom test-chess-rom test-diskdir
+.PHONY: all clean run check roms chess-rom test-chess-rom test-diskdir test-peek-poke
 
 all: $(TARGET)
 
@@ -25,7 +25,7 @@ $(TARGET): $(OBJS)
 clean:
 	rm -rf $(OBJDIR) $(TARGET)
 
-check: all test-diskdir test-chess-rom
+check: all test-diskdir test-chess-rom test-peek-poke
 
 test-diskdir: $(OBJDIR)
 	$(CC) $(CFLAGS) -I$(SRCDIR) tests/test_diskdev_dir.c src/bus.c src/sram.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_diskdev_dir $(LDFLAGS)
@@ -35,6 +35,10 @@ test-chess-rom: $(OBJDIR)
 	bash tools/make_chess_rom.sh
 	$(CC) $(CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/sram.c src/rom.c src/vic.c src/via6522.c src/soundchip.c -o $(OBJDIR)/test_chess_rom $(LDFLAGS)
 	./$(OBJDIR)/test_chess_rom
+
+test-peek-poke: $(OBJDIR)
+	$(CC) $(CFLAGS) -I$(SRCDIR) tests/test_peek_poke_addrs.c src/bus.c src/sram.c src/vic.c src/via6522.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_peek_poke_addrs $(LDFLAGS)
+	./$(OBJDIR)/test_peek_poke_addrs
 
 roms:
 	bash tools/make_kernel_rom.sh
