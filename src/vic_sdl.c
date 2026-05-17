@@ -252,25 +252,25 @@ void vic_sdl_render(void) {
         bool cursor_visible = ((SDL_GetTicks() / CURSOR_BLINK_MS) & 1u) == 0;
         vic_get_cursor(&cursor_x, &cursor_y);
         
-        // First pass: if first render or major change, fill background
-        static int render_count = 0;
-        if (render_count == 0) {
-            for (int i = 0; i < WINDOW_WIDTH * WINDOW_HEIGHT; i++) {
-                framebuffer[i] = background;
-            }
-        }
-        render_count++;
+        // Track last cursor state to ensure smooth blinking
+        static uint8_t last_cursor_x = 0;
+        static uint8_t last_cursor_y = 0;
+        static bool last_cursor_visible = false;
         
-        // Second pass: render only dirty cells + cursor
+        // Render only dirty cells + cursor (both old and new positions for smooth blink)
         for (int row = 0; row < SCREEN_ROWS; row++) {
             for (int col = 0; col < SCREEN_COLS; col++) {
                 int cell_idx = row * SCREEN_COLS + col;
+                bool is_cursor = (col == cursor_x && row == cursor_y);
+                bool was_cursor = (col == last_cursor_x && row == last_cursor_y);
+                bool cursor_changed = (is_cursor != was_cursor) || 
+                                     (is_cursor && (cursor_visible != last_cursor_visible));
                 
-                // Only render if dirty or cursor needs update
-                if (dirty_array && dirty_array[cell_idx]) {
+                // Render if dirty, or if cursor state changed at this position
+                if ((dirty_array && dirty_array[cell_idx]) || cursor_changed) {
                     uint8_t char_code = vic_read_video_ram(cell_idx);
                     uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + cell_idx);
-                    bool invert = cursor_visible && col == cursor_x && row == cursor_y;
+                    bool invert = cursor_visible && is_cursor;
                     
                     // Clear background for this cell first
                     for (int py = 0; py < CHAR_HEIGHT; py++) {
@@ -289,35 +289,16 @@ void vic_sdl_render(void) {
                         }
                     }
                     
-                    // Then render the character
+                    // Render the character (with or without cursor invert)
                     render_char(char_code, col, row, text_attr, invert);
-                } else if (cursor_visible && col == cursor_x && row == cursor_y) {
-                    // Cursor position - redraw for blink even if not dirty
-                    uint8_t char_code = vic_read_video_ram(cell_idx);
-                    uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + cell_idx);
-                    
-                    // Clear cell
-                    for (int py = 0; py < CHAR_HEIGHT; py++) {
-                        for (int px = 0; px < CHAR_WIDTH; px++) {
-                            int screen_x = (col * CHAR_WIDTH + px) * SCREEN_SCALE;
-                            int screen_y = (row * CHAR_HEIGHT + py) * SCREEN_SCALE;
-                            for (int sy = 0; sy < SCREEN_SCALE; sy++) {
-                                for (int sx = 0; sx < SCREEN_SCALE; sx++) {
-                                    int fb_x = screen_x + sx;
-                                    int fb_y = screen_y + sy;
-                                    if (fb_x < WINDOW_WIDTH && fb_y < WINDOW_HEIGHT) {
-                                        framebuffer[fb_y * WINDOW_WIDTH + fb_x] = background;
-                                    }
-                                }
-                            }
-                        }
-                    }
-                    
-                    // Render with cursor invert
-                    render_char(char_code, col, row, text_attr, true);
                 }
             }
         }
+        
+        // Update cursor tracking for next frame
+        last_cursor_x = cursor_x;
+        last_cursor_y = cursor_y;
+        last_cursor_visible = cursor_visible;
     } else {
         memset(framebuffer, 0, WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
 
