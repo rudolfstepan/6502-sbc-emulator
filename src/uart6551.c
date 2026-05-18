@@ -2,25 +2,40 @@
 #include "uart6551.h"
 #include <stdio.h>
 #include <string.h>
+#include <errno.h>
+#include <stdlib.h>
+
+#ifdef _WIN32
+#include <io.h>
+#include <fcntl.h>
+#define read  _read
+#define write _write
+#define close _close
+#else
 #include <unistd.h>
 #include <fcntl.h>
-#include <errno.h>
 #include <termios.h>
 #include <sys/select.h>
 #include <sys/socket.h>
 #include <netinet/in.h>
 #include <netinet/tcp.h>
 #include <arpa/inet.h>
-#include <stdlib.h>
+#endif
 
+#ifndef _WIN32
 static struct termios g_orig_termios;
 static bool           g_termios_saved = false;
 static int            g_orig_stdin_flags = -1;
+#endif
 
 static void restore_terminal(void);
 
 static void apply_stdio_mode(bool raw_nonblock)
 {
+#ifdef _WIN32
+    (void)raw_nonblock;
+    return;
+#else
     if (!isatty(STDIN_FILENO)) return;
 
     if (!g_termios_saved) {
@@ -48,6 +63,7 @@ static void apply_stdio_mode(bool raw_nonblock)
     tcsetattr(STDIN_FILENO, TCSANOW, &g_orig_termios);
     if (g_orig_stdin_flags >= 0)
         fcntl(STDIN_FILENO, F_SETFL, g_orig_stdin_flags);
+#endif
 }
 
 static void restore_terminal(void)
@@ -57,6 +73,11 @@ static void restore_terminal(void)
 
 static int setup_tcp_server(int port)
 {
+#ifdef _WIN32
+    (void)port;
+    fprintf(stderr, "UART: TCP mode is not supported on Windows builds yet. Use stdio mode.\n");
+    return -1;
+#else
     int fd = socket(AF_INET, SOCK_STREAM, 0);
     if (fd < 0) { perror("socket"); return -1; }
 
@@ -78,6 +99,7 @@ static int setup_tcp_server(int port)
     fcntl(fd, F_SETFL, O_NONBLOCK);
     printf("UART: TCP server listening on 127.0.0.1:%d\n", port);
     return fd;
+#endif
 }
 
 int uart_init(UART6551 *uart, UartMode mode, int tcp_port)
@@ -92,7 +114,11 @@ int uart_init(UART6551 *uart, UartMode mode, int tcp_port)
 
     if (mode == UART_MODE_STDIO) {
         apply_stdio_mode(true);
+#ifdef _WIN32
+        uart->raw_mode_active = false;
+#else
         uart->raw_mode_active = g_termios_saved;
+#endif
     } else {
         uart->tcp_server_fd = setup_tcp_server(tcp_port);
         if (uart->tcp_server_fd < 0) return -1;
@@ -151,6 +177,7 @@ static void uart_poll_rx(UART6551 *uart)
     if (uart->mode == UART_MODE_STDIO) {
         n = read(STDIN_FILENO, buf, sizeof(buf));
     } else {
+#ifndef _WIN32
         /* Accept pending connection */
         if (uart->tcp_client_fd < 0 && uart->tcp_server_fd >= 0) {
             struct sockaddr_in ca;
@@ -169,6 +196,9 @@ static void uart_poll_rx(UART6551 *uart)
         }
         if (uart->tcp_client_fd >= 0)
             n = read(uart->tcp_client_fd, buf, sizeof(buf));
+    #else
+        n = -1;
+    #endif
     }
 
     if (n > 0) {
@@ -206,8 +236,10 @@ void uart_write(void *dev, uint16_t offset, uint8_t val)
         /* Transmit byte */
         if (uart->mode == UART_MODE_STDIO) {
             (void)!write(STDOUT_FILENO, &val, 1);
+#ifndef _WIN32
         } else if (uart->tcp_client_fd >= 0) {
             (void)!write(uart->tcp_client_fd, &val, 1);
+#endif
         }
         uart->status |= ACIA_ST_TDRE;
         break;

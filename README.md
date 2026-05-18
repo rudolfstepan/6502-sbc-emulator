@@ -23,15 +23,19 @@ Build:
 make
 ```
 
+After build, a runnable bundle is staged in `bin/` (binary + config files + ROM files + runtime DLLs on Windows).
+
 Run MS BASIC setup:
 
 ```sh
+cd bin
 ./sbc6502 sbc.ini
 ```
 
 Run standalone chess ROM:
 
 ```sh
+cd bin
 ./sbc6502 chess.ini
 ```
 
@@ -43,10 +47,71 @@ make check
 
 `make check` includes the Klaus Dormann 6502 functional test (`test-klaus-6502`) and downloads the upstream binary automatically on first run.
 
+## Binary Downloads
+
+If you do not want to build from source, download prebuilt bundles from GitHub Releases.
+
+- Tags (for example `v1.2.0`) still point to source commits.
+- Release assets contain ready-to-run bundles for Linux and Windows.
+- Download the archive for your platform, extract it, then run from the extracted `bin/` directory.
+
+Expected release assets:
+
+- `sbc6502-linux-x86_64.tar.gz`
+- `sbc6502-windows-x86_64.zip`
+
+## Windows Build
+
+The repository now supports native Windows builds via the same `Makefile`.
+
+### 1. Install toolchain
+
+Install MSYS2:
+
+```powershell
+winget install --id MSYS2.MSYS2 --accept-package-agreements --accept-source-agreements --silent
+```
+
+Install required packages:
+
+```powershell
+C:\msys64\usr\bin\bash.exe -lc "pacman -S --noconfirm --needed mingw-w64-x86_64-gcc mingw-w64-x86_64-make mingw-w64-x86_64-pkgconf mingw-w64-x86_64-SDL2"
+```
+
+Install cc65 (`ca65`, `ld65`) for ROM helper targets (`make roms`):
+
+```powershell
+choco install cc65-compiler -y
+```
+
+If `choco` cannot complete installation in your environment, install cc65 manually and ensure `ca65` and `ld65` are available in `PATH`.
+
+### 2. Build and run
+
+From repository root:
+
+```powershell
+make clean ; make
+make roms
+make check
+Set-Location .\bin
+.\sbc6502.exe chess.ini
+```
+
+Notes:
+
+- `make` automatically detects MSYS2 tools under `C:/msys64/...`.
+- Build output is staged in `bin/`, including runtime files required to launch from that directory.
+- If SDL2 auto-detection is unavailable in a custom setup, you can still override flags manually:
+
+```powershell
+make SDL2_CFLAGS="-IC:/SDL2/include/SDL2" SDL2_LIBS="-LC:/SDL2/lib -lmingw32 -lSDL2main -lSDL2"
+```
+
 ## Runtime Options
 
 ```text
-./sbc6502 [options] [config.ini]
+./bin/sbc6502 [options] [config.ini]
 
 Options:
   -r <rom>      load ROM file (overrides first ROM entry in config)
@@ -153,6 +218,20 @@ path = data/disk
 - SDL2 development package (`libsdl2-dev` on Debian/Ubuntu)
 - Python 3 (for ROM helper scripts)
 
+## Bundled Output
+
+`make` stages a runnable bundle in `bin/`.
+
+```text
+bin/
+  sbc6502(.exe)
+  sbc.ini
+  chess.ini
+  roms/
+  data/disk/
+  # Windows only: SDL2.dll, libwinpthread-1.dll, libgcc_s_seh-1.dll
+```
+
 ## ROM Build Helpers
 
 ```sh
@@ -170,12 +249,14 @@ python3 tools/make_test_rom.py
 - [docs/MSBASIC.md](docs/MSBASIC.md)
 - [docs/BASIC_CONVERTER.md](docs/BASIC_CONVERTER.md)
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md)
+- [docs/archive/BUGFIXES_2026-05.md](docs/archive/BUGFIXES_2026-05.md)
 
 ## Project Layout
 
 ```text
 src/        emulator core and devices
 tools/      ROM builders and helper scripts
+bin/        generated runtime bundle (created by make)
 roms/       ROM binaries
 docs/       documentation
 examples/   sample code

@@ -60,7 +60,7 @@ static size_t build_expected(uint16_t load_addr, const char *const *names, size_
 
 int main(void)
 {
-    char template[] = "/tmp/sbc6502-diskdir-XXXXXX";
+    char template[] = "build/sbc6502-diskdir-XXXXXX";
     char *root = mkdtemp(template);
     assert(root != NULL);
 

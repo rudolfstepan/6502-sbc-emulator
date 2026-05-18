@@ -1,4 +1,5 @@
 build/
+bin/
 sbc6502
 *.o
 *.out

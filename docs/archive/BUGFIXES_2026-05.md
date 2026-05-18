@@ -1,4 +1,7 @@
-# Bug Fixes - MS BASIC ROM (Mai 2026)
+# Archived Bug Fixes - MS BASIC ROM (May 2026)
+
+This note is preserved for historical context.
+Some build/run commands in this document may reflect older workflows.
 
 ## Zusammenfassung
 

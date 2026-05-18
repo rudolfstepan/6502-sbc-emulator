@@ -8,15 +8,24 @@ CFG="$ROOT_DIR/tools/kernel/kernel.cfg"
 OBJ="/tmp/kernel_sbc.o"
 OUT="$ROOT_DIR/roms/kernel.rom"
 
-if ! command -v ca65 >/dev/null 2>&1 || ! command -v ld65 >/dev/null 2>&1; then
+CA65_BIN="$(command -v ca65 2>/dev/null || true)"
+LD65_BIN="$(command -v ld65 2>/dev/null || true)"
+if [[ -z "$CA65_BIN" && -x "/c/tools/cc65/bin/ca65.exe" ]]; then
+    CA65_BIN="/c/tools/cc65/bin/ca65.exe"
+fi
+if [[ -z "$LD65_BIN" && -x "/c/tools/cc65/bin/ld65.exe" ]]; then
+    LD65_BIN="/c/tools/cc65/bin/ld65.exe"
+fi
+
+if [[ -z "$CA65_BIN" || -z "$LD65_BIN" ]]; then
     echo "error: ca65/ld65 not found. install cc65 first." >&2
     exit 1
 fi
 
 mkdir -p "$(dirname "$OUT")"
 
-ca65 "$SRC" -o "$OBJ"
-ld65 -C "$CFG" "$OBJ" -o "$OUT"
+"$CA65_BIN" "$SRC" -o "$OBJ"
+"$LD65_BIN" -C "$CFG" "$OBJ" -o "$OUT"
 
 SIZE=$(wc -c < "$OUT")
 echo "Built kernel ROM: $OUT  ($SIZE bytes)"
