@@ -1,10 +1,16 @@
+#ifndef _WIN32
 #define _POSIX_C_SOURCE 200809L
+#endif
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#ifdef _WIN32
+#include <windows.h>
+#else
 #include <unistd.h>
+#endif
 
 #include "cpu6502.h"
 #include "bus.h"
@@ -47,12 +53,43 @@ static void cpu_bus_write(void *ctx, uint16_t addr, uint8_t val)
     bus_write((Bus *)ctx, addr, val);
 }
 
-/* ── Nanosecond sleep for speed throttling ───────────────── */
+/* ── Portable monotonic timing and sleep helpers ─────────── */
+#ifdef _WIN32
+static void monotonic_now(struct timespec *ts)
+{
+    static LARGE_INTEGER freq;
+    static int initialized = 0;
+    LARGE_INTEGER counter;
+
+    if (!initialized) {
+        QueryPerformanceFrequency(&freq);
+        initialized = 1;
+    }
+
+    QueryPerformanceCounter(&counter);
+    ts->tv_sec = (time_t)(counter.QuadPart / freq.QuadPart);
+    ts->tv_nsec = (long)(((counter.QuadPart % freq.QuadPart) * 1000000000LL) / freq.QuadPart);
+}
+
+static void ns_sleep(long ns)
+{
+    if (ns <= 0) {
+        return;
+    }
+    Sleep((DWORD)((ns + 999999L) / 1000000L));
+}
+#else
+static void monotonic_now(struct timespec *ts)
+{
+    clock_gettime(CLOCK_MONOTONIC, ts);
+}
+
 static void ns_sleep(long ns)
 {
     struct timespec ts = { .tv_sec = 0, .tv_nsec = ns };
     nanosleep(&ts, NULL);
 }
+#endif
 
 /* ── Usage ────────────────────────────────────────────────── */
 static void usage(const char *prog)
@@ -285,7 +322,7 @@ int main(int argc, char *argv[])
     printf("\n6502 SBC Emulator running. Press CTRL+C for monitor.\n\n");
 
     /* ── Main loop ────────────────────────────────────────── */
-    clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
+    monotonic_now(&batch_ts_start);
 
     while (!cpu.stopped) {
         /* Handle SDL events */
@@ -316,7 +353,7 @@ int main(int argc, char *argv[])
             }
             for (int i = 0; i < nu; i++) uart_stdio_resume(&uarts[i]);
             /* Restart speed timer after monitor */
-            clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
+            monotonic_now(&batch_ts_start);
             batch_start_cycle = cpu.cycles;
         }
 
@@ -337,13 +374,13 @@ int main(int argc, char *argv[])
         static uint64_t last_render_cycle = 0;
         if (batch_ns > 0 && (cpu.cycles - batch_start_cycle) >= cycles_per_batch) {
             struct timespec now;
-            clock_gettime(CLOCK_MONOTONIC, &now);
+            monotonic_now(&now);
             long elapsed_ns = (long)((now.tv_sec  - batch_ts_start.tv_sec)  * 1000000000L
                                     + (now.tv_nsec - batch_ts_start.tv_nsec));
             long sleep_ns = batch_ns - elapsed_ns;
             if (sleep_ns > 1000L) ns_sleep(sleep_ns);
             batch_start_cycle = cpu.cycles;
-            clock_gettime(CLOCK_MONOTONIC, &batch_ts_start);
+            monotonic_now(&batch_ts_start);
             last_render_cycle = cpu.cycles;
 
             /* Render VIC display */
