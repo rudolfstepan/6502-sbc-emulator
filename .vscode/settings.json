@@ -4,6 +4,7 @@
         "/^hexdump -C build/donsol\\.rom \\| tail -n 20$/": {
             "approve": true,
             "matchCommandLine": true
-        }
+        },
+        "command": true
     }
 }

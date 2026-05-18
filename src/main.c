@@ -296,6 +296,7 @@ int main(int argc, char *argv[])
     bool use_sdl = (vic_sdl_init() == 0);
     if (use_sdl) {
         vic_sdl_set_screen_edit_enabled(!game_rom_mode);
+        vic_set_petscii_mode(game_rom_mode);  // Enable PETSCII graphics for games
         printf("SDL2 display enabled. Press ESC to quit.\n");
         vic_sdl_render();   /* Initial blank render so window appears */
     } else {

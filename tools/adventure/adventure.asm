@@ -998,28 +998,42 @@ intro_text:
 
 room_start_text:
     .byte "FOREST CLEARING", $0A
-    .byte "You stand in a clearing.", $0A
-    .byte "A dark forest lies NORTH.", $0A, 0
+    .byte "[____________________]", $0A
+    .byte "|        *YOU*       |", $0A
+    .byte "|       MEADOW       |", $0A
+    .byte "|                    |", $0A
+    .byte "`________|N|_________{", $0A, 0
 
 room_forest_text:
     .byte "DARK FOREST", $0A
-    .byte "Trees block the sunlight.", $0A
-    .byte "Paths: SOUTH, EAST", $0A, 0
+    .byte "[____________________]", $0A
+    .byte "| T   T  *P* T T     |", $0A
+    .byte "|  T T    T    T     |", $0A
+    .byte "| T  T  T T  T       |", $0A
+    .byte "|_S_____^_____E_____>{", $0A, 0
 
 room_cave_text:
     .byte "CAVE ENTRANCE", $0A
-    .byte "A dark cave. You hear", $0A
-    .byte "water dripping.", $0A
-    .byte "Exits: WEST, EAST (dark!)", $0A, 0
+    .byte "[____________________]", $0A
+    .byte "|  *P*    .  o  .    |", $0A
+    .byte "| .  *  .  *  .  .   |", $0A
+    .byte "|   Water drips...   |", $0A
+    .byte "`____________________{" , $0A, 0
 
 msg_enemy_seen:
-    .byte "A cave beast snarls here!", $0A, 0
+    .byte " [__________________]", $0A
+    .byte " |  ^-^   ^-^  ^-^  |", $0A
+    .byte " |(o_o) (o_o) (o_o) |", $0A
+    .byte " | B E A S T S !!!  |", $0A
+    .byte " `__________________{" , $0A, 0
 
 room_treasure_text:
     .byte "TREASURE CHAMBER", $0A
-    .byte "Ancient stone walls.", $0A
-    .byte "A locked chest sits here.", $0A
-    .byte "Exit: WEST", $0A, 0
+    .byte "[____________________]", $0A
+    .byte "|   *$$$$ CHEST*     |", $0A
+    .byte "|    $$$$$$$$$$$$$$$ |", $0A
+    .byte "|    GOLD RICHES!    |", $0A
+    .byte "`__ANCIENT_WEALTH____{", $0A, 0
 
 msg_unknown:
     .byte "Unknown command.", $0A, 0
@@ -1070,13 +1084,20 @@ msg_nothing:
     .byte "Nothing to take.", $0A, 0
 
 msg_see_torch:
-    .byte "You see a TORCH.", $0A, 0
+    .byte "    o*o", $0A
+    .byte "   o***o", $0A
+    .byte "    |||", $0A
+    .byte "  [TORCH] glows bright!", $0A, 0
 
 msg_see_key:
-    .byte "You see a rusty KEY.", $0A, 0
+    .byte "   +---+", $0A
+    .byte "   | o |", $0A
+    .byte "   +---+", $0A
+    .byte "  [RUSTY KEY] awaits!", $0A, 0
 
 msg_see_gold:
-    .byte "GOLD coins glitter!", $0A, 0
+    .byte "  ***  ***  ***", $0A
+    .byte "  GOLD TREASURE!!", $0A, 0
 
 msg_use_nothing:
     .byte "Use what where?", $0A, 0

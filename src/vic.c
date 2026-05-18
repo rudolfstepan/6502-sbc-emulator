@@ -3,6 +3,7 @@
 #include <stdint.h>
 #include <string.h>
 #include <stdio.h>
+#include <stdbool.h>
 
 // Video RAM size and base address
 #define VIDEO_RAM_SIZE 2048   // 2KB for text mode
@@ -36,6 +37,7 @@ static struct {
     uint16_t cursor_y;
     uint8_t text_color;
     uint8_t background_color;
+    uint8_t petscii_mode;   // 1 = PETSCII mode, 0 = ASCII mode
 } vic_state;
 
 static uint8_t default_text_attr(void)
@@ -59,6 +61,32 @@ static void refresh_text_attr_background(void)
         video_ram[COLOR_RAM_OFFSET + i] = (uint8_t)(((vic_state.background_color & 0x0F) << 4) | (attr & 0x0F));
     }
 }
+
+// PETSCII box-drawing font patterns.
+// All lines meet at row 3 (horizontal) and col 3 (vertical) so they connect seamlessly.
+// LSB-first: bit 0 = leftmost pixel.  0x08 = col 3,  0xF8 = cols 3-7,  0x0F = cols 0-3.
+static const uint8_t petscii_rom[256][8] = {
+    // [ -> ┌ top-left: horizontal right from col 3, vertical down from row 3
+    [0x5B] = {0x00, 0x00, 0x00, 0xF8, 0x08, 0x08, 0x08, 0x08},
+    // \ -> ─ horizontal line at row 3
+    [0x5C] = {0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00},
+    // ] -> ┐ top-right: horizontal left to col 3, vertical down from row 3
+    [0x5D] = {0x00, 0x00, 0x00, 0x0F, 0x08, 0x08, 0x08, 0x08},
+    // ^ -> ┼ cross: full horizontal at row 3 + vertical at col 3
+    [0x5E] = {0x08, 0x08, 0x08, 0xFF, 0x08, 0x08, 0x08, 0x08},
+    // _ -> ─ horizontal line at row 3 (same as \, used for bottom borders)
+    [0x5F] = {0x00, 0x00, 0x00, 0xFF, 0x00, 0x00, 0x00, 0x00},
+    // ` -> └ bottom-left: vertical up to row 3, horizontal right from col 3
+    [0x60] = {0x08, 0x08, 0x08, 0xF8, 0x00, 0x00, 0x00, 0x00},
+    // { -> ┘ bottom-right: vertical up to row 3, horizontal left to col 3
+    [0x7B] = {0x08, 0x08, 0x08, 0x0F, 0x00, 0x00, 0x00, 0x00},
+    // | -> │ vertical line at col 3
+    [0x7C] = {0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08, 0x08},
+    // } -> ┤ right T-junction: horizontal at row 3 + vertical at col 3
+    [0x7D] = {0x08, 0x08, 0x08, 0xFF, 0x08, 0x08, 0x08, 0x08},
+    // ~ -> ┬ top T-junction: horizontal right + vertical down
+    [0x7E] = {0x00, 0x00, 0x00, 0xF8, 0x08, 0x08, 0x08, 0x08},
+};
 
 // Character ROM (8x8 pixel font for 256 ASCII characters)
 // Font data is LSB-first (bit 0 = leftmost pixel)
@@ -191,6 +219,7 @@ void vic_init() {
     vic_state.cursor_y = 0;
     vic_state.text_color = 15;        // brighter startup text
     vic_state.background_color = 6;   // C64-style blue
+    vic_state.petscii_mode = 0;       // Start in ASCII mode
     memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
     
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
@@ -306,6 +335,21 @@ uint8_t vic_read_bitmap_ram(uint16_t address) {
 
 // Read from character ROM
 const uint8_t* vic_get_char_pattern(uint8_t char_code) {
+    if (vic_state.petscii_mode) {
+        // Check if PETSCII character is defined (not all zeros)
+        const uint8_t *pattern = petscii_rom[char_code];
+        bool is_defined = false;
+        for (int i = 0; i < 8; i++) {
+            if (pattern[i] != 0x00) {
+                is_defined = true;
+                break;
+            }
+        }
+        if (is_defined) {
+            return pattern;  // Use PETSCII version
+        }
+    }
+    // Use ASCII font as fallback
     return char_rom[char_code];
 }
 
@@ -407,6 +451,15 @@ void vic_set_background_color(uint8_t color) {
 
 uint8_t vic_get_background_color(void) {
     return vic_state.background_color & 0x0F;
+}
+
+// PETSCII mode control
+void vic_set_petscii_mode(uint8_t enabled) {
+    vic_state.petscii_mode = enabled ? 1 : 0;
+}
+
+uint8_t vic_get_petscii_mode(void) {
+    return vic_state.petscii_mode;
 }
 
 // Render the screen (called periodically)

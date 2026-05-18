@@ -51,6 +51,10 @@ uint8_t vic_get_text_color(void);
 void vic_set_background_color(uint8_t color);
 uint8_t vic_get_background_color(void);
 
+// PETSCII mode control
+void vic_set_petscii_mode(uint8_t enabled);
+uint8_t vic_get_petscii_mode(void);
+
 // Rendering
 void vic_render_screen();
 
