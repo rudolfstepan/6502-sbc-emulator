@@ -6,7 +6,7 @@ on:
   pull_request:
 
 jobs:
-  build:
+  build-linux:
     runs-on: ubuntu-latest
     steps:
       - name: Check out repository
@@ -33,6 +33,69 @@ jobs:
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: sbc6502-bin-${{ github.event_name }}-${{ github.run_number }}-${{ github.run_attempt }}
+          name: sbc6502-bin-linux-${{ github.event_name }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: bin/
+          if-no-files-found: error
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-SDL2
+            curl
+            git
+            python
+            unzip
+
+      - name: Install cc65
+        shell: msys2 {0}
+        run: |
+          mkdir -p /c/tools/cc65pkg
+          curl -L "https://community.chocolatey.org/api/v2/package/cc65-compiler/2.19.0" -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg
+          unzip -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg -d /c/tools/cc65pkg/extracted
+          mkdir -p /c/tools/cc65
+          cp -r /c/tools/cc65pkg/extracted/tools/* /c/tools/cc65/
+
+      - name: Build and test emulator
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/tools/cc65/bin:/mingw64/bin:/usr/bin:$PATH"
+          make check
+
+      - name: Generate test ROM
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/tools/cc65/bin:/mingw64/bin:/usr/bin:$PATH"
+          python3 tools/make_test_rom.py
+
+      - name: Verify Windows runtime bundle
+        shell: msys2 {0}
+        run: |
+          test -f bin/sbc6502.exe
+          test -f bin/SDL2.dll
+          test -f bin/libwinpthread-1.dll
+          test -f bin/libgcc_s_seh-1.dll
+          test -f bin/chess.ini
+          test -f bin/sbc.ini
+          test -f bin/roms/chess.rom
+          test -f bin/roms/kernel.rom
+          test -f bin/roms/msbasic.rom
+
+      - name: Upload runtime bundle artifact
+        if: success()
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbc6502-bin-windows-${{ github.event_name }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: bin/
           if-no-files-found: error
