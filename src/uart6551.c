@@ -8,6 +8,7 @@
 #ifdef _WIN32
 #include <io.h>
 #include <fcntl.h>
+#include <conio.h>
 #define read  _read
 #define write _write
 #define close _close
@@ -175,6 +176,18 @@ static void uart_poll_rx(UART6551 *uart)
     ssize_t n = 0;
 
     if (uart->mode == UART_MODE_STDIO) {
+#ifdef _WIN32
+        /* Avoid blocking the emulator loop on Windows consoles. */
+        if (_isatty(_fileno(stdin))) {
+            while (_kbhit()) {
+                int ch = _getch();
+                if (ch >= 0) {
+                    rx_push(uart, (uint8_t)ch);
+                }
+            }
+            return;
+        }
+#endif
         n = read(STDIN_FILENO, buf, sizeof(buf));
     } else {
 #ifndef _WIN32
