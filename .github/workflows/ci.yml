@@ -37,65 +37,71 @@ jobs:
           path: bin/
           if-no-files-found: error
 
-  build-windows:
-    runs-on: windows-latest
+  build-windows-cross:
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-SDL2
-            curl
-            git
-            python
-            unzip
-
-      - name: Install cc65
-        shell: msys2 {0}
+      - name: Install cross-build dependencies
         run: |
-          mkdir -p /c/tools/cc65pkg
-          curl -L "https://community.chocolatey.org/api/v2/package/cc65-compiler/2.19.0" -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg
-          unzip -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg -d /c/tools/cc65pkg/extracted
-          mkdir -p /c/tools/cc65
-          cp -r /c/tools/cc65pkg/extracted/tools/* /c/tools/cc65/
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-mingw-w64-x86-64 \
+            cc65 \
+            curl \
+            tar \
+            python3
 
-      - name: Build and test emulator
-        shell: msys2 {0}
+      - name: Build ROMs for runtime bundle
+        run: make roms
+
+      - name: Download SDL2 MinGW development package
         run: |
-          export PATH="/c/tools/cc65/bin:/mingw64/bin:/usr/bin:$PATH"
-          make check
+          SDL_VERSION=2.30.11
+          curl -fsSL -o SDL2-devel-mingw.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-devel-${SDL_VERSION}-mingw.tar.gz"
+          tar -xzf SDL2-devel-mingw.tar.gz
+          echo "SDL_PREFIX=$PWD/SDL2-${SDL_VERSION}/x86_64-w64-mingw32" >> "$GITHUB_ENV"
 
-      - name: Generate test ROM
-        shell: msys2 {0}
+      - name: Cross-compile Windows runtime bundle
         run: |
-          export PATH="/c/tools/cc65/bin:/mingw64/bin:/usr/bin:$PATH"
-          python3 tools/make_test_rom.py
+          mkdir -p bin
 
-      - name: Verify Windows runtime bundle
-        shell: msys2 {0}
+          x86_64-w64-mingw32-gcc \
+            -std=c99 -Wall -Wextra -O2 -g \
+            -I"${SDL_PREFIX}/include" -I"${SDL_PREFIX}/include/SDL2" -Dmain=SDL_main \
+            src/*.c \
+            -o bin/sbc6502.exe \
+            -L"${SDL_PREFIX}/lib" -lmingw32 -lSDL2main -lSDL2 -lm
+
+          cp "${SDL_PREFIX}/bin/SDL2.dll" bin/SDL2.dll
+
+          for dll in libwinpthread-1.dll libgcc_s_seh-1.dll; do
+            path="$(x86_64-w64-mingw32-gcc -print-file-name=${dll})"
+            if [ -f "$path" ]; then
+              cp "$path" "bin/${dll}"
+            fi
+          done
+
+          bash tools/stage_runtime.sh bin
+
+      - name: Verify Windows cross bundle
         run: |
           test -f bin/sbc6502.exe
           test -f bin/SDL2.dll
-          test -f bin/libwinpthread-1.dll
-          test -f bin/libgcc_s_seh-1.dll
           test -f bin/chess.ini
           test -f bin/sbc.ini
           test -f bin/roms/chess.rom
           test -f bin/roms/kernel.rom
           test -f bin/roms/msbasic.rom
 
-      - name: Upload runtime bundle artifact
+      - name: Upload Windows cross runtime bundle artifact
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: sbc6502-bin-windows-${{ github.event_name }}-${{ github.run_number }}-${{ github.run_attempt }}
+          name: sbc6502-bin-windows-cross-${{ github.event_name }}-${{ github.run_number }}-${{ github.run_attempt }}
           path: bin/
           if-no-files-found: error
+
