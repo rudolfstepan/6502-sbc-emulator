@@ -7,7 +7,29 @@ WORK_DIR="/tmp/msbasic-build-sbc"
 SRC_DIR="$WORK_DIR/msbasic"
 OUT_ROM="$ROOT_DIR/roms/msbasic.rom"
 
-if ! command -v ca65 >/dev/null 2>&1 || ! command -v ld65 >/dev/null 2>&1; then
+PYTHON_CMD=""
+for candidate in "python3" "python" "py -3"; do
+    if eval "$candidate -V >/dev/null 2>&1"; then
+        PYTHON_CMD="$candidate"
+        break
+    fi
+done
+
+if [[ -z "$PYTHON_CMD" ]]; then
+    echo "error: python interpreter not found (need python3, python, or py -3)." >&2
+    exit 1
+fi
+
+CA65_BIN="$(command -v ca65 2>/dev/null || true)"
+LD65_BIN="$(command -v ld65 2>/dev/null || true)"
+if [[ -z "$CA65_BIN" && -x "/c/tools/cc65/bin/ca65.exe" ]]; then
+    CA65_BIN="/c/tools/cc65/bin/ca65.exe"
+fi
+if [[ -z "$LD65_BIN" && -x "/c/tools/cc65/bin/ld65.exe" ]]; then
+    LD65_BIN="/c/tools/cc65/bin/ld65.exe"
+fi
+
+if [[ -z "$CA65_BIN" || -z "$LD65_BIN" ]]; then
   echo "error: ca65/ld65 not found. install cc65 first." >&2
   exit 1
 fi
@@ -28,7 +50,7 @@ cp "$PORT_DIR/sbc6502_iscntc.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502_loadsave.s" "$SRC_DIR/"
 cp "$PORT_DIR/sbc6502.cfg" "$SRC_DIR/"
 
-python3 - "$SRC_DIR" <<'PY'
+$PYTHON_CMD - "$SRC_DIR" <<'PY'
 from pathlib import Path
 import sys
 
@@ -177,12 +199,12 @@ PY
 mkdir -p "$SRC_DIR/tmp"
 (
   cd "$SRC_DIR"
-  ca65 -D sbc6502 msbasic.s -o tmp/sbc6502.o
-  ld65 -C sbc6502.cfg tmp/sbc6502.o -o tmp/sbc6502.bin -Ln tmp/sbc6502.lbl
+    "$CA65_BIN" -D sbc6502 msbasic.s -o tmp/sbc6502.o
+    "$LD65_BIN" -C sbc6502.cfg tmp/sbc6502.o -o tmp/sbc6502.bin -Ln tmp/sbc6502.lbl
 )
 
 mkdir -p "$(dirname "$OUT_ROM")"
-python3 - "$SRC_DIR/tmp/sbc6502.bin" "$OUT_ROM" <<'PY'
+$PYTHON_CMD - "$SRC_DIR/tmp/sbc6502.bin" "$OUT_ROM" <<'PY'
 from pathlib import Path
 import sys
 

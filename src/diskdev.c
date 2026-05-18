@@ -9,6 +9,13 @@
 #include <dirent.h>
 #include <errno.h>
 
+#ifdef _WIN32
+#include <direct.h>
+#define MKDIR_PCOMPAT(path) _mkdir(path)
+#else
+#define MKDIR_PCOMPAT(path) mkdir((path), 0755)
+#endif
+
 #define BASIC_REM_TOKEN 0x8E
 
 static int cmp_dir_names(const void *lhs, const void *rhs)
@@ -115,11 +122,11 @@ static int mkdir_p(const char *path)
     for (char *p = tmp + 1; *p; p++) {
         if (*p == '/') {
             *p = 0;
-            if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+            if (MKDIR_PCOMPAT(tmp) != 0 && errno != EEXIST) return -1;
             *p = '/';
         }
     }
-    if (mkdir(tmp, 0755) != 0 && errno != EEXIST) return -1;
+    if (MKDIR_PCOMPAT(tmp) != 0 && errno != EEXIST) return -1;
     return 0;
 }
 

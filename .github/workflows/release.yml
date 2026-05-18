@@ -1,0 +1,111 @@
+name: Release Binaries
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build-linux:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential libsdl2-dev curl
+
+      - name: Build runtime bundle
+        run: |
+          make clean
+          make
+          make roms
+
+      - name: Package Linux bundle
+        run: |
+          tar -C . -czf sbc6502-linux-x86_64.tar.gz bin
+
+      - name: Upload Linux artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbc6502-linux-x86_64
+          path: sbc6502-linux-x86_64.tar.gz
+
+  build-windows:
+    runs-on: windows-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Set up MSYS2
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-gcc
+            mingw-w64-x86_64-make
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-SDL2
+            git
+            python
+            unzip
+
+      - name: Install cc65
+        shell: msys2 {0}
+        run: |
+          mkdir -p /c/tools/cc65pkg
+          curl -L "https://community.chocolatey.org/api/v2/package/cc65-compiler/2.19.0" -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg
+          unzip -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg -d /c/tools/cc65pkg/extracted
+          mkdir -p /c/tools/cc65
+          cp -r /c/tools/cc65pkg/extracted/tools/* /c/tools/cc65/
+
+      - name: Build runtime bundle
+        shell: msys2 {0}
+        run: |
+          export PATH="/c/tools/cc65/bin:/mingw64/bin:/usr/bin:$PATH"
+          make clean
+          make
+          make roms
+
+      - name: Package Windows bundle
+        shell: pwsh
+        run: |
+          if (Test-Path .\sbc6502-windows-x86_64.zip) { Remove-Item .\sbc6502-windows-x86_64.zip -Force }
+          Compress-Archive -Path .\bin -DestinationPath .\sbc6502-windows-x86_64.zip
+
+      - name: Upload Windows artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: sbc6502-windows-x86_64
+          path: sbc6502-windows-x86_64.zip
+
+  publish-release:
+    needs: [build-linux, build-windows]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Download Linux artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbc6502-linux-x86_64
+          path: artifacts
+
+      - name: Download Windows artifact
+        uses: actions/download-artifact@v4
+        with:
+          name: sbc6502-windows-x86_64
+          path: artifacts
+
+      - name: Publish release assets
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            artifacts/sbc6502-linux-x86_64.tar.gz
+            artifacts/sbc6502-windows-x86_64.zip
+          generate_release_notes: true
