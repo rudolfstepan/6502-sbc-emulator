@@ -1,0 +1,376 @@
+; Donsol SBC - Main Loop
+; Adapted for 6502 SBC with text mode display and keyboard input
+
+.include "sbc_head.asm"
+.include "sbc_input.asm"
+.include "sbc_video.asm"
+
+.segment "CODE"
+
+; --- Reset Vector (Entry Point) ---
+reset:
+    sei                       ; Disable interrupts
+    cld                       ; Clear decimal mode
+    ldx #$ff
+    txs                       ; Set stack pointer to $1FF
+    
+    jsr init_game_state
+    jsr init_keyboard
+    jsr init_video
+    
+    jmp main_loop
+
+; --- Initialize Game State ---
+init_game_state:
+    lda #$09
+    sta hp_player
+    lda #$00
+    sta sp_player
+    sta xp_player
+    sta difficulty_player
+    sta has_run_player
+    sta sickness_player
+    sta card1_room
+    sta card2_room
+    sta card3_room
+    sta card4_room
+    sta card_last
+    sta card_last_type
+    sta card_last_value
+    lda #$08
+    sta enemy_hp_game
+    lda #$00
+    sta turn_game
+    lda #$01
+    sta room_game
+
+    lda #$09
+    sta length_deck
+    lda #$00
+    sta hand_deck
+    sta seed1_deck
+    lda #$5a
+    sta seed2_deck
+
+    lda #$00
+    sta view_game
+    sta cursor_splash
+    sta cursor_game
+    lda #$ff
+    sta reqdraw_splash
+    lda #$ff
+    sta redraws_game
+    jsr build_room_queue
+    rts
+
+; --- Main Game Loop ---
+main_loop:
+    jsr handle_timer
+    
+    jsr readJoy_sbc
+    jsr saveJoy_sbc
+    
+    jsr check_joy
+    
+    jsr update_game_state
+    
+    jsr render_screen
+    
+    jmp main_loop
+
+; --- Handle Auto-Resolution Timer ---
+handle_timer:
+    lda timer_room
+    beq timer_done
+    dec timer_room
+timer_done:
+    lda auto_room
+    beq timer_skip
+    dec auto_room
+timer_skip:
+    rts
+
+; --- Check Joy and Route Input ---
+check_joy:
+    lda next_input
+    cmp #$00
+    beq check_joy_skip
+    
+    ldx view_game
+    cpx #$00
+    bne check_joy_game_view
+    
+    jsr handle_splash_input
+    jmp check_joy_done
+    
+check_joy_game_view:
+    jsr handle_game_input
+    
+check_joy_done:
+    lda #$00
+    sta next_input
+check_joy_skip:
+    rts
+
+; --- Handle Splash Screen Input ---
+handle_splash_input:
+    lda next_input
+    
+    cmp #BUTTON_A
+    beq splash_select_option
+    
+    cmp #BUTTON_START
+    beq splash_select_option
+    
+    rts
+
+splash_select_option:
+    lda #$01
+    sta view_game
+    lda #$ff
+    sta redraws_game
+    lda #$00
+    sta reqdraw_splash
+    rts
+
+; --- Handle Game Input ---
+handle_game_input:
+    lda next_input
+    
+    cmp #BUTTON_A
+    beq game_a_pressed
+    
+    cmp #BUTTON_B
+    beq game_b_pressed
+    
+    cmp #BUTTON_START
+    beq game_start_pressed
+
+    cmp #BUTTON_SELECT
+    beq game_select_pressed
+    
+    rts
+    
+game_a_pressed:
+    jsr game_draw_card
+    rts
+    
+game_b_pressed:
+    jsr init_game_state
+    rts
+
+game_start_pressed:
+    lda #$00
+    sta view_game
+    lda #$ff
+    sta reqdraw_splash
+    lda #$ff
+    sta redraws_game
+    rts
+    
+game_select_pressed:
+    lda #$00
+    sta view_game
+    lda #$ff
+    sta reqdraw_splash
+    lda #$ff
+    sta redraws_game
+    rts
+
+; --- Update Game State ---
+update_game_state:
+    rts
+
+; --- Game action: draw a card ---
+game_draw_card:
+    lda length_deck
+    bne game_draw_card_have_deck
+    jmp game_deck_empty
+
+game_draw_card_have_deck:
+    lda card1_room
+    sta card_last
+    sta card_last_value
+
+    dec length_deck
+    inc turn_game
+    lda card1_room
+    beq game_take_damage
+    cmp #$01
+    beq game_gain_hp
+    cmp #$02
+    beq game_gain_sp
+    jmp game_gain_xp
+
+game_take_damage:
+    lda hp_player
+    bne game_take_damage_alive
+    jmp game_over
+
+game_take_damage_alive:
+    dec hp_player
+    lda #$01
+    sta card_last_type
+    jmp game_progress_enemy
+
+game_gain_hp:
+    lda hp_player
+    cmp #$09
+    bne game_gain_hp_inc
+    jmp game_progress_enemy
+
+game_gain_hp_inc:
+    inc hp_player
+    lda #$02
+    sta card_last_type
+    jmp game_progress_enemy
+
+game_gain_sp:
+    lda sp_player
+    cmp #$0f
+    bne game_gain_sp_inc
+    jmp game_progress_enemy
+
+game_gain_sp_inc:
+    inc sp_player
+    lda #$03
+    sta card_last_type
+    jmp game_progress_enemy
+
+game_gain_xp:
+    inc xp_player
+    lda #$04
+    sta card_last_type
+
+game_progress_enemy:
+    lda enemy_hp_game
+    bne game_progress_enemy_decrement
+    jmp game_enemy_reset
+
+game_progress_enemy_decrement:
+    dec enemy_hp_game
+    bne game_mark_dirty
+
+game_enemy_reset:
+    inc room_game
+    inc xp_player
+    lda #$08
+    sta enemy_hp_game
+    lda #$09
+    sta length_deck
+    lda #$04
+    sta card_last_type
+    lda #$03
+    sta card_last
+
+    jsr build_room_queue
+    lda #$ff
+    sta redraws_game
+    rts
+
+room_advance:
+    lda card2_room
+    sta card1_room
+    lda card3_room
+    sta card2_room
+    lda card4_room
+    sta card3_room
+    jsr rng_step
+    lda seed1_deck
+    and #$03
+    sta card4_room
+    rts
+
+build_room_queue:
+    jsr rng_step
+    lda seed1_deck
+    and #$03
+    sta card1_room
+    jsr rng_step
+    lda seed1_deck
+    and #$03
+    sta card2_room
+    jsr rng_step
+    lda seed1_deck
+    and #$03
+    sta card3_room
+    jsr rng_step
+    lda seed1_deck
+    and #$03
+    sta card4_room
+    rts
+
+game_mark_dirty:
+    jsr room_advance
+    lda #$ff
+    sta redraws_game
+    rts
+
+game_deck_empty:
+    lda #$ff
+    sta redraws_game
+    rts
+
+game_over:
+    jsr init_game_state
+    lda #$00
+    sta view_game
+    lda #$ff
+    sta redraws_game
+    rts
+
+; --- Tiny RNG step ---
+rng_step:
+    lda seed1_deck
+    asl a
+    eor seed2_deck
+    adc #$1d
+    sta seed1_deck
+
+    lda seed2_deck
+    eor seed1_deck
+    adc #$03
+    sta seed2_deck
+    rts
+
+; --- Render Screen ---
+render_screen:
+    ldx view_game
+    cpx #$00
+    bne render_game
+
+    jsr render_splash_screen
+    jmp render_done
+    
+render_game:
+    jsr render_game_screen
+    
+render_done:
+    rts
+
+; --- Render Splash Screen ---
+render_splash_screen:
+    lda reqdraw_splash
+    beq render_splash_done
+    jsr draw_splash_screen
+    lda #$00
+    sta reqdraw_splash
+    sta redraws_game
+render_splash_done:
+    rts
+
+; --- Render Game Screen ---
+render_game_screen:
+    lda redraws_game
+    beq render_game_done
+    jsr draw_game_screen
+    lda #$00
+    sta redraws_game
+render_game_done:
+    rts
+
+; --- Interrupt vectors at $FFFA ---
+.segment "VECTORS"
+.addr $0000               ; NMI at $FFFA
+.addr reset               ; RESET at $FFFC
+.addr $0000               ; IRQ/BRK at $FFFE
