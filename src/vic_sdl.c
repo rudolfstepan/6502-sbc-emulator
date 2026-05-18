@@ -41,6 +41,7 @@ static SDL_Texture *texture = NULL;
 static uint32_t *framebuffer = NULL;
 static bool sdl_initialized = false;
 static bool screen_edit_mode = false;
+static bool screen_edit_enabled = true;
 
 #define CURSOR_BLINK_MS 500
 
@@ -247,7 +248,7 @@ void vic_sdl_render(void) {
         // Text mode: 40x25 characters
         uint8_t cursor_x = 0;
         uint8_t cursor_y = 0;
-        bool cursor_visible = ((SDL_GetTicks() / CURSOR_BLINK_MS) & 1u) == 0;
+        bool cursor_visible = screen_edit_enabled && screen_edit_mode && (((SDL_GetTicks() / CURSOR_BLINK_MS) & 1u) == 0);
         vic_get_cursor(&cursor_x, &cursor_y);
 
         for (int row = 0; row < SCREEN_ROWS; row++) {
@@ -346,6 +347,7 @@ bool vic_sdl_handle_events(void) {
                     // Only handle non-printable keys here
                     switch (key) {
                         case SDLK_LEFT: {
+                            if (!screen_edit_enabled) break;
                             uint8_t cursor_x;
                             uint8_t cursor_y;
                             vic_get_cursor(&cursor_x, &cursor_y);
@@ -356,6 +358,7 @@ bool vic_sdl_handle_events(void) {
                             break;
                         }
                         case SDLK_RIGHT: {
+                            if (!screen_edit_enabled) break;
                             uint8_t cursor_x;
                             uint8_t cursor_y;
                             vic_get_cursor(&cursor_x, &cursor_y);
@@ -366,6 +369,7 @@ bool vic_sdl_handle_events(void) {
                             break;
                         }
                         case SDLK_UP: {
+                            if (!screen_edit_enabled) break;
                             uint8_t cursor_x;
                             uint8_t cursor_y;
                             vic_get_cursor(&cursor_x, &cursor_y);
@@ -376,6 +380,7 @@ bool vic_sdl_handle_events(void) {
                             break;
                         }
                         case SDLK_DOWN: {
+                            if (!screen_edit_enabled) break;
                             uint8_t cursor_x;
                             uint8_t cursor_y;
                             vic_get_cursor(&cursor_x, &cursor_y);
@@ -424,4 +429,12 @@ bool vic_sdl_handle_events(void) {
 // Check if SDL rendering is enabled
 bool vic_sdl_enabled(void) {
     return sdl_initialized;
+}
+
+void vic_sdl_set_screen_edit_enabled(bool enabled)
+{
+    screen_edit_enabled = enabled;
+    if (!enabled) {
+        screen_edit_mode = false;
+    }
 }

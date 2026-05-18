@@ -22,4 +22,7 @@ bool vic_sdl_handle_events(void);
 // Check if SDL rendering is enabled
 bool vic_sdl_enabled(void);
 
+// Enable/disable SDL screen-edit cursor behavior (arrow-key cursor control).
+void vic_sdl_set_screen_edit_enabled(bool enabled);
+
 #endif // VIC_SDL_H

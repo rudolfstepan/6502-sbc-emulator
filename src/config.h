@@ -18,6 +18,7 @@ typedef struct {
     uint16_t base;
     uint32_t size;           /* SRAM/ROM only */
     char     rom_file[CFG_STR_MAX];   /* ROM only */
+    bool     rom_is_game;    /* ROM role: game/system */
     char     uart_mode[32];  /* "stdio" or "tcp" */
     int      uart_port;      /* TCP mode */
     char     disk_path[CFG_STR_MAX];  /* DISK root path */

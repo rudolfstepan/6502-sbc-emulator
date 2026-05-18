@@ -91,6 +91,8 @@ int config_load(Config *cfg, const char *filename)
                 cur.size = (uint32_t)strtoul(val, NULL, 16);
             else if (strcmp(key, "file") == 0)
                 strncpy(cur.rom_file, val, CFG_STR_MAX - 1);
+            else if (strcmp(key, "role") == 0)
+                cur.rom_is_game = (strcmp(val, "game") == 0);
             else if (strcmp(key, "mode") == 0)
                 strncpy(cur.uart_mode, val, sizeof(cur.uart_mode) - 1);
             else if (strcmp(key, "port") == 0)
@@ -118,6 +120,7 @@ void config_dump(const Config *cfg)
         printf("  [%s] base=$%04X", type_names[d->type], d->base);
         if (d->size)  printf(" size=$%04X", d->size);
         if (d->rom_file[0]) printf(" file=%s", d->rom_file);
+        if (d->type == DEV_ROM) printf(" role=%s", d->rom_is_game ? "game" : "system");
         if (d->uart_mode[0]) printf(" mode=%s", d->uart_mode);
         if (d->uart_port)    printf(" port=%d", d->uart_port);
         if (d->disk_path[0]) printf(" path=%s", d->disk_path);

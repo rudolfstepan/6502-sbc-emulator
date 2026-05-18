@@ -123,6 +123,7 @@ int main(int argc, char *argv[])
     int     speed_override = -1;
     bool    debug_flag    = false;
     bool    show_map      = false;
+    bool    game_rom_mode = false;
 
     /* ── Parse arguments ─────────────────────────────────── */
     for (int i = 1; i < argc; i++) {
@@ -210,6 +211,8 @@ int main(int argc, char *argv[])
         case DEV_ROM: {
             if (nr >= CFG_MAX_DEVS) { fprintf(stderr,"Too many ROMs\n"); break; }
             uint32_t rsize = dc->size ? dc->size : 0x4000;
+            if (dc->rom_is_game)
+                game_rom_mode = true;
             if (dc->rom_file[0]) {
                 if (rom_load(&roms[nr], dc->rom_file, rsize) != 0) {
                     fprintf(stderr, "Warning: ROM load failed, using blank ROM\n");
@@ -292,6 +295,7 @@ int main(int argc, char *argv[])
     /* ── Initialize SDL2 for VIC display ──────────────────── */
     bool use_sdl = (vic_sdl_init() == 0);
     if (use_sdl) {
+        vic_sdl_set_screen_edit_enabled(!game_rom_mode);
         printf("SDL2 display enabled. Press ESC to quit.\n");
         vic_sdl_render();   /* Initial blank render so window appears */
     } else {
@@ -299,7 +303,9 @@ int main(int argc, char *argv[])
     }
 
     /* Startup chirp so audio path can be verified quickly. */
-    soundchip_beep(880.0f, 100);
+    if (!game_rom_mode) {
+        soundchip_beep(880.0f, 100);
+    }
 
     /* ── Init monitor ─────────────────────────────────────── */
     Monitor mon;
