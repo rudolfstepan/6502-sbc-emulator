@@ -69,7 +69,7 @@ KLAUS_URL = https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tes
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms chess-rom test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release
+.PHONY: all clean run check roms chess-rom ehbasic-rom test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release
 
 all: $(TARGET)
 
@@ -125,7 +125,11 @@ test-klaus-6502: $(OBJDIR) $(KLAUS_BIN)
 roms:
 	$(BASH) tools/make_kernel_rom.sh
 	$(BASH) tools/make_msbasic_rom.sh
+	$(BASH) tools/make_ehbasic_rom.sh
 	$(BASH) tools/make_chess_rom.sh
+
+ehbasic-rom:
+	$(BASH) tools/make_ehbasic_rom.sh
 
 chess-rom:
 	$(BASH) tools/make_chess_rom.sh
