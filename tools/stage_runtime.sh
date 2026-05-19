@@ -6,7 +6,7 @@ OUT_DIR="${1:-bin}"
 mkdir -p "$OUT_DIR/roms" "$OUT_DIR/data/disk"
 
 # Copy default runtime configs if present.
-for cfg in sbc.ini chess.ini; do
+for cfg in sbc.ini ehbasic.ini chess.ini; do
     if [[ -f "$cfg" ]]; then
         cp -f "$cfg" "$OUT_DIR/"
     fi

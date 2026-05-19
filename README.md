@@ -3,7 +3,7 @@
 [![CI](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an interactive monitor, and bundled ROM workflows (MS BASIC and standalone chess).
+A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an interactive monitor, and bundled ROM workflows (MS BASIC, EhBASIC, and standalone chess).
 
 ## Highlights
 
@@ -12,8 +12,8 @@ A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an in
 - Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap display, and a simple SOUND device
 - SDL2 display backend for VIC text/bitmap rendering
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
-- Ready-to-run configs for MS BASIC (`sbc.ini`) and chess (`chess.ini`)
-- ROM build scripts for kernel, MS BASIC, chess, and test ROMs
+- Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), and chess (`chess.ini`)
+- ROM build scripts for kernel, MS BASIC, EhBASIC, chess, and test ROMs
 
 ## Quick Start
 
@@ -30,6 +30,13 @@ Run MS BASIC setup:
 ```sh
 cd bin
 ./sbc6502 sbc.ini
+```
+
+Run EhBASIC setup:
+
+```sh
+cd bin
+./sbc6502 ehbasic.ini
 ```
 
 Run standalone chess ROM:
@@ -92,6 +99,7 @@ $C000-$FFFF   ROM windows (configurable)
 Notes:
 
 - `sbc.ini` uses two ROM windows (`kernel.rom` + `msbasic.rom`).
+- `ehbasic.ini` uses one ROM window (`ehbasic.rom`) with EhBASIC instead of MS BASIC.
 - `chess.ini` uses one 16 KB ROM at `$C000-$FFFF`.
 
 ## Sound Device
@@ -178,6 +186,7 @@ path = data/disk
 bin/
   sbc6502(.exe)
   sbc.ini
+  ehbasic.ini
   chess.ini
   roms/
   data/disk/
@@ -189,6 +198,7 @@ bin/
 ```sh
 bash tools/make_kernel_rom.sh
 bash tools/make_msbasic_rom.sh
+bash tools/make_ehbasic_rom.sh
 bash tools/make_chess_rom.sh
 python3 tools/make_test_rom.py
 ```
