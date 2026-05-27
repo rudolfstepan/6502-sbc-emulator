@@ -69,7 +69,7 @@ KLAUS_URL = https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tes
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms chess-rom ehbasic-rom test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release
+.PHONY: all clean run check roms chess-rom ehbasic-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release
 
 all: $(TARGET)
 
@@ -133,6 +133,11 @@ ehbasic-rom:
 
 chess-rom:
 	$(BASH) tools/make_chess_rom.sh
+
+adventure: data/disk/adventure.prg
+
+data/disk/adventure.prg: examples/adventure.bas tools/make_ehbasic_prg.py
+	python3 tools/make_ehbasic_prg.py examples/adventure.bas data/disk/adventure.prg
 
 run: all
 	$(call RUN_BIN,$(TARGET)) $(BINDIR)/sbc.ini
