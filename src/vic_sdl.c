@@ -1,12 +1,16 @@
 #include "vic_sdl.h"
 #include "vic.h"
 #include "keyboard.h"
+#include "simd.h"
 #include <SDL2/SDL.h>
 #include <stdio.h>
 #include <string.h>
 
 // SDL configuration
 #define SCREEN_SCALE 2          // 2x scaling for better visibility
+#if SCREEN_SCALE != 2
+#  error "SIMD render path requires SCREEN_SCALE == 2"
+#endif
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 8
 #define SCREEN_COLS 40
@@ -94,13 +98,13 @@ int vic_sdl_init(void) {
     if (sdl_initialized) {
         return 0;  // Already initialized
     }
-    
+
     // Initialize SDL
     if (SDL_Init(SDL_INIT_VIDEO) < 0) {
         fprintf(stderr, "SDL_Init failed: %s\n", SDL_GetError());
         return -1;
     }
-    
+
     // Create window
     window = SDL_CreateWindow(
         "6502 SBC - VIC Display",
@@ -110,13 +114,13 @@ int vic_sdl_init(void) {
         WINDOW_HEIGHT,
         SDL_WINDOW_SHOWN
     );
-    
+
     if (!window) {
         fprintf(stderr, "SDL_CreateWindow failed: %s\n", SDL_GetError());
         SDL_Quit();
         return -1;
     }
-    
+
     // Create renderer
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer) {
@@ -125,7 +129,7 @@ int vic_sdl_init(void) {
         SDL_Quit();
         return -1;
     }
-    
+
     // Create texture for framebuffer
     texture = SDL_CreateTexture(
         renderer,
@@ -134,7 +138,7 @@ int vic_sdl_init(void) {
         WINDOW_WIDTH,
         WINDOW_HEIGHT
     );
-    
+
     if (!texture) {
         fprintf(stderr, "SDL_CreateTexture failed: %s\n", SDL_GetError());
         SDL_DestroyRenderer(renderer);
@@ -142,7 +146,7 @@ int vic_sdl_init(void) {
         SDL_Quit();
         return -1;
     }
-    
+
     // Allocate framebuffer
     framebuffer = (uint32_t *)malloc(WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
     if (!framebuffer) {
@@ -153,14 +157,14 @@ int vic_sdl_init(void) {
         SDL_Quit();
         return -1;
     }
-    
+
     sdl_initialized = true;
-    
+
     // Enable text input for international keyboard support
     SDL_StartTextInput();
-    
+
     printf("SDL2 VIC display initialized: %dx%d\n", WINDOW_WIDTH, WINDOW_HEIGHT);
-    
+
     return 0;
 }
 
@@ -169,64 +173,51 @@ void vic_sdl_shutdown(void) {
     if (!sdl_initialized) {
         return;
     }
-    
+
     if (framebuffer) {
         free(framebuffer);
         framebuffer = NULL;
     }
-    
+
     if (texture) {
         SDL_DestroyTexture(texture);
         texture = NULL;
     }
-    
+
     if (renderer) {
         SDL_DestroyRenderer(renderer);
         renderer = NULL;
     }
-    
+
     if (window) {
         SDL_DestroyWindow(window);
         window = NULL;
     }
-    
+
     SDL_StopTextInput();
     SDL_Quit();
     sdl_initialized = false;
-    
+
     printf("SDL2 VIC display shutdown\n");
 }
 
-// Render a single character to the framebuffer
+/* Render a single 8x8 character at 2x scale into the framebuffer.
+   Each source pixel becomes a 2x2 block; SIMD expands all 8 pixels of one
+   font row in a single pass and writes both scaled rows at once. */
 static void render_char(uint8_t char_code, int x, int y, uint8_t text_attr, bool invert) {
     const uint8_t *pattern = vic_get_char_pattern(char_code);
-    uint32_t text_color = vic_palette[text_attr & 0x0F];
-    uint32_t background_color = vic_palette[(text_attr >> 4) & 0x0F];
-    uint32_t fg = invert ? background_color : text_color;
-    uint32_t bg = invert ? text_color : background_color;
-    
-    // Render each pixel of the 8x8 character
-    for (int py = 0; py < CHAR_HEIGHT; py++) {
-        uint8_t row = pattern[py];
-        for (int px = 0; px < CHAR_WIDTH; px++) {
-            /* Font bytes are LSB-first: bit 0 = leftmost pixel. */
-            uint32_t color = (row & (0x01 << px)) ? fg : bg;
-            
-            // Draw with 2x scaling
-            int screen_x = (x * CHAR_WIDTH + px) * SCREEN_SCALE;
-            int screen_y = (y * CHAR_HEIGHT + py) * SCREEN_SCALE;
-            
-            for (int sy = 0; sy < SCREEN_SCALE; sy++) {
-                for (int sx = 0; sx < SCREEN_SCALE; sx++) {
-                    int fb_x = screen_x + sx;
-                    int fb_y = screen_y + sy;
-                    if (fb_x < WINDOW_WIDTH && fb_y < WINDOW_HEIGHT) {
-                        framebuffer[fb_y * WINDOW_WIDTH + fb_x] = color;
-                    }
-                }
-            }
-        }
-    }
+    uint32_t tc = vic_palette[text_attr & 0x0F];
+    uint32_t bc = vic_palette[(text_attr >> 4) & 0x0F];
+    uint32_t fg = invert ? bc : tc;
+    uint32_t bg = invert ? tc : bc;
+
+    uint32_t * restrict base = framebuffer
+        + (size_t)(y * CHAR_HEIGHT * SCREEN_SCALE) * WINDOW_WIDTH
+        + (size_t)(x * CHAR_WIDTH  * SCREEN_SCALE);
+
+    for (int py = 0; py < CHAR_HEIGHT; py++)
+        simd_render_char_row_x2(base + (size_t)(py * SCREEN_SCALE) * WINDOW_WIDTH,
+                                 WINDOW_WIDTH, pattern[py], fg, bg);
 }
 
 // Render the VIC screen to SDL window
@@ -234,15 +225,15 @@ void vic_sdl_render(void) {
     if (!sdl_initialized) {
         return;
     }
-    
+
+    vic_increment_frame();
+
     // Check graphics mode
     uint8_t gfx_mode = vic_get_graphics_mode();
-    
+
     if (gfx_mode == 0) {
-        uint32_t background = vic_palette[vic_get_background_color() & 0x0F];
-        for (int i = 0; i < WINDOW_WIDTH * WINDOW_HEIGHT; i++) {
-            framebuffer[i] = background;
-        }
+        simd_fill_u32(framebuffer, vic_palette[vic_get_background_color() & 0x0F],
+                      (size_t)WINDOW_WIDTH * WINDOW_HEIGHT);
 
         // Text mode: 40x25 characters
         uint8_t cursor_x = 0;
@@ -259,43 +250,70 @@ void vic_sdl_render(void) {
             }
         }
     } else {
-        memset(framebuffer, 0, WINDOW_WIDTH * WINDOW_HEIGHT * sizeof(uint32_t));
-
-        // Bitmap mode: 320x200 pixels
+        /* Bitmap mode with per-cell colours from colour RAM.
+           Each 8×8 cell picks fg/bg from the same colour RAM used in text mode,
+           enabling full multicolour bitmap graphics without extra hardware.
+           One SIMD call per bitmap byte = 8x fewer iterations vs per-pixel. */
         for (int y = 0; y < 200; y++) {
-            for (int x = 0; x < 320; x++) {
-                // Calculate byte and bit position
-                uint16_t byte_offset = y * 40 + x / 8;
-                uint8_t bit_mask = 0x01 << (x & 7);  // LSB-first
-                
-                uint8_t pixel_byte = vic_read_bitmap_ram(byte_offset);
-                bool pixel_on = (pixel_byte & bit_mask) != 0;
-                
-                // Scale to window size (2x2 pixels per bitmap pixel)
-                int screen_x = x * 2;
-                int screen_y = y * 2;
-                
-                uint32_t color = pixel_on
-                    ? vic_palette[vic_get_text_color() & 0x0F]
-                    : vic_palette[vic_get_background_color() & 0x0F];
-                
-                // Draw 2x2 block
-                for (int dy = 0; dy < 2; dy++) {
-                    for (int dx = 0; dx < 2; dx++) {
-                        int px = screen_x + dx;
-                        int py = screen_y + dy;
-                        if (px < WINDOW_WIDTH && py < WINDOW_HEIGHT) {
-                            framebuffer[py * WINDOW_WIDTH + px] = color;
+            uint32_t * restrict row_ptr =
+                framebuffer + (size_t)(y * SCREEN_SCALE) * WINDOW_WIDTH;
+            int cell_row = y / CHAR_HEIGHT;
+            for (int bx = 0; bx < 40; bx++) {
+                uint8_t attr = vic_read_video_ram(
+                    (uint16_t)(COLOR_RAM_OFFSET + cell_row * SCREEN_COLS + bx));
+                uint32_t bit_fg = vic_palette[attr & 0x0F];
+                uint32_t bit_bg = vic_palette[(attr >> 4) & 0x0F];
+                uint8_t  byte   = vic_read_bitmap_ram((uint16_t)(y * 40 + bx));
+                simd_render_char_row_x2(
+                    row_ptr + (size_t)(bx * CHAR_WIDTH * SCREEN_SCALE),
+                    WINDOW_WIDTH, byte, bit_fg, bit_bg);
+            }
+        }
+    }
+
+    /* ── Hardware sprites (rendered on top) ── */
+    if (vic_sprites_enabled()) {
+        for (int i = 0; i < 8; i++) {
+            VicSprite *sp = vic_get_sprite(i);
+            if (!(sp->flags & SP_FLAG_ENABLE)) continue;
+            if (!sp->color) continue;              /* colour 0 = transparent */
+
+            int sx    = (int)sp->x + ((sp->flags & SP_FLAG_XHIBIT) ? 256 : 0);
+            int sy    = (int)sp->y;
+            int sw    = (sp->flags & SP_FLAG_SIZE16) ? 16 : 8;
+            int sh    = sw;
+            int bytes_per_row = sw / 8;
+            uint32_t sp_color = vic_palette[sp->color & 0x0F];
+            int data_base = (int)(sp->data_slot & 7) * 32;
+
+            for (int py = 0; py < sh; py++) {
+                int src_row = (sp->flags & SP_FLAG_FLIPV) ? (sh - 1 - py) : py;
+                for (int px = 0; px < sw; px++) {
+                    int src_col = (sp->flags & SP_FLAG_FLIPH) ? (sw - 1 - px) : px;
+                    int byte_idx = src_row * bytes_per_row + src_col / 8;
+                    uint8_t pix  = vic_read_sprite_data(
+                        (uint16_t)(data_base + byte_idx));
+                    if (!(pix & (1u << (src_col & 7)))) continue; /* transparent */
+
+                    int fb_x = (sx + px) * SCREEN_SCALE;
+                    int fb_y = (sy + py) * SCREEN_SCALE;
+                    for (int dy = 0; dy < SCREEN_SCALE; dy++) {
+                        for (int dx = 0; dx < SCREEN_SCALE; dx++) {
+                            unsigned fx = (unsigned)(fb_x + dx);
+                            unsigned fy = (unsigned)(fb_y + dy);
+                            if (fx < (unsigned)WINDOW_WIDTH &&
+                                fy < (unsigned)WINDOW_HEIGHT)
+                                framebuffer[fy * WINDOW_WIDTH + fx] = sp_color;
                         }
                     }
                 }
             }
         }
     }
-    
+
     // Update texture
     SDL_UpdateTexture(texture, NULL, framebuffer, WINDOW_WIDTH * sizeof(uint32_t));
-    
+
     // Render to screen
     SDL_RenderClear(renderer);
     SDL_RenderCopy(renderer, texture, NULL, NULL);
@@ -307,13 +325,13 @@ bool vic_sdl_handle_events(void) {
     if (!sdl_initialized) {
         return true;
     }
-    
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_QUIT:
                 return false;  // User wants to quit
-                
+
             case SDL_TEXTINPUT: {
                 // Handle text input (works with all keyboard layouts)
                 VIA6522 *via = get_keyboard_via();
@@ -331,18 +349,18 @@ bool vic_sdl_handle_events(void) {
                 }
                 break;
             }
-            
+
             case SDL_KEYDOWN: {
                 // Handle special keys (non-printable)
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
                     return false;  // ESC to quit
                 }
-                
+
                 VIA6522 *via = get_keyboard_via();
                 if (via) {
                     SDL_Keycode key = event.key.keysym.sym;
                     uint8_t ascii = 0;
-                    
+
                     // Only handle non-printable keys here
                     switch (key) {
                         case SDLK_LEFT: {
@@ -404,7 +422,7 @@ bool vic_sdl_handle_events(void) {
                         default:
                             break;
                     }
-                    
+
                     // Push to VIA keyboard buffer
                     if (ascii != 0) {
                         via_keyboard_push(via, ascii);
@@ -412,12 +430,12 @@ bool vic_sdl_handle_events(void) {
                 }
                 break;
             }
-                
+
             default:
                 break;
         }
     }
-    
+
     return true;  // Continue running
 }
 

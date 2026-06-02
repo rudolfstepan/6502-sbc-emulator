@@ -191,6 +191,18 @@ int main(int argc, char *argv[])
                  0x9010, 8000,  /* Bitmap RAM at $9010-$AF4F (320x200 pixels) */
                  vic_bitmap_read, vic_bitmap_write, NULL);
 
+    bus_register(&bus, "VIC-BLITTER", NULL,
+                 0x8840, 16,    /* Blitter registers: $8840-$884F */
+                 vic_blitter_read, vic_blitter_write, NULL);
+
+    bus_register(&bus, "VIC-SPRREGS", NULL,
+                 0x8850, 64,    /* Sprite regs: $8850-$888F (8 sprites × 8 bytes) */
+                 vic_sprite_reg_read, vic_sprite_reg_write, NULL);
+
+    bus_register(&bus, "VIC-SPRDATA", NULL,
+                 0x8900, 256,   /* Sprite pixel data: $8900-$89FF (8 × 32 bytes) */
+                 vic_sprite_data_read, vic_sprite_data_write, NULL);
+
     bus_register(&bus, "SOUND", NULL,
                  0x8830, 6,
                  soundchip_bus_read, soundchip_bus_write, NULL);

@@ -1,6 +1,7 @@
 #include "vic.h"
 #include "bus.h"
 #include <stdint.h>
+#include <stdlib.h>
 #include <string.h>
 #include <stdio.h>
 
@@ -28,6 +29,8 @@
 static uint8_t video_ram[VIDEO_RAM_SIZE];    // Text mode: 2KB
 static uint8_t bitmap_ram[BITMAP_RAM_SIZE];  // Bitmap mode: 8000 bytes
 
+static uint8_t vic_frame_lo = 0;  /* incremented by renderer each frame */
+
 // VIC control registers
 static struct {
     uint8_t enabled;
@@ -46,18 +49,18 @@ static uint8_t default_text_attr(void)
 
 static void refresh_text_attr_foreground(void)
 {
-    for (int i = 0; i < TEXT_CELL_COUNT; i++) {
-        uint8_t attr = video_ram[COLOR_RAM_OFFSET + i];
-        video_ram[COLOR_RAM_OFFSET + i] = (uint8_t)((attr & 0xF0) | (vic_state.text_color & 0x0F));
-    }
+    uint8_t * restrict ap = video_ram + COLOR_RAM_OFFSET;
+    const uint8_t fg = vic_state.text_color & 0x0F;
+    for (int i = 0; i < TEXT_CELL_COUNT; i++)
+        ap[i] = (uint8_t)((ap[i] & 0xF0) | fg);
 }
 
 static void refresh_text_attr_background(void)
 {
-    for (int i = 0; i < TEXT_CELL_COUNT; i++) {
-        uint8_t attr = video_ram[COLOR_RAM_OFFSET + i];
-        video_ram[COLOR_RAM_OFFSET + i] = (uint8_t)(((vic_state.background_color & 0x0F) << 4) | (attr & 0x0F));
-    }
+    uint8_t * restrict ap = video_ram + COLOR_RAM_OFFSET;
+    const uint8_t bg = (uint8_t)((vic_state.background_color & 0x0F) << 4);
+    for (int i = 0; i < TEXT_CELL_COUNT; i++)
+        ap[i] = (uint8_t)(bg | (ap[i] & 0x0F));
 }
 
 // Character ROM (8x8 pixel font for 256 ASCII characters)
@@ -167,7 +170,7 @@ static const uint8_t char_rom[256][8] = {
 
     // ASCII 0x7F: Delete (empty pattern)
     [0x7F] = {0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00},
-    
+
     // Extended ASCII / custom VIC symbols
     [0x80] = {0x00, 0x18, 0x18, 0x3C, 0x18, 0x3C, 0x7E, 0x00}, // chess pawn
     [0x81] = {0x00, 0x3C, 0x66, 0x60, 0x7C, 0x38, 0x7E, 0x00}, // chess knight
@@ -183,7 +186,7 @@ void vic_init() {
     // Clear video RAM
     memset(video_ram, 0x20, VIDEO_RAM_SIZE);  // Fill with spaces
     memset(bitmap_ram, 0x00, BITMAP_RAM_SIZE); // Clear bitmap RAM
-    
+
     // Initialize VIC state
     vic_state.enabled = 1;
     vic_state.graphics_mode = 0;  // Start in text mode
@@ -192,7 +195,7 @@ void vic_init() {
     vic_state.text_color = 15;        // brighter startup text
     vic_state.background_color = 6;   // C64-style blue
     memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
-    
+
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
 }
 
@@ -217,31 +220,27 @@ void vic_bus_tick(void *dev, uint32_t cycles) {
 
 // VIC register interface: read from VIC control registers
 uint8_t vic_reg_read(void *dev, uint16_t offset) {
-    (void)dev;  // Unused
+    (void)dev;
 
     switch (offset) {
-        case 0:
-            return vic_state.graphics_mode & 0x01;
-        case 1:
-            return (uint8_t)vic_state.cursor_x;
-        case 2:
-            return (uint8_t)vic_state.cursor_y;
-        case 3:
-            return vic_state.text_color & 0x0F;
-        case 4:
-            return vic_state.background_color & 0x0F;
-        default:
-            return 0;
+        case 0: return vic_state.graphics_mode;
+        case 1: return (uint8_t)vic_state.cursor_x;
+        case 2: return (uint8_t)vic_state.cursor_y;
+        case 3: return vic_state.text_color & 0x0F;
+        case 4: return vic_state.background_color & 0x0F;
+        case 5: return vic_frame_lo;   /* read-only: incremented each render */
+        default: return 0;
     }
 }
 
 // VIC register interface: write to VIC control registers
 void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
-    (void)dev;  // Unused
+    (void)dev;
 
     switch (offset) {
         case 0:
-            vic_state.graphics_mode = val & 0x01;  // Bit 0 = graphics mode (0=text, 1=bitmap)
+            /* bit 0 = bitmap mode, bit 1 = sprites enable */
+            vic_state.graphics_mode = val & 0x03;
             break;
         case 1:
             vic_state.cursor_x = val;
@@ -265,7 +264,7 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
 // VIC bitmap RAM interface: read from bitmap RAM
 uint8_t vic_bitmap_read(void *dev, uint16_t offset) {
     (void)dev;  // Unused
-    
+
     if (offset < BITMAP_RAM_SIZE) {
         return bitmap_ram[offset];
     }
@@ -275,7 +274,7 @@ uint8_t vic_bitmap_read(void *dev, uint16_t offset) {
 // VIC bitmap RAM interface: write to bitmap RAM
 void vic_bitmap_write(void *dev, uint16_t offset, uint8_t val) {
     (void)dev;  // Unused
-    
+
     if (offset < BITMAP_RAM_SIZE) {
         bitmap_ram[offset] = val;
     }
@@ -314,9 +313,9 @@ void vic_write_char(char ch) {
     if (!vic_state.enabled) {
         return;
     }
-    
+
     uint16_t pos = vic_state.cursor_y * VIC_SCREEN_COLS + vic_state.cursor_x;
-    
+
     if (ch == '\n' || ch == '\r') {
         // Newline / Carriage return - both start a new line
         vic_state.cursor_x = 0;
@@ -333,14 +332,14 @@ void vic_write_char(char ch) {
             video_ram[COLOR_RAM_OFFSET + pos] = default_text_attr();
         }
         vic_state.cursor_x++;
-        
+
         // Wrap to next line
         if (vic_state.cursor_x >= VIC_SCREEN_COLS) {
             vic_state.cursor_x = 0;
             vic_state.cursor_y++;
         }
     }
-    
+
     // Scroll if needed
     if (vic_state.cursor_y >= VIC_SCREEN_ROWS) {
         vic_scroll_up();
@@ -366,14 +365,14 @@ void vic_clear_screen() {
 // Scroll screen up by one line
 void vic_scroll_up() {
     // Move all lines up
-    memmove(video_ram, video_ram + VIC_SCREEN_COLS, 
+    memmove(video_ram, video_ram + VIC_SCREEN_COLS,
             VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1));
     memmove(video_ram + COLOR_RAM_OFFSET,
         video_ram + COLOR_RAM_OFFSET + VIC_SCREEN_COLS,
         VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1));
-    
+
     // Clear bottom line
-    memset(video_ram + VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1), 
+    memset(video_ram + VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1),
            0x20, VIC_SCREEN_COLS);
     memset(video_ram + COLOR_RAM_OFFSET + VIC_SCREEN_COLS * (VIC_SCREEN_ROWS - 1),
             default_text_attr(), VIC_SCREEN_COLS);
@@ -414,7 +413,7 @@ void vic_render_screen() {
     if (!vic_state.enabled) {
         return;
     }
-    
+
     // This would typically render to actual display hardware
     // For now, we can output to terminal for debugging
     static int frame_count = 0;
@@ -433,10 +432,251 @@ void vic_render_screen() {
 
 // Get current graphics mode
 uint8_t vic_get_graphics_mode(void) {
-    return vic_state.graphics_mode;
+    return vic_state.graphics_mode & 0x01;
 }
 
 // Set graphics mode
 void vic_set_graphics_mode(uint8_t mode) {
-    vic_state.graphics_mode = mode & 0x01;
+    vic_state.graphics_mode = (vic_state.graphics_mode & ~0x01) | (mode & 0x01);
 }
+
+/* ──────────────────────────────────────────────────────────────────
+ * Blitter + Sprites
+ * ────────────────────────────────────────────────────────────────── */
+
+/* Forward declaration */
+static void blit_execute(void);
+
+/* ---- pixel helpers (operate on bitmap_ram) ---- */
+
+static void bitmap_set_pixel(int x, int y, int color)
+{
+    if ((unsigned)x >= VIC_BITMAP_WIDTH || (unsigned)y >= VIC_BITMAP_HEIGHT) return;
+    uint8_t bit = (uint8_t)(1u << (x & 7));
+    if (color) bitmap_ram[y * 40 + x / 8] |=  bit;
+    else        bitmap_ram[y * 40 + x / 8] &= (uint8_t)~bit;
+}
+
+/* ---- Blitter state ---- */
+
+static struct {
+    uint16_t x, src_x;
+    uint8_t  y, src_y;
+    uint8_t  w, h;
+    uint8_t  color;
+    uint8_t  op;
+} blit;
+
+/* BLIT_OP codes */
+#define BLIT_FILL       0
+#define BLIT_COPY       1
+#define BLIT_CLEAR      2
+#define BLIT_LINE       3
+#define BLIT_CIRCLE     4
+#define BLIT_SCROLL_UP  5
+#define BLIT_FILL_CIRC  6
+#define BLIT_INVERT     7
+
+static void blit_line_draw(int x0, int y0, int x1, int y1, int c)
+{
+    int dx = abs(x1 - x0), dy = -abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        bitmap_set_pixel(x0, y0, c);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { if (x0 == x1) break; err += dy; x0 += sx; }
+        if (e2 <= dx) { if (y0 == y1) break; err += dx; y0 += sy; }
+    }
+}
+
+static void blit_circle_draw(int cx, int cy, int r, int c)
+{
+    if (r <= 0) { bitmap_set_pixel(cx, cy, c); return; }
+    int x = r, y = 0, p = 1 - r;
+#define P8(ox, oy) do { \
+    bitmap_set_pixel(cx+(ox), cy+(oy), c); bitmap_set_pixel(cx-(ox), cy+(oy), c); \
+    bitmap_set_pixel(cx+(ox), cy-(oy), c); bitmap_set_pixel(cx-(ox), cy-(oy), c); \
+    } while(0)
+    P8(x, 0); P8(0, x);
+    while (x > y) {
+        y++;
+        if (p <= 0) p += 2 * y + 1;
+        else { x--; p += 2 * (y - x) + 1; }
+        P8(x, y);
+        if (x != y) P8(y, x);
+    }
+#undef P8
+}
+
+static void blit_fill_circle(int cx, int cy, int r, int c)
+{
+    for (int dy = -r; dy <= r; dy++) {
+        int r2 = r * r - dy * dy, hw = r;
+        while (hw > 0 && hw * hw > r2) hw--;
+        for (int dx = -hw; dx <= hw; dx++)
+            bitmap_set_pixel(cx + dx, cy + dy, c);
+    }
+}
+
+static void blit_execute(void)
+{
+    int x  = (int)blit.x, y  = (int)blit.y;
+    int sx = (int)blit.src_x, sy = (int)blit.src_y;
+    int w  = blit.w  ? blit.w  : 256;
+    int h  = blit.h  ? blit.h  : 256;
+    int c  = blit.color & 1;
+
+    switch (blit.op) {
+    case BLIT_FILL:
+        for (int dy = 0; dy < h; dy++)
+            for (int dx = 0; dx < w; dx++)
+                bitmap_set_pixel(x + dx, y + dy, c);
+        break;
+    case BLIT_COPY:
+        for (int dy = 0; dy < h; dy++)
+            for (int dx = 0; dx < w; dx++) {
+                int bx = sx + dx, by = sy + dy;
+                int bit = 0;
+                if ((unsigned)bx < VIC_BITMAP_WIDTH && (unsigned)by < VIC_BITMAP_HEIGHT)
+                    bit = (bitmap_ram[by * 40 + bx / 8] >> (bx & 7)) & 1;
+                bitmap_set_pixel(x + dx, y + dy, bit);
+            }
+        break;
+    case BLIT_CLEAR:
+        memset(bitmap_ram, 0, BITMAP_RAM_SIZE);
+        break;
+    case BLIT_LINE:
+        blit_line_draw(x, y, w, h, c);  /* w,h = x2,y2 */
+        break;
+    case BLIT_CIRCLE:
+        blit_circle_draw(x, y, w, c);   /* w = radius */
+        break;
+    case BLIT_SCROLL_UP: {
+        int sh = blit.h ? blit.h : 8;
+        if (sh >= VIC_BITMAP_HEIGHT) { memset(bitmap_ram, 0, BITMAP_RAM_SIZE); break; }
+        memmove(bitmap_ram, bitmap_ram + sh * 40,
+                (size_t)(VIC_BITMAP_HEIGHT - sh) * 40);
+        memset(bitmap_ram + (VIC_BITMAP_HEIGHT - sh) * 40, 0, (size_t)sh * 40);
+        break;
+    }
+    case BLIT_FILL_CIRC:
+        blit_fill_circle(x, y, w, c);
+        break;
+    case BLIT_INVERT:
+        for (int dy = 0; dy < h; dy++)
+            for (int dx = 0; dx < w; dx++) {
+                int bx = x + dx, by = y + dy;
+                if ((unsigned)bx < VIC_BITMAP_WIDTH && (unsigned)by < VIC_BITMAP_HEIGHT)
+                    bitmap_ram[by * 40 + bx / 8] ^= (uint8_t)(1u << (bx & 7));
+            }
+        break;
+    }
+}
+
+/* Blitter bus interface */
+uint8_t vic_blitter_read(void *dev, uint16_t offset)
+{
+    (void)dev;
+    switch (offset) {
+    case 0: return (uint8_t)(blit.x & 0xFF);
+    case 1: return (uint8_t)((blit.x >> 8) & 1);
+    case 2: return blit.y;
+    case 3: return blit.w;
+    case 4: return blit.h;
+    case 5: return (uint8_t)(blit.src_x & 0xFF);
+    case 6: return (uint8_t)((blit.src_x >> 8) & 1);
+    case 7: return blit.src_y;
+    case 8: return blit.color;
+    case 9: return blit.op;
+    default: return 0;           /* $0F = status: always idle */
+    }
+}
+
+void vic_blitter_write(void *dev, uint16_t offset, uint8_t val)
+{
+    (void)dev;
+    switch (offset) {
+    case 0: blit.x = (uint16_t)((blit.x & 0x100) | val); break;
+    case 1: blit.x = (uint16_t)((blit.x & 0x0FF) | ((val & 1) << 8)); break;
+    case 2: blit.y     = val; break;
+    case 3: blit.w     = val; break;
+    case 4: blit.h     = val; break;
+    case 5: blit.src_x = (uint16_t)((blit.src_x & 0x100) | val); break;
+    case 6: blit.src_x = (uint16_t)((blit.src_x & 0x0FF) | ((val & 1) << 8)); break;
+    case 7: blit.src_y = val; break;
+    case 8: blit.color = val; break;
+    case 9: blit.op    = val; break;
+    case 15: blit_execute(); break;    /* any write to $884F = TRIGGER */
+    }
+}
+
+/* ---- Sprites ---- */
+
+#define VIC_SPRITE_COUNT 8
+
+static VicSprite vic_sprites[VIC_SPRITE_COUNT];
+static uint8_t  sprite_pix_data[VIC_SPRITE_COUNT * 32]; /* 8 slots × 32 B */
+
+bool vic_sprites_enabled(void)
+{
+    return (vic_state.graphics_mode & 0x02) != 0;
+}
+
+VicSprite *vic_get_sprite(int i)
+{
+    if ((unsigned)i < VIC_SPRITE_COUNT) return &vic_sprites[i];
+    return NULL;
+}
+
+uint8_t vic_read_sprite_data(uint16_t offset)
+{
+    if (offset < sizeof(sprite_pix_data)) return sprite_pix_data[offset];
+    return 0;
+}
+
+/* Sprite register bus interface (8 sprites × 8 bytes = 64 bytes) */
+uint8_t vic_sprite_reg_read(void *dev, uint16_t offset)
+{
+    (void)dev;
+    int sp = offset / 8, reg = offset & 7;
+    if (sp >= VIC_SPRITE_COUNT) return 0;
+    switch (reg) {
+    case 0: return vic_sprites[sp].x;
+    case 1: return vic_sprites[sp].y;
+    case 2: return vic_sprites[sp].flags;
+    case 3: return vic_sprites[sp].color;
+    case 4: return vic_sprites[sp].data_slot;
+    default: return 0;
+    }
+}
+
+void vic_sprite_reg_write(void *dev, uint16_t offset, uint8_t val)
+{
+    (void)dev;
+    int sp = offset / 8, reg = offset & 7;
+    if (sp >= VIC_SPRITE_COUNT) return;
+    switch (reg) {
+    case 0: vic_sprites[sp].x         = val; break;
+    case 1: vic_sprites[sp].y         = val; break;
+    case 2: vic_sprites[sp].flags     = val; break;
+    case 3: vic_sprites[sp].color     = val & 0x0F; break;
+    case 4: vic_sprites[sp].data_slot = val &  0x07; break;
+    }
+}
+
+/* Sprite pixel data bus interface */
+uint8_t vic_sprite_data_read(void *dev, uint16_t offset)
+{
+    (void)dev;
+    return vic_read_sprite_data(offset);
+}
+
+void vic_sprite_data_write(void *dev, uint16_t offset, uint8_t val)
+{
+    (void)dev;
+    if (offset < sizeof(sprite_pix_data)) sprite_pix_data[offset] = val;
+}
+
+void vic_increment_frame(void) { vic_frame_lo++; }

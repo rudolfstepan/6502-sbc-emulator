@@ -2,6 +2,19 @@
 #define VIC_H
 
 #include <stdint.h>
+#include <stdbool.h>
+
+/* ---- Sprite descriptor (shared between vic.c and vic_sdl.c) ---- */
+typedef struct {
+    uint8_t x, y, flags, color, data_slot;
+    uint8_t pad[3];
+} VicSprite;
+
+#define SP_FLAG_ENABLE  0x01   /* bit 0: sprite visible */
+#define SP_FLAG_SIZE16  0x02   /* bit 1: 16×16 instead of 8×8 */
+#define SP_FLAG_FLIPH   0x08   /* bit 3: flip horizontally */
+#define SP_FLAG_FLIPV   0x10   /* bit 4: flip vertically */
+#define SP_FLAG_XHIBIT  0x80   /* bit 7: X bit 8 (for X 256-319) */
 
 // Initialize the VIC
 void vic_init();
@@ -53,5 +66,25 @@ uint8_t vic_get_background_color(void);
 
 // Rendering
 void vic_render_screen();
+
+/* ── Blitter bus interface ($8840-$884F) ── */
+uint8_t vic_blitter_read(void *dev, uint16_t offset);
+void    vic_blitter_write(void *dev, uint16_t offset, uint8_t val);
+
+/* ── Sprite register bus interface ($8850-$888F, 8×8 bytes) ── */
+uint8_t vic_sprite_reg_read(void *dev, uint16_t offset);
+void    vic_sprite_reg_write(void *dev, uint16_t offset, uint8_t val);
+
+/* ── Sprite pixel data bus interface ($8900-$89FF, 8×32 bytes) ── */
+uint8_t vic_sprite_data_read(void *dev, uint16_t offset);
+void    vic_sprite_data_write(void *dev, uint16_t offset, uint8_t val);
+
+/* ── Sprite access for renderer ── */
+bool       vic_sprites_enabled(void);
+VicSprite *vic_get_sprite(int i);
+uint8_t    vic_read_sprite_data(uint16_t offset);
+
+/* ── Frame counter (call from renderer each frame) ── */
+void vic_increment_frame(void);
 
 #endif // VIC_H

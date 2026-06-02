@@ -44,7 +44,22 @@ endif
 
 RUN_BIN = $(if $(filter Windows_NT,$(OS)),$(subst /,\\,$1),./$1)
 
-CFLAGS  = -std=c99 -Wall -Wextra -O2 -g $(SDL2_CFLAGS)
+# SIMD / auto-vectorisation flags, chosen per target architecture.
+# On Windows we always target x86-64 MinGW; elsewhere we query uname -m.
+ifeq ($(OS),Windows_NT)
+    SIMD_CFLAGS := -msse2 -ftree-vectorize
+else
+    _ARCH := $(shell uname -m)
+    ifeq ($(_ARCH),aarch64)
+        SIMD_CFLAGS := -ftree-vectorize
+    else ifeq ($(_ARCH),armv7l)
+        SIMD_CFLAGS := -mfpu=neon -ftree-vectorize
+    else
+        SIMD_CFLAGS := -msse2 -ftree-vectorize
+    endif
+endif
+
+CFLAGS  = -std=c99 -Wall -Wextra -O2 -g $(SIMD_CFLAGS) $(SDL2_CFLAGS)
 LDFLAGS = $(SDL2_LIBS) -lm
 TEST_SDL2_CFLAGS = $(filter-out -Dmain=SDL_main,$(SDL2_CFLAGS))
 TEST_SDL2_LIBS = $(filter-out -mwindows -lSDL2main -lmingw32,$(SDL2_LIBS))
@@ -69,11 +84,13 @@ KLAUS_URL = https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tes
 SRCS = $(wildcard $(SRCDIR)/*.c)
 OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
-.PHONY: all clean run check roms chess-rom ehbasic-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release
+BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
+
+.PHONY: all clean run check roms chess-rom ehbasic-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom
 
 all: $(TARGET)
 
-release: CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SDL2_CFLAGS)
+release: CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS) $(SDL2_CFLAGS)
 release: clean $(TARGET)
 	strip $(TARGET)
 	@echo "Release build complete: $(TARGET) (optimized, stripped)"
@@ -138,6 +155,17 @@ adventure: data/disk/adventure.prg
 
 data/disk/adventure.prg: examples/adventure.bas tools/make_ehbasic_prg.py
 	python3 tools/make_ehbasic_prg.py examples/adventure.bas data/disk/adventure.prg
+
+bench-mandelbrot: $(OBJDIR)
+	$(CC) $(BENCH_CFLAGS) -I$(SRCDIR) tests/bench_mandelbrot.c \
+	    -o $(OBJDIR)/bench_mandelbrot$(EXEEXT)
+	$(call RUN_BIN,$(OBJDIR)/bench_mandelbrot$(EXEEXT)) $(OBJDIR)/mandelbrot.bmp
+
+demo-rom:
+	$(BASH) tools/make_demo.sh
+
+demo: all demo-rom
+	$(call RUN_BIN,$(TARGET)) demo.ini
 
 run: all
 	$(call RUN_BIN,$(TARGET)) $(BINDIR)/sbc.ini
