@@ -46,7 +46,7 @@ int main(void)
     bus_register(&bus, "DISK-MVP", &disk, 0x8820, 16,
                  diskdev_read, diskdev_write, NULL);
     bus_register(&bus, "SOUND", NULL, 0x8830, 6,
-                 soundchip_bus_read, soundchip_bus_write, NULL);
+                 soundchip_voice_read, soundchip_voice_write, NULL);
     bus_register(&bus, "VIC-REGS", NULL, 0x9000, 16,
                  vic_reg_read, vic_reg_write, NULL);
     bus_register(&bus, "VIC-BITMAP", NULL, 0x9010, 8000,
