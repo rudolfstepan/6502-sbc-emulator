@@ -8,6 +8,7 @@ sbc6502
 *.swp
 *.swo
 .DS_Store
+.wiki/
 __pycache__/
 *.pyc
 !roms/.gitkeep
