@@ -19,7 +19,7 @@
 3. Create configurable devices from INI (`SRAM`, `ROM`, `VIA`, `UART`, `DISK`).
 4. Reset CPU from ROM reset vector.
 5. Main loop executes one instruction, then ticks peripherals.
-6. IRQ lines from VIA/UART are folded back into CPU IRQ state.
+6. IRQ lines from VIA, UART, and VIC are OR-ed and folded back into the CPU IRQ state.
 7. Optional monitor takes over on breakpoint, step-mode, or `SIGINT`.
 
 ## Device Map Strategy
@@ -29,8 +29,11 @@ The emulator uses both fixed and configurable regions.
 ### Fixed regions
 
 - `$8000-$87FF`: VIC text/color RAM
+- `$8840-$884F`: VIC blitter registers
+- `$8850-$888F`: VIC sprite registers (8 × 8 bytes)
 - `$8830-$8835`: SOUND
-- `$9000-$900F`: VIC registers
+- `$8900-$89FF`: VIC sprite pixel data (8 × 32 bytes)
+- `$9000-$900F`: VIC control registers (including interrupt system)
 - `$9010-$AF4F`: VIC bitmap RAM
 
 ### Configurable regions
@@ -47,10 +50,21 @@ Configured in INI sections:
 
 VIC provides two rendering paths:
 
-- Text mode (40x25, color attributes in video RAM)
-- Bitmap mode (320x200 using dedicated bitmap RAM window)
+- Text mode (40×25, color attributes in video RAM)
+- Bitmap mode (320×200 using dedicated bitmap RAM window)
+
+Hardware sprites (up to 8, 8×8 or 16×16 pixels) and a blitter (fill, copy, line, circle, scroll, invert) operate on the bitmap RAM.
 
 `vic_sdl.c` translates VIC state into an SDL window and handles keyboard events.
+
+## Interrupt Model
+
+The VIC raises the CPU IRQ line through the same OR-bus as VIA and UART. Interrupt sources:
+
+- **Raster compare**: fires when the internal raster line counter reaches the programmed compare value (`$9008`).
+- **Frame**: fires when the raster counter wraps to line 0 (start of new frame).
+
+The ISR (`$9006`) holds pending flags; writing a `1` to a bit acknowledges (clears) it. The IER (`$9007`) enables individual sources. `vic_irq()` returns the combined pending state.
 
 ## Audio Model
 

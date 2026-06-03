@@ -39,6 +39,14 @@ static struct {
     uint16_t cursor_y;
     uint8_t text_color;
     uint8_t background_color;
+
+    /* Interrupt system */
+    uint8_t  irq_status;       /* ISR: pending interrupt flags */
+    uint8_t  irq_enable;       /* IER: enabled interrupt sources */
+    uint8_t  raster_compare;   /* raster line that triggers RASTER irq */
+    uint8_t  raster_line;      /* current raster line (0..VIC_BITMAP_HEIGHT-1) */
+    uint16_t cycles_per_line;  /* CPU cycles per raster line (default 100) */
+    uint32_t raster_cycle_acc; /* accumulated cycles within current line */
 } vic_state;
 
 static uint8_t default_text_attr(void)
@@ -196,6 +204,13 @@ void vic_init() {
     vic_state.background_color = 6;   // C64-style blue
     memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
 
+    vic_state.irq_status      = 0;
+    vic_state.irq_enable      = 0;
+    vic_state.raster_compare  = 0;
+    vic_state.raster_line     = 0;
+    vic_state.cycles_per_line = 100;  /* default: 1 MHz @ 50 Hz, 200 lines */
+    vic_state.raster_cycle_acc = 0;
+
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
 }
 
@@ -211,11 +226,26 @@ void vic_bus_write(void *dev, uint16_t offset, uint8_t val) {
     vic_write_video_ram(offset, val);
 }
 
-// Bus interface: tick function (for periodic updates)
+// Bus interface: tick — advances raster line counter and raises interrupts
 void vic_bus_tick(void *dev, uint32_t cycles) {
-    (void)dev;    // Unused
-    (void)cycles; // Unused for now
-    // Could use this for vsync/refresh timing
+    (void)dev;
+
+    vic_state.raster_cycle_acc += cycles;
+
+    while (vic_state.cycles_per_line > 0 &&
+           vic_state.raster_cycle_acc >= vic_state.cycles_per_line) {
+        vic_state.raster_cycle_acc -= vic_state.cycles_per_line;
+        vic_state.raster_line++;
+
+        if (vic_state.raster_line >= VIC_BITMAP_HEIGHT) {
+            vic_state.raster_line = 0;
+            vic_state.irq_status |= VIC_IRQ_FRAME;
+        }
+
+        if (vic_state.raster_line == vic_state.raster_compare) {
+            vic_state.irq_status |= VIC_IRQ_RASTER;
+        }
+    }
 }
 
 // VIC register interface: read from VIC control registers
@@ -229,6 +259,16 @@ uint8_t vic_reg_read(void *dev, uint16_t offset) {
         case 3: return vic_state.text_color & 0x0F;
         case 4: return vic_state.background_color & 0x0F;
         case 5: return vic_frame_lo;   /* read-only: incremented each render */
+        case 6: {  /* ISR: interrupt status; bit 7 = any active */
+            uint8_t isr = vic_state.irq_status;
+            if (isr & vic_state.irq_enable) isr |= 0x80;
+            return isr;
+        }
+        case 7: return vic_state.irq_enable;
+        case 8: return vic_state.raster_compare;
+        case 9: return vic_state.raster_line;   /* read-only */
+        case 10: return (uint8_t)(vic_state.cycles_per_line & 0xFF);
+        case 11: return (uint8_t)(vic_state.cycles_per_line >> 8);
         default: return 0;
     }
 }
@@ -255,6 +295,26 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
         case 4:
             vic_state.background_color = val & 0x0F;
             refresh_text_attr_background();
+            break;
+        case 6:
+            /* Writing a 1 to any bit clears that interrupt flag (ACK) */
+            vic_state.irq_status &= (uint8_t)~val;
+            break;
+        case 7:
+            vic_state.irq_enable = val & 0x0F;
+            break;
+        case 8:
+            if (val < VIC_BITMAP_HEIGHT)
+                vic_state.raster_compare = val;
+            break;
+        /* case 9: raster_line is read-only */
+        case 10:
+            vic_state.cycles_per_line =
+                (uint16_t)((vic_state.cycles_per_line & 0xFF00) | val);
+            break;
+        case 11:
+            vic_state.cycles_per_line =
+                (uint16_t)((vic_state.cycles_per_line & 0x00FF) | ((uint16_t)val << 8));
             break;
         default:
             break;
@@ -680,3 +740,9 @@ void vic_sprite_data_write(void *dev, uint16_t offset, uint8_t val)
 }
 
 void vic_increment_frame(void) { vic_frame_lo++; }
+
+/* Returns true when any enabled interrupt is pending — wire to CPU IRQ */
+bool vic_irq(void)
+{
+    return (vic_state.irq_status & vic_state.irq_enable) != 0;
+}

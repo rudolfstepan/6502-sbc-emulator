@@ -176,17 +176,17 @@ int main(int argc, char *argv[])
 
     Bus bus;
     bus_init(&bus);
-    
+
     /* ── Initialize VIC (Video Interface Controller) ────── */
     vic_init();
     bus_register(&bus, "VIC-VIDEO", NULL,
                  0x8000, 2048,  /* 2KB: text video RAM at $8000-$87FF */
                  vic_bus_read, vic_bus_write, vic_bus_tick);
-    
+
     bus_register(&bus, "VIC-REGS", NULL,
                  0x9000, 16,    /* VIC control registers at $9000-$900F */
                  vic_reg_read, vic_reg_write, NULL);
-    
+
     bus_register(&bus, "VIC-BITMAP", NULL,
                  0x9010, 8000,  /* Bitmap RAM at $9010-$AF4F (320x200 pixels) */
                  vic_bitmap_read, vic_bitmap_write, NULL);
@@ -290,9 +290,9 @@ int main(int argc, char *argv[])
     CPU6502 cpu;
     cpu6502_init(&cpu, cpu_bus_read, cpu_bus_write, &bus);
     cpu6502_reset(&cpu);
-    
+
     /* ── VIC Demo messages disabled - MS BASIC will initialize the screen ──── */
-    /* 
+    /*
     vic_clear_screen();
     vic_write_string("6502 SBC with VIC - Video Interface Controller\n");
     vic_write_string("==============================================\n\n");
@@ -300,7 +300,7 @@ int main(int argc, char *argv[])
     vic_write_string("Video RAM: $8000-$87FF (2KB)\n\n");
     vic_write_string("Type text to see it on screen...\n");
     */
-    
+
     /* ── Initialize SDL2 for VIC display ──────────────────── */
     bool use_sdl = (vic_sdl_init() == 0);
     if (use_sdl) {
@@ -342,7 +342,7 @@ int main(int argc, char *argv[])
             printf("\nSDL window closed, exiting...\n");
             break;
         }
-        
+
         /* Check SIGINT frequently (after every ~1000 instructions) */
         static uint64_t sigint_check_cycles = 0;
         if (cpu.cycles - sigint_check_cycles >= 1000) {
@@ -375,10 +375,11 @@ int main(int argc, char *argv[])
         /* Tick peripherals */
         bus_tick(&bus, (uint32_t)c);
 
-        /* Feed IRQ from VIA/UART back to CPU */
+        /* Feed IRQ from VIA/UART/VIC back to CPU */
         bool irq = false;
         for (int i = 0; i < nv; i++) irq |= via_irq(&vias[i]);
         for (int i = 0; i < nu; i++) irq |= uart_irq(&uarts[i]);
+        irq |= vic_irq();
         if (irq) cpu6502_irq(&cpu);
         else     cpu6502_irq_clear(&cpu);
 

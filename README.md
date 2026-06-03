@@ -9,7 +9,7 @@ A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an in
 
 - MOS 6502 CPU core (all 151 official opcodes)
 - Integrated Klaus Dormann 6502 functional CPU test in the default test pipeline
-- Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap display, and a simple SOUND device
+- Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap/sprite display with blitter and interrupt system, and a simple SOUND device
 - SDL2 display backend for VIC text/bitmap rendering
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
 - Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), and chess (`chess.ini`)
@@ -91,7 +91,10 @@ $8800-$880F   VIA 6522 (configurable base)
 $8810-$8813   UART 6551 (configurable base)
 $8820-$882F   DISK MVP (configurable base)
 $8830-$8835   SOUND registers (fixed)
-$9000-$900F   VIC control registers (fixed)
+$8840-$884F   VIC blitter registers (fixed)
+$8850-$888F   VIC sprite registers (fixed)
+$8900-$89FF   VIC sprite pixel data (fixed)
+$9000-$900F   VIC control registers + interrupt system (fixed)
 $9010-$AF4F   VIC bitmap RAM (fixed)
 $C000-$FFFF   ROM windows (configurable)
 ```

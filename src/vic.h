@@ -87,4 +87,15 @@ uint8_t    vic_read_sprite_data(uint16_t offset);
 /* ── Frame counter (call from renderer each frame) ── */
 void vic_increment_frame(void);
 
+/* ── Interrupt system ── */
+
+/* ISR / IER bit definitions */
+#define VIC_IRQ_RASTER  0x01   /* bit 0: raster line compare match */
+#define VIC_IRQ_FRAME   0x02   /* bit 1: new frame (vsync) */
+#define VIC_IRQ_SS      0x04   /* bit 2: sprite-sprite collision (future) */
+#define VIC_IRQ_SB      0x08   /* bit 3: sprite-background collision (future) */
+
+/* Returns true if any enabled interrupt is pending (wire to CPU IRQ line) */
+bool vic_irq(void);
+
 #endif // VIC_H
