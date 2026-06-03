@@ -22,6 +22,10 @@
 /* Sprite mask for collision detection: which sprites cover each pixel */
 static uint8_t sprite_mask[320 * 200];
 
+/* Dirty tracking: which 8x8 cells (text mode) / 8x8 blocks (bitmap) have changed */
+static bool dirty[25 * 40];  /* 25 rows × 40 cols */
+static bool full_redraw = true;  /* force full redraw on mode change, etc. */
+
 static const uint32_t vic_palette[16] = {
     0xFF000000, // 0 black
     0xFFFFFFFF, // 1 white
@@ -248,8 +252,24 @@ void vic_sdl_render(void) {
 
     vic_increment_frame();
 
+    /* Track mode/scroll changes for dirty tracking */
+    static uint8_t last_gfx_mode = 0xFF;
+    static uint8_t last_scroll_x = 0xFF;
+    static uint8_t last_scroll_y = 0xFF;
+
     // Check graphics mode
     uint8_t gfx_mode = vic_get_graphics_mode();
+    uint8_t scroll_x = vic_get_scroll_x();
+    uint8_t scroll_y = vic_get_scroll_y();
+
+    if (gfx_mode != last_gfx_mode || scroll_x != last_scroll_x || scroll_y != last_scroll_y) {
+        full_redraw = true;
+        last_gfx_mode = gfx_mode;
+        last_scroll_x = scroll_x;
+        last_scroll_y = scroll_y;
+    } else {
+        full_redraw = false;
+    }
 
     if (gfx_mode == 0) {
         simd_fill_u32(framebuffer, vic_palette[vic_get_background_color() & 0x0F],
