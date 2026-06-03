@@ -47,6 +47,10 @@ static struct {
     uint8_t  raster_line;      /* current raster line (0..VIC_BITMAP_HEIGHT-1) */
     uint16_t cycles_per_line;  /* CPU cycles per raster line (default 100) */
     uint32_t raster_cycle_acc; /* accumulated cycles within current line */
+
+    /* Scrolling */
+    uint8_t  scroll_x;         /* fine scroll X: 0-7 pixels left shift */
+    uint8_t  scroll_y;         /* fine scroll Y: 0-7 pixels up shift */
 } vic_state;
 
 static uint8_t default_text_attr(void)
@@ -269,6 +273,8 @@ uint8_t vic_reg_read(void *dev, uint16_t offset) {
         case 9: return vic_state.raster_line;   /* read-only */
         case 10: return (uint8_t)(vic_state.cycles_per_line & 0xFF);
         case 11: return (uint8_t)(vic_state.cycles_per_line >> 8);
+        case 12: return vic_state.scroll_x;
+        case 13: return vic_state.scroll_y;
         default: return 0;
     }
 }
@@ -315,6 +321,12 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
         case 11:
             vic_state.cycles_per_line =
                 (uint16_t)((vic_state.cycles_per_line & 0x00FF) | ((uint16_t)val << 8));
+            break;
+        case 12:
+            vic_state.scroll_x = val & 0x07;  /* only 3 bits valid */
+            break;
+        case 13:
+            vic_state.scroll_y = val & 0x07;  /* only 3 bits valid */
             break;
         default:
             break;
@@ -708,6 +720,7 @@ uint8_t vic_sprite_reg_read(void *dev, uint16_t offset)
     case 2: return vic_sprites[sp].flags;
     case 3: return vic_sprites[sp].color;
     case 4: return vic_sprites[sp].data_slot;
+    case 5: return vic_sprites[sp].priority;
     default: return 0;
     }
 }
@@ -723,6 +736,7 @@ void vic_sprite_reg_write(void *dev, uint16_t offset, uint8_t val)
     case 2: vic_sprites[sp].flags     = val; break;
     case 3: vic_sprites[sp].color     = val & 0x0F; break;
     case 4: vic_sprites[sp].data_slot = val &  0x07; break;
+    case 5: vic_sprites[sp].priority  = val; break;
     }
 }
 
@@ -740,6 +754,9 @@ void vic_sprite_data_write(void *dev, uint16_t offset, uint8_t val)
 }
 
 void vic_increment_frame(void) { vic_frame_lo++; }
+
+uint8_t vic_get_scroll_x(void) { return vic_state.scroll_x; }
+uint8_t vic_get_scroll_y(void) { return vic_state.scroll_y; }
 
 /* Returns true when any enabled interrupt is pending — wire to CPU IRQ */
 bool vic_irq(void)

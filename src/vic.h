@@ -7,14 +7,16 @@
 /* ---- Sprite descriptor (shared between vic.c and vic_sdl.c) ---- */
 typedef struct {
     uint8_t x, y, flags, color, data_slot;
-    uint8_t pad[3];
+    uint8_t priority;   /* draw priority 0-255 (higher = on top) */
+    uint8_t pad[2];
 } VicSprite;
 
-#define SP_FLAG_ENABLE  0x01   /* bit 0: sprite visible */
-#define SP_FLAG_SIZE16  0x02   /* bit 1: 16×16 instead of 8×8 */
-#define SP_FLAG_FLIPH   0x08   /* bit 3: flip horizontally */
-#define SP_FLAG_FLIPV   0x10   /* bit 4: flip vertically */
-#define SP_FLAG_XHIBIT  0x80   /* bit 7: X bit 8 (for X 256-319) */
+#define SP_FLAG_ENABLE     0x01   /* bit 0: sprite visible */
+#define SP_FLAG_SIZE16     0x02   /* bit 1: 16×16 instead of 8×8 */
+#define SP_FLAG_FLIPH      0x08   /* bit 3: flip horizontally */
+#define SP_FLAG_FLIPV      0x10   /* bit 4: flip vertically */
+#define SP_FLAG_XHIBIT     0x80   /* bit 7: X bit 8 (for X 256-319) */
+#define SP_FLAG_MULTICOLOR 0x04   /* bit 2: use 2bpp multicolor mode */
 
 // Initialize the VIC
 void vic_init();
@@ -86,6 +88,10 @@ uint8_t    vic_read_sprite_data(uint16_t offset);
 
 /* ── Frame counter (call from renderer each frame) ── */
 void vic_increment_frame(void);
+
+/* ── Scrolling ── */
+uint8_t vic_get_scroll_x(void);
+uint8_t vic_get_scroll_y(void);
 
 /* ── Interrupt system ── */
 

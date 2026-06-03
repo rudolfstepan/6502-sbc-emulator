@@ -204,21 +204,38 @@ void vic_sdl_shutdown(void) {
 /* Render a single 8x8 character at 2x scale into the framebuffer.
    Each source pixel becomes a 2x2 block; SIMD expands all 8 pixels of one
    font row in a single pass and writes both scaled rows at once. */
-static void render_char(uint8_t char_code, int x, int y, uint8_t text_attr, bool invert) {
+static void render_char_at(uint8_t char_code, int px, int py, uint8_t text_attr, bool invert) {
     const uint8_t *pattern = vic_get_char_pattern(char_code);
     uint32_t tc = vic_palette[text_attr & 0x0F];
     uint32_t bc = vic_palette[(text_attr >> 4) & 0x0F];
     uint32_t fg = invert ? bc : tc;
     uint32_t bg = invert ? tc : bc;
 
-    uint32_t * restrict base = framebuffer
-        + (size_t)(y * CHAR_HEIGHT * SCREEN_SCALE) * WINDOW_WIDTH
-        + (size_t)(x * CHAR_WIDTH  * SCREEN_SCALE);
+    int fb_x = px * SCREEN_SCALE;
+    int fb_y = py * SCREEN_SCALE;
 
-    for (int py = 0; py < CHAR_HEIGHT; py++)
-        simd_render_char_row_x2(base + (size_t)(py * SCREEN_SCALE) * WINDOW_WIDTH,
-                                 WINDOW_WIDTH, pattern[py], fg, bg);
+    for (int row = 0; row < CHAR_HEIGHT; row++) {
+        uint8_t pat = pattern[row];
+        int src_y = fb_y + row * SCREEN_SCALE;
+        if (src_y < 0 || src_y + SCREEN_SCALE > WINDOW_HEIGHT) continue;
+
+        for (int bit = 0; bit < CHAR_WIDTH; bit++) {
+            uint32_t color = (pat & (1u << bit)) ? fg : bg;
+            int src_x = fb_x + bit * SCREEN_SCALE;
+            if (src_x < 0 || src_x + SCREEN_SCALE > WINDOW_WIDTH) continue;
+
+            for (int dy = 0; dy < SCREEN_SCALE; dy++) {
+                for (int dx = 0; dx < SCREEN_SCALE; dx++) {
+                    int fx = src_x + dx;
+                    int fy = src_y + dy;
+                    if (fx >= 0 && fx < WINDOW_WIDTH && fy >= 0 && fy < WINDOW_HEIGHT)
+                        framebuffer[fy * WINDOW_WIDTH + fx] = color;
+                }
+            }
+        }
+    }
 }
+
 
 // Render the VIC screen to SDL window
 void vic_sdl_render(void) {
@@ -241,12 +258,22 @@ void vic_sdl_render(void) {
         bool cursor_visible = ((SDL_GetTicks() / CURSOR_BLINK_MS) & 1u) == 0;
         vic_get_cursor(&cursor_x, &cursor_y);
 
+        uint8_t scroll_x = vic_get_scroll_x();
+        uint8_t scroll_y = vic_get_scroll_y();
+
         for (int row = 0; row < SCREEN_ROWS; row++) {
+            int render_row = row - (scroll_y >> 3);  /* coarse scroll by character rows */
+            if (render_row < 0) render_row += SCREEN_ROWS;  /* wrap */
             for (int col = 0; col < SCREEN_COLS; col++) {
-                uint8_t char_code = vic_read_video_ram(row * SCREEN_COLS + col);
-                uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + row * SCREEN_COLS + col);
-                bool invert = cursor_visible && col == cursor_x && row == cursor_y;
-                render_char(char_code, col, row, text_attr, invert);
+                int render_col = col - (scroll_x >> 3);  /* coarse scroll by character cols */
+                if (render_col < 0) render_col += SCREEN_COLS;  /* wrap */
+                uint8_t char_code = vic_read_video_ram(render_row * SCREEN_COLS + render_col);
+                uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + render_row * SCREEN_COLS + render_col);
+                bool invert = cursor_visible && render_col == cursor_x && render_row == cursor_y;
+                /* Apply fine scroll offset to rendering position */
+                int render_x = col * CHAR_WIDTH - (scroll_x & 7);
+                int render_y = row * CHAR_HEIGHT - (scroll_y & 7);
+                render_char_at(char_code, render_x, render_y, text_attr, invert);
             }
         }
     } else {
@@ -273,7 +300,22 @@ void vic_sdl_render(void) {
 
     /* ── Hardware sprites (rendered on top) ── */
     if (vic_sprites_enabled()) {
-        for (int i = 0; i < 8; i++) {
+        /* Sort sprites by priority (lowest to highest = drawn bottom to top) */
+        int sprite_order[8] = {0, 1, 2, 3, 4, 5, 6, 7};
+        for (int i = 0; i < 7; i++) {
+            for (int j = i + 1; j < 8; j++) {
+                VicSprite *sp_i = vic_get_sprite(sprite_order[i]);
+                VicSprite *sp_j = vic_get_sprite(sprite_order[j]);
+                if (sp_j->priority < sp_i->priority) {
+                    int tmp = sprite_order[i];
+                    sprite_order[i] = sprite_order[j];
+                    sprite_order[j] = tmp;
+                }
+            }
+        }
+
+        for (int ii = 0; ii < 8; ii++) {
+            int i = sprite_order[ii];
             VicSprite *sp = vic_get_sprite(i);
             if (!(sp->flags & SP_FLAG_ENABLE)) continue;
             if (!sp->color) continue;              /* colour 0 = transparent */
