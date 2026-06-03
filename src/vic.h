@@ -93,6 +93,9 @@ void vic_increment_frame(void);
 uint8_t vic_get_scroll_x(void);
 uint8_t vic_get_scroll_y(void);
 
+/* ── Collision detection ── */
+void vic_detect_collisions(const uint8_t sprite_mask[320*200]);
+
 /* ── Interrupt system ── */
 
 /* ISR / IER bit definitions */

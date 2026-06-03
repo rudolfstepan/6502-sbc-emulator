@@ -19,6 +19,9 @@
 #define WINDOW_WIDTH  (SCREEN_COLS * CHAR_WIDTH * SCREEN_SCALE)
 #define WINDOW_HEIGHT (SCREEN_ROWS * CHAR_HEIGHT * SCREEN_SCALE)
 
+/* Sprite mask for collision detection: which sprites cover each pixel */
+static uint8_t sprite_mask[320 * 200];
+
 static const uint32_t vic_palette[16] = {
     0xFF000000, // 0 black
     0xFFFFFFFF, // 1 white
@@ -300,6 +303,9 @@ void vic_sdl_render(void) {
 
     /* ── Hardware sprites (rendered on top) ── */
     if (vic_sprites_enabled()) {
+        /* Clear sprite collision mask */
+        memset(sprite_mask, 0, sizeof(sprite_mask));
+
         /* Sort sprites by priority (lowest to highest = drawn bottom to top) */
         int sprite_order[8] = {0, 1, 2, 3, 4, 5, 6, 7};
         for (int i = 0; i < 7; i++) {
@@ -326,31 +332,76 @@ void vic_sdl_render(void) {
             int sh    = sw;
             int bytes_per_row = sw / 8;
             uint32_t sp_color = vic_palette[sp->color & 0x0F];
+            uint32_t sp_color2 = vic_palette[sp->pad[0] & 0x0F];  /* secondary color */
             int data_base = (int)(sp->data_slot & 7) * 32;
+            bool multicolor = (sp->flags & SP_FLAG_MULTICOLOR) != 0;
 
             for (int py = 0; py < sh; py++) {
                 int src_row = (sp->flags & SP_FLAG_FLIPV) ? (sh - 1 - py) : py;
-                for (int px = 0; px < sw; px++) {
-                    int src_col = (sp->flags & SP_FLAG_FLIPH) ? (sw - 1 - px) : px;
-                    int byte_idx = src_row * bytes_per_row + src_col / 8;
-                    uint8_t pix  = vic_read_sprite_data(
-                        (uint16_t)(data_base + byte_idx));
-                    if (!(pix & (1u << (src_col & 7)))) continue; /* transparent */
+                if (multicolor) {
+                    /* 2bpp multicolor mode: 2 bits per pixel, 4 pixels per byte */
+                    int bytes_per_mc_row = sw / 4;
+                    for (int px = 0; px < sw; px++) {
+                        int src_col = (sp->flags & SP_FLAG_FLIPH) ? (sw - 1 - px) : px;
+                        int byte_idx = src_row * bytes_per_mc_row + src_col / 4;
+                        uint8_t byte_pix = vic_read_sprite_data((uint16_t)(data_base + byte_idx));
+                        uint8_t bits = (byte_pix >> ((src_col & 3) * 2)) & 3;
+                        uint32_t color;
+                        if (bits == 0) continue;  /* 00 = transparent */
+                        else if (bits == 1) color = sp_color;        /* 01 = sprite color */
+                        else if (bits == 2) color = sp_color2;       /* 10 = secondary color */
+                        else color = vic_palette[15];                /* 11 = white (placeholder) */
 
-                    int fb_x = (sx + px) * SCREEN_SCALE;
-                    int fb_y = (sy + py) * SCREEN_SCALE;
-                    for (int dy = 0; dy < SCREEN_SCALE; dy++) {
-                        for (int dx = 0; dx < SCREEN_SCALE; dx++) {
-                            unsigned fx = (unsigned)(fb_x + dx);
-                            unsigned fy = (unsigned)(fb_y + dy);
-                            if (fx < (unsigned)WINDOW_WIDTH &&
-                                fy < (unsigned)WINDOW_HEIGHT)
-                                framebuffer[fy * WINDOW_WIDTH + fx] = sp_color;
+                        int px_unscaled = sx + px;
+                        int py_unscaled = sy + py;
+                        if (px_unscaled >= 0 && px_unscaled < 320 && py_unscaled >= 0 && py_unscaled < 200)
+                            sprite_mask[py_unscaled * 320 + px_unscaled] |= (1u << i);
+
+                        int fb_x = (sx + px) * SCREEN_SCALE;
+                        int fb_y = (sy + py) * SCREEN_SCALE;
+                        for (int dy = 0; dy < SCREEN_SCALE; dy++) {
+                            for (int dx = 0; dx < SCREEN_SCALE; dx++) {
+                                unsigned fx = (unsigned)(fb_x + dx);
+                                unsigned fy = (unsigned)(fb_y + dy);
+                                if (fx < (unsigned)WINDOW_WIDTH && fy < (unsigned)WINDOW_HEIGHT)
+                                    framebuffer[fy * WINDOW_WIDTH + fx] = color;
+                            }
+                        }
+                    }
+                } else {
+                    /* 1bpp monochrome mode */
+                    for (int px = 0; px < sw; px++) {
+                        int src_col = (sp->flags & SP_FLAG_FLIPH) ? (sw - 1 - px) : px;
+                        int byte_idx = src_row * bytes_per_row + src_col / 8;
+                        uint8_t pix  = vic_read_sprite_data(
+                            (uint16_t)(data_base + byte_idx));
+                        if (!(pix & (1u << (src_col & 7)))) continue; /* transparent */
+
+                        int px_unscaled = sx + px;
+                        int py_unscaled = sy + py;
+                        if (px_unscaled >= 0 && px_unscaled < 320 && py_unscaled >= 0 && py_unscaled < 200) {
+                            /* Update sprite mask for collision detection */
+                            sprite_mask[py_unscaled * 320 + px_unscaled] |= (1u << i);
+                        }
+
+                        int fb_x = (sx + px) * SCREEN_SCALE;
+                        int fb_y = (sy + py) * SCREEN_SCALE;
+                        for (int dy = 0; dy < SCREEN_SCALE; dy++) {
+                            for (int dx = 0; dx < SCREEN_SCALE; dx++) {
+                                unsigned fx = (unsigned)(fb_x + dx);
+                                unsigned fy = (unsigned)(fb_y + dy);
+                                if (fx < (unsigned)WINDOW_WIDTH &&
+                                    fy < (unsigned)WINDOW_HEIGHT)
+                                    framebuffer[fy * WINDOW_WIDTH + fx] = sp_color;
+                            }
                         }
                     }
                 }
             }
         }
+
+        /* Detect sprite collisions after rendering */
+        vic_detect_collisions(sprite_mask);
     }
 
     // Update texture

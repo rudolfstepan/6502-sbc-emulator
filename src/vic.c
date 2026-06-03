@@ -51,6 +51,10 @@ static struct {
     /* Scrolling */
     uint8_t  scroll_x;         /* fine scroll X: 0-7 pixels left shift */
     uint8_t  scroll_y;         /* fine scroll Y: 0-7 pixels up shift */
+
+    /* Collision detection */
+    uint8_t  ss_collision;     /* sprite-sprite collision bitmask */
+    uint8_t  sb_collision;     /* sprite-background collision bitmask */
 } vic_state;
 
 static uint8_t default_text_attr(void)
@@ -275,6 +279,18 @@ uint8_t vic_reg_read(void *dev, uint16_t offset) {
         case 11: return (uint8_t)(vic_state.cycles_per_line >> 8);
         case 12: return vic_state.scroll_x;
         case 13: return vic_state.scroll_y;
+        case 14: {
+            uint8_t val = vic_state.ss_collision;
+            vic_state.ss_collision = 0;  /* read clears */
+            if (val) vic_state.irq_status &= ~VIC_IRQ_SS;  /* ACK IRQ */
+            return val;
+        }
+        case 15: {
+            uint8_t val = vic_state.sb_collision;
+            vic_state.sb_collision = 0;  /* read clears */
+            if (val) vic_state.irq_status &= ~VIC_IRQ_SB;  /* ACK IRQ */
+            return val;
+        }
         default: return 0;
     }
 }
@@ -757,6 +773,76 @@ void vic_increment_frame(void) { vic_frame_lo++; }
 
 uint8_t vic_get_scroll_x(void) { return vic_state.scroll_x; }
 uint8_t vic_get_scroll_y(void) { return vic_state.scroll_y; }
+
+/* Process sprite collision detection.
+   Call once per frame after sprite rendering.
+   sprite_mask[y*320+x] = bitmask of which sprites (0-7) cover pixel (x,y).
+   For each pixel, if mask has >1 bit set: sprite-sprite collision.
+   For bitmap pixels: check against bitmap_ram for sprite-background collision. */
+void vic_detect_collisions(const uint8_t sprite_mask[320*200])
+{
+    if (!sprite_mask) return;
+
+    vic_state.ss_collision = 0;
+    vic_state.sb_collision = 0;
+
+    /* Sprite-sprite collision: scan mask for pixels with multiple sprites */
+    for (int y = 0; y < 200; y++) {
+        for (int x = 0; x < 320; x++) {
+            uint8_t mask = sprite_mask[y * 320 + x];
+            /* Count bits set in mask */
+            int count = 0;
+            uint8_t involved = 0;
+            for (int i = 0; i < 8; i++) {
+                if (mask & (1u << i)) {
+                    count++;
+                    involved |= (1u << i);
+                }
+            }
+            if (count > 1) {
+                vic_state.ss_collision |= involved;
+                vic_state.irq_status |= VIC_IRQ_SS;
+            }
+        }
+    }
+
+    /* Sprite-background collision: check sprites against bitmap RAM */
+    for (int si = 0; si < 8; si++) {
+        VicSprite *sp = &vic_sprites[si];
+        if (!(sp->flags & SP_FLAG_ENABLE) || !sp->color) continue;
+
+        int sx = (int)sp->x + ((sp->flags & SP_FLAG_XHIBIT) ? 256 : 0);
+        int sy = (int)sp->y;
+        int sw = (sp->flags & SP_FLAG_SIZE16) ? 16 : 8;
+        int sh = sw;
+        int bytes_per_row = sw / 8;
+        int data_base = (int)(sp->data_slot & 7) * 32;
+
+        for (int py = 0; py < sh; py++) {
+            int src_row = (sp->flags & SP_FLAG_FLIPV) ? (sh - 1 - py) : py;
+            for (int px = 0; px < sw; px++) {
+                int src_col = (sp->flags & SP_FLAG_FLIPH) ? (sw - 1 - px) : px;
+                int byte_idx = src_row * bytes_per_row + src_col / 8;
+                uint8_t pix = vic_read_sprite_data((uint16_t)(data_base + byte_idx));
+                if (!(pix & (1u << (src_col & 7)))) continue;  /* transparent */
+
+                int bx = sx + px;
+                int by = sy + py;
+                if (bx >= 0 && bx < 320 && by >= 0 && by < 200) {
+                    /* Check bitmap RAM at this position */
+                    int bitmap_byte = (by * 40) + (bx / 8);
+                    if (bitmap_byte >= 0 && bitmap_byte < BITMAP_RAM_SIZE) {
+                        uint8_t bitmap_pix = bitmap_ram[bitmap_byte];
+                        if (bitmap_pix & (1u << (bx & 7))) {
+                            vic_state.sb_collision |= (1u << si);
+                            vic_state.irq_status |= VIC_IRQ_SB;
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
 
 /* Returns true when any enabled interrupt is pending — wire to CPU IRQ */
 bool vic_irq(void)
