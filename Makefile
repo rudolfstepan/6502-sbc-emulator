@@ -86,7 +86,7 @@ OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
-.PHONY: all clean run check roms chess-rom ehbasic-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom
+.PHONY: all clean run check roms chess-rom ehbasic-rom soundtest-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom
 
 all: $(TARGET)
 
@@ -144,12 +144,17 @@ roms:
 	$(BASH) tools/make_msbasic_rom.sh
 	$(BASH) tools/make_ehbasic_rom.sh
 	$(BASH) tools/make_chess_rom.sh
+	$(BASH) tools/make_soundtest_rom.sh
 
 ehbasic-rom:
 	$(BASH) tools/make_ehbasic_rom.sh
 
 chess-rom:
 	$(BASH) tools/make_chess_rom.sh
+
+soundtest-rom:
+	$(BASH) tools/make_soundtest_rom.sh
+	$(BASH) tools/stage_runtime.sh "$(BINDIR)"
 
 adventure: data/disk/adventure.prg
 
@@ -166,6 +171,9 @@ demo-rom:
 
 demo: all demo-rom
 	$(call RUN_BIN,$(TARGET)) demo.ini
+
+soundtest: all soundtest-rom
+	$(call RUN_BIN,$(TARGET)) $(BINDIR)/soundtest.ini
 
 run: all
 	$(call RUN_BIN,$(TARGET)) $(BINDIR)/sbc.ini

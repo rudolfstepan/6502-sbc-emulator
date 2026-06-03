@@ -1,14 +1,28 @@
 #!/usr/bin/env python3
 """
-MS BASIC V2 Converter
-Converts between tokenized .prg files and plain text .txt files
+BASIC Tokenizer/Detokenizer for 6502 SBC Emulator
+Supports two BASIC variants with different token tables:
+
+  --type msbasic  (default)  MS BASIC V2 (mist64/msbasic ROM, sbc.ini)
+  --type ehbasic             EhBASIC V2.22 (ehbasic.ini)
+
+Usage:
+  txt → prg:  python3 basic_convert.py prog.txt prog.prg [--type msbasic|ehbasic]
+  prg → txt:  python3 basic_convert.py prog.prg prog.txt [--type msbasic|ehbasic]
+
+Token tables were verified by raw-byte analysis of compiled .prg files:
+  - MS BASIC:  PRINT=0x96, POKE=0x95, INPUT=0x84 confirmed by runtime testing.
+               Operator tokens 0xAA..0xAC verified by listing output.
+  - EhBASIC:   Full table verified by detokenizing adventure.prg (round-trip clean).
 """
 
 import sys
 import struct
 
-# MS BASIC tokens for this 6502 SBC (mist64/msbasic variant)
-# Token values extracted from actual ROM via testing
+# MS BASIC tokens (mist64/msbasic ROM — used with sbc.ini / msbasic.rom)
+# Verified working: PRINT(0x96), POKE(0x95), INPUT(0x84), AND(0xA8), INT(0xAE)
+# Note: 0xAA = "=" and 0xAB = ">" — the ROM uses this ordering (confirmed by
+# listing: writing 0xAB for = displays as ">", so = must be 0xAA).
 MS_TOKENS = {
     0x80: "END", 0x81: "FOR", 0x82: "NEXT", 0x83: "DATA", 0x84: "INPUT",
     0x85: "DIM", 0x86: "READ", 0x87: "LET", 0x88: "GOTO", 0x89: "RUN",
@@ -18,7 +32,7 @@ MS_TOKENS = {
     0x99: "CLEAR", 0x9A: "GET", 0x9B: "NEW", 0x9C: "TAB(", 0x9D: "TO",
     0x9E: "FN", 0x9F: "SPC(", 0xA0: "THEN", 0xA1: "NOT", 0xA2: "STEP",
     0xA3: "+", 0xA4: "-", 0xA5: "*", 0xA6: "/", 0xA7: "^",
-    0xA8: "AND", 0xA9: "OR", 0xAA: ">", 0xAB: "=", 0xAC: "<",
+    0xA8: "AND", 0xA9: "OR", 0xAA: "=", 0xAB: ">", 0xAC: "<",
     0xAD: "SGN", 0xAE: "INT", 0xAF: "ABS", 0xB0: "USR", 0xB1: "FRE",
     0xB2: "POS", 0xB3: "SQR", 0xB4: "RND", 0xB5: "LOG", 0xB6: "EXP",
     0xB7: "COS", 0xB8: "SIN", 0xB9: "TAN", 0xBA: "ATN", 0xBB: "PEEK",
@@ -26,8 +40,8 @@ MS_TOKENS = {
     0xC1: "LEFT$", 0xC2: "RIGHT$", 0xC3: "MID$",
 }
 
-# EhBASIC V2.22 tokens
-# Extracted from tools/make_ehbasic_prg.py
+# EhBASIC V2.22 tokens (used with ehbasic.ini / ehbasic.rom)
+# Verified by round-trip detokenization of adventure.prg (all keywords correct).
 EH_TOKENS = {
     0x80: "END", 0x81: "FOR", 0x82: "NEXT", 0x83: "DATA", 0x84: "INPUT",
     0x85: "DIM", 0x86: "READ", 0x87: "LET", 0x88: "DEC", 0x89: "GOTO",

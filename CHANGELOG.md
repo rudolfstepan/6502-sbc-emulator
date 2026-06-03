@@ -4,7 +4,30 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Sound chip — waveform selection
+
+- Extended the CONTROL register (offset +5 in each voice block): bits [6:4] now select the waveform played when bit 0 triggers the note. Encoding: 0 = sine (default, fully backward-compatible), 1 = square, 2 = sawtooth, 3 = triangle, 4 = noise (xorshift32 LFSR).
+- Added `PI_F` / `INV_PI` constants and a `switch` in `audio_callback()` for branchless per-sample waveform generation. Noise uses a per-voice LFSR seeded at first trigger.
+- Updated `soundchip.h` to document the new CONTROL register layout.
+
+### Soundtest ROM — 60-second polyphonic composition
+
+- Rewrote `tools/soundtest/soundtest.s` as a standalone ~60-second looping song in pure 6502 machine code:
+  - **Section A** (~29 s): 28-chord ambient progression (Am / F / C / G), four voices with distinct waveforms — Voice 0 triangle lead, Voice 1 sine pad (slow 160 ms attack for wash), Voice 2 triangle inner harmony, Voice 3 sawtooth bass.
+  - **SID-style arpeggio** (~5 s × 3 passes): square-wave arpeggios over Am / C / G / F, 12 notes per chord at 100 ms intervals.
+  - **Bridge section B** (~17 s): 16-chord progression in Dm / Bb / Am space with Gm and E7 colour chords.
+- Refactored loop engine into a shared `ambient_play_engine` subroutine (tail-called from section drivers) to avoid code duplication.
+- Added `play_ambient_bridge` driver proc for the bridge data table.
+- Fixed `intro_sweep` infinite-loop bug: `delay_25ms_units` clobbers X (it counts down from 25 internally); the sweep loop used X as its iteration counter, causing it to run forever after the first delay call. Fixed by introducing a dedicated zero-page variable `sweep_cnt` ($05) and replacing `DEX / BNE` with `DEC sweep_cnt / BNE`.
+
+### Build
+
+- `make soundtest-rom` now runs `tools/stage_runtime.sh` after assembling the ROM, so `bin/roms/soundtest.rom` is always kept in sync without requiring a full emulator relink.
+
+### Documentation
+
 - Added and documented integration of Klaus Dormann's 6502 functional test in the default `make check` pipeline.
+- Updated README and `docs/ARCHITECTURE.md` to cover the 4-voice sound chip, per-voice waveform selection, full register map for all four voices, the soundtest ROM, and the updated `bin/` bundle layout.
 
 ## 1.1.0 - 2026-05-17
 

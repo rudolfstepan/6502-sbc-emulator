@@ -115,6 +115,30 @@ static void usage(const char *prog)
         prog);
 }
 
+static bool ends_with_ignore_case(const char *s, const char *suffix)
+{
+    size_t slen = strlen(s);
+    size_t tlen = strlen(suffix);
+    if (slen < tlen) return false;
+    const char *a = s + (slen - tlen);
+    for (size_t i = 0; i < tlen; i++) {
+        char ca = a[i];
+        char cb = suffix[i];
+        if (ca >= 'A' && ca <= 'Z') ca = (char)(ca - 'A' + 'a');
+        if (cb >= 'A' && cb <= 'Z') cb = (char)(cb - 'A' + 'a');
+        if (ca != cb) return false;
+    }
+    return true;
+}
+
+static bool file_exists(const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+    fclose(f);
+    return true;
+}
+
 int main(int argc, char *argv[])
 {
     Config  cfg;
@@ -136,7 +160,27 @@ int main(int argc, char *argv[])
         if (strcmp(argv[i], "-s") == 0 && i+1 < argc) {
             speed_override = atoi(argv[++i]); continue;
         }
-        /* positional: config file */
+        /* positional: config file, ROM path, or ROM shorthand name */
+        if (ends_with_ignore_case(argv[i], ".rom")) {
+            snprintf(rom_override, sizeof(rom_override), "%s", argv[i]);
+            continue;
+        }
+
+        if (!ends_with_ignore_case(argv[i], ".ini") &&
+            !strchr(argv[i], '/') && !strchr(argv[i], '\\')) {
+            char candidate[256];
+            snprintf(candidate, sizeof(candidate), "roms/%s.rom", argv[i]);
+            if (file_exists(candidate)) {
+                snprintf(rom_override, sizeof(rom_override), "%s", candidate);
+                continue;
+            }
+            snprintf(candidate, sizeof(candidate), "bin/roms/%s.rom", argv[i]);
+            if (file_exists(candidate)) {
+                snprintf(rom_override, sizeof(rom_override), "%s", candidate);
+                continue;
+            }
+        }
+
         snprintf(cfg_file, sizeof(cfg_file), "%s", argv[i]);
     }
 
@@ -203,9 +247,18 @@ int main(int argc, char *argv[])
                  0x8900, 256,   /* Sprite pixel data: $8900-$89FF (8 × 32 bytes) */
                  vic_sprite_data_read, vic_sprite_data_write, NULL);
 
-    bus_register(&bus, "SOUND", NULL,
-                 0x8830, 6,
-                 soundchip_bus_read, soundchip_bus_write, NULL);
+    bus_register(&bus, "SOUND0", (void*)(uintptr_t)0,
+                 SOUND_VOICE0_BASE, SOUND_REG_COUNT,
+                 soundchip_voice_read, soundchip_voice_write, NULL);
+    bus_register(&bus, "SOUND1", (void*)(uintptr_t)1,
+                 SOUND_VOICE1_BASE, SOUND_REG_COUNT,
+                 soundchip_voice_read, soundchip_voice_write, NULL);
+    bus_register(&bus, "SOUND2", (void*)(uintptr_t)2,
+                 SOUND_VOICE2_BASE, SOUND_REG_COUNT,
+                 soundchip_voice_read, soundchip_voice_write, NULL);
+    bus_register(&bus, "SOUND3", (void*)(uintptr_t)3,
+                 SOUND_VOICE3_BASE, SOUND_REG_COUNT,
+                 soundchip_voice_read, soundchip_voice_write, NULL);
 
     for (int i = 0; i < cfg.num_devs; i++) {
         DevConfig *dc = &cfg.devs[i];
@@ -309,6 +362,9 @@ int main(int argc, char *argv[])
     } else {
         printf("SDL2 display not available, using text output.\n");
     }
+
+    /* Initialize sound chip (must be after SDL is up). */
+    soundchip_init();
 
     /* Startup chirp so audio path can be verified quickly. */
     soundchip_beep(880.0f, 100);
@@ -423,6 +479,7 @@ done:
            (unsigned long long)cpu.cycles);
 
     /* cleanup */
+    soundchip_shutdown();
     bus_shutdown();
     vic_sdl_shutdown();
     for (int i = 0; i < ns; i++) sram_free(&srams[i]);

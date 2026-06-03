@@ -9,7 +9,7 @@
 - `UART6551`: serial I/O (`stdio` or TCP mode)
 - `DiskDev`: host-backed minimal disk interface for BASIC LOAD/SAVE
 - `VIC`: text/bitmap display memory and control registers
-- `Soundchip`: simple beep generator with memory-mapped registers
+- `Soundchip`: 4-voice synthesizer — ADSR envelopes, selectable waveforms (sine/square/sawtooth/triangle/noise), SDL audio mix
 - `Monitor`: debugger shell (`CTRL+C`)
 
 ## Boot and Runtime Flow
@@ -29,9 +29,12 @@ The emulator uses both fixed and configurable regions.
 ### Fixed regions
 
 - `$8000-$87FF`: VIC text/color RAM
+- `$8830-$8839`: SOUND Voice 0 (10 registers)
 - `$8840-$884F`: VIC blitter registers
 - `$8850-$888F`: VIC sprite registers (8 × 8 bytes)
-- `$8830-$8835`: SOUND
+- `$8890-$8899`: SOUND Voice 1 (10 registers)
+- `$889A-$88A3`: SOUND Voice 2 (10 registers)
+- `$88A4-$88AD`: SOUND Voice 3 (10 registers)
 - `$8900-$89FF`: VIC sprite pixel data (8 × 32 bytes)
 - `$9000-$900F`: VIC control registers (including interrupt system)
 - `$9010-$AF4F`: VIC bitmap RAM
@@ -68,8 +71,36 @@ The ISR (`$9006`) holds pending flags; writing a `1` to a bit acknowledges (clea
 
 ## Audio Model
 
-The sound device exposes six registers (`freq`, `duration`, `volume`, `control`).
-Setting `control bit0` queues a generated sine beep into SDL audio output.
+The sound chip provides four independent voices, each with 10 memory-mapped registers:
+
+```text
++0  FREQ_LO   frequency low byte
++1  FREQ_HI   frequency high byte (Hz, 20–12000)
++2  DUR_LO    note duration low byte (ms)
++3  DUR_HI    note duration high byte (ms)
++4  VOLUME    peak amplitude (0–255)
++5  CONTROL   bits [6:4] = waveform, bit 0 = trigger
++6  ATTACK    attack time  (0–255, units of 8 ms)
++7  DECAY     decay time   (0–255, units of 8 ms)
++8  SUSTAIN   sustain level (0–255, fraction of VOLUME)
++9  RELEASE   release time (0–255, units of 8 ms)
+```
+
+Writing CONTROL with bit 0 set captures all register values and starts playback with the full ADSR envelope applied. Voices run concurrently; the SDL audio callback sums them in real time with per-voice volume scaled to keep four simultaneous max-volume voices within 0 dB.
+
+**Waveform encoding (CONTROL bits [6:4]):**
+
+| Bits [6:4] | Waveform | Implementation                      |
+|------------|----------|-------------------------------------|
+| 0          | Sine     | `sinf(phase)`                       |
+| 1          | Square   | `phase < π ? +1 : −1`               |
+| 2          | Sawtooth | `1 − phase/π` (falls +1 → −1)       |
+| 3          | Triangle | linear ramp −1 → +1 → −1 per cycle  |
+| 4          | Noise    | xorshift32 LFSR, one value/sample   |
+
+All four voices are mixed by `audio_callback()` in `soundchip.c`; a hard clip prevents overflow when multiple voices peak simultaneously.
+
+**Soundtest ROM** (`soundtest.ini`) is a 16 KB standalone ROM that exercises all four voices and all waveforms in a ~60 s looping composition. Build with `make soundtest-rom`; run with `./sbc6502 soundtest.ini` from `bin/`.
 
 ## Debugging and Observability
 
@@ -93,7 +124,11 @@ This provides broad opcode/flag behavior validation in addition to emulator inte
 
 ## ROM Workflows
 
-- `sbc.ini`: split ROM setup (`kernel.rom` + `msbasic.rom`)
-- `chess.ini`: standalone 16 KB chess ROM
+| Config          | ROM(s)                       | Description                                |
+|-----------------|------------------------------|--------------------------------------------|
+| `sbc.ini`       | `kernel.rom` + `msbasic.rom` | MS BASIC with kernel shell                 |
+| `ehbasic.ini`   | `ehbasic.rom`                | EhBASIC (Enhanced 6502 BASIC)              |
+| `chess.ini`     | `chess.rom`                  | Standalone 16 KB chess ROM                 |
+| `soundtest.ini` | `soundtest.rom`              | 4-voice sound demo, pure 6502 machine code |
 
-ROM helper scripts under [tools](../tools) generate project ROMs reproducibly.
+ROM helper scripts under [tools](../tools) generate project ROMs reproducibly. The soundtest ROM is rebuilt and staged with `make soundtest-rom`; all other ROMs with `make roms`.

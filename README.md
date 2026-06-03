@@ -3,17 +3,18 @@
 [![CI](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an interactive monitor, and bundled ROM workflows (MS BASIC, EhBASIC, and standalone chess).
+A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an interactive monitor, and bundled ROM workflows (MS BASIC, EhBASIC, standalone chess, and a 4-voice sound demo).
 
 ## Highlights
 
 - MOS 6502 CPU core (all 151 official opcodes)
 - Integrated Klaus Dormann 6502 functional CPU test in the default test pipeline
-- Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap/sprite display with blitter and interrupt system, and a simple SOUND device
-- SDL2 display backend for VIC text/bitmap rendering
+- Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap/sprite display with blitter and interrupt system
+- **4-voice sound chip** with ADSR envelopes and per-voice waveform selection (sine, square, sawtooth, triangle, noise)
+- SDL2 display and audio backend
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
-- Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), and chess (`chess.ini`)
-- ROM build scripts for kernel, MS BASIC, EhBASIC, chess, and test ROMs
+- Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), chess (`chess.ini`), and the 4-voice sound demo (`soundtest.ini`)
+- ROM build scripts for kernel, MS BASIC, EhBASIC, chess, and the soundtest ROM
 
 ## Quick Start
 
@@ -44,6 +45,13 @@ Run standalone chess ROM:
 ```sh
 cd bin
 ./sbc6502 chess.ini
+```
+
+Run the 4-voice sound demo (~60 second looping ambient/arp song):
+
+```sh
+cd bin
+./sbc6502 soundtest.ini
 ```
 
 Run tests:
@@ -90,9 +98,12 @@ $8000-$87FF   VIC text/color RAM (fixed)
 $8800-$880F   VIA 6522 (configurable base)
 $8810-$8813   UART 6551 (configurable base)
 $8820-$882F   DISK MVP (configurable base)
-$8830-$8835   SOUND registers (fixed)
+$8830-$8839   SOUND Voice 0 — freq / dur / vol / control / ADSR (fixed)
 $8840-$884F   VIC blitter registers (fixed)
 $8850-$888F   VIC sprite registers (fixed)
+$8890-$8899   SOUND Voice 1 (fixed)
+$889A-$88A3   SOUND Voice 2 (fixed)
+$88A4-$88AD   SOUND Voice 3 (fixed)
 $8900-$89FF   VIC sprite pixel data (fixed)
 $9000-$900F   VIC control registers + interrupt system (fixed)
 $9010-$AF4F   VIC bitmap RAM (fixed)
@@ -104,21 +115,82 @@ Notes:
 - `sbc.ini` uses two ROM windows (`kernel.rom` + `msbasic.rom`).
 - `ehbasic.ini` uses one ROM window (`ehbasic.rom`) with EhBASIC instead of MS BASIC.
 - `chess.ini` uses one 16 KB ROM at `$C000-$FFFF`.
+- `soundtest.ini` uses one 16 KB ROM at `$C000-$FFFF` that drives all four sound voices directly.
 
 ## Sound Device
 
-SOUND is memory-mapped at `$8830-$8835`:
+The sound chip provides **4 independent voices**, each with a 10-register block:
 
-```text
-$8830  FREQ_LO
-$8831  FREQ_HI
-$8832  DURATION_LO (ms)
-$8833  DURATION_HI (ms)
-$8834  VOLUME (0-255)
-$8835  CONTROL (bit 0 = trigger)
+| Offset | Name    | Description                                |
+|--------|---------|--------------------------------------------|
+| +0     | FREQ_LO | Frequency, low byte                        |
+| +1     | FREQ_HI | Frequency, high byte (Hz, range 20–12000)  |
+| +2     | DUR_LO  | Note duration, low byte (ms)               |
+| +3     | DUR_HI  | Note duration, high byte (ms)              |
+| +4     | VOLUME  | Peak amplitude (0–255)                     |
+| +5     | CONTROL | Bits 6–4 = waveform; bit 0 = trigger       |
+| +6     | ATTACK  | Attack time (0–255 × 8 ms)                 |
+| +7     | DECAY   | Decay time (0–255 × 8 ms)                  |
+| +8     | SUSTAIN | Sustain level (0–255, fraction of VOLUME)  |
+| +9     | RELEASE | Release time (0–255 × 8 ms)                |
+
+**Voice base addresses:**
+
+| Voice | Base    |
+|-------|---------|
+| 0     | `$8830` |
+| 1     | `$8890` |
+| 2     | `$889A` |
+| 3     | `$88A4` |
+
+**CONTROL register waveform bits [6:4]:**
+
+| Value | Waveform              |
+|-------|-----------------------|
+| 0     | Sine                  |
+| 1     | Square                |
+| 2     | Sawtooth              |
+| 3     | Triangle              |
+| 4     | Noise (xorshift LFSR) |
+
+Writing CONTROL with bit 0 set captures all current register values and triggers the note. All four voices mix in real time through SDL audio; the per-voice volume is scaled so four simultaneous max-volume voices stay within 0 dB.
+
+**Example:** trigger Voice 0 with a triangle wave, slow attack, at 440 Hz for 1 s:
+
+```asm
+LDA #<440
+STA $8830       ; FREQ_LO
+LDA #>440
+STA $8831       ; FREQ_HI
+LDA #<1000
+STA $8832       ; DUR_LO
+LDA #>1000
+STA $8833       ; DUR_HI
+LDA #200
+STA $8834       ; VOLUME
+LDA #12
+STA $8836       ; ATTACK  = 12 × 8 ms = 96 ms
+LDA #6
+STA $8837       ; DECAY   = 6  × 8 ms = 48 ms
+LDA #128
+STA $8838       ; SUSTAIN = 50 % of peak
+LDA #10
+STA $8839       ; RELEASE = 10 × 8 ms = 80 ms
+LDA #$31        ; waveform = 3 (triangle) | trigger
+STA $8835
 ```
 
-A write with bit 0 set in CONTROL triggers a queued beep.
+The **soundtest ROM** (`soundtest.ini`) is a standalone 16 KB ROM that demonstrates the full sound chip. It plays a ~60-second looping composition built entirely from 6502 machine code:
+
+1. Laser sweep intro (Voice 3, sawtooth)
+2. 28-chord ambient section — Voice 0 triangle lead, Voice 1 sine pad (slow attack), Voice 2 triangle harmony, Voice 3 sawtooth bass (~29 s)
+3. SID-style square-wave arpeggio × 2 — Am / C / G / F, 12 notes per chord (~10 s)
+4. 16-chord bridge section in Dm / Bb / Am space (~17 s)
+5. Final arpeggio pass, then seamless loop
+
+```sh
+cd bin && ./sbc6502 soundtest.ini
+```
 
 ## Monitor
 
@@ -191,7 +263,13 @@ bin/
   sbc.ini
   ehbasic.ini
   chess.ini
+  soundtest.ini
   roms/
+    kernel.rom
+    msbasic.rom
+    ehbasic.rom
+    chess.rom
+    soundtest.rom
   data/disk/
   # Windows only: SDL2.dll, libwinpthread-1.dll, libgcc_s_seh-1.dll
 ```
@@ -203,17 +281,17 @@ bash tools/make_kernel_rom.sh
 bash tools/make_msbasic_rom.sh
 bash tools/make_ehbasic_rom.sh
 bash tools/make_chess_rom.sh
-python3 tools/make_test_rom.py
+make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 ```
 
 ## Documentation Index
 
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/VIC.md](docs/VIC.md)
-- [docs/KEYBOARD.md](docs/KEYBOARD.md)
-- [docs/MSBASIC.md](docs/MSBASIC.md)
-- [docs/BASIC_CONVERTER.md](docs/BASIC_CONVERTER.md)
-- [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, device map, audio model
+- [docs/VIC.md](docs/VIC.md) — video chip registers and rendering modes
+- [docs/KEYBOARD.md](docs/KEYBOARD.md) — keyboard mapping
+- [docs/MSBASIC.md](docs/MSBASIC.md) — MS BASIC usage notes
+- [docs/BASIC_CONVERTER.md](docs/BASIC_CONVERTER.md) — BASIC tokenizer tool
+- [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) — third-party components and licenses
 - [docs/archive/BUGFIXES_2026-05.md](docs/archive/BUGFIXES_2026-05.md)
 
 ## Project Layout
