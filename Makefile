@@ -116,7 +116,7 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-check: all test-diskdir test-chess-rom test-peek-poke test-klaus-6502
+check: all test-diskdir test-chess-rom test-peek-poke test-klaus-6502 test-65c02
 
 $(KLAUS_BIN):
 	@$(call MKDIR_P,$(dir $@))
@@ -128,7 +128,7 @@ test-diskdir: $(OBJDIR)
 
 test-chess-rom: $(OBJDIR)
 	$(BASH) tools/make_chess_rom.sh
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/sram.c src/rom.c src/vic.c src/via6522.c src/soundchip.c -o $(OBJDIR)/test_chess_rom$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/disasm.c src/sram.c src/rom.c src/vic.c src/via6522.c src/soundchip.c -o $(OBJDIR)/test_chess_rom$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_chess_rom$(EXEEXT))
 
 test-peek-poke: $(OBJDIR)
@@ -136,8 +136,12 @@ test-peek-poke: $(OBJDIR)
 	$(call RUN_BIN,$(OBJDIR)/test_peek_poke_addrs$(EXEEXT))
 
 test-klaus-6502: $(OBJDIR) $(KLAUS_BIN)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_klaus_6502.c src/cpu6502.c -o $(OBJDIR)/test_klaus_6502$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_klaus_6502.c src/cpu6502.c src/disasm.c -o $(OBJDIR)/test_klaus_6502$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_klaus_6502$(EXEEXT))
+
+test-65c02: $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_65c02.c src/cpu6502.c src/disasm.c -o $(OBJDIR)/test_65c02$(EXEEXT) $(TEST_LDFLAGS)
+	$(call RUN_BIN,$(OBJDIR)/test_65c02$(EXEEXT))
 
 roms:
 	$(BASH) tools/make_kernel_rom.sh

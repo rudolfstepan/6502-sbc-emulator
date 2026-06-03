@@ -29,6 +29,10 @@ typedef struct {
     uint32_t  cpu_speed_hz;  /* 0 = unlimited */
     bool      debug;
     char      rom_file[CFG_STR_MAX]; /* shorthand */
+    char      cpu_model[16];  /* "6502" or "65c02" */
+    bool      trace;
+    char      trace_file[CFG_STR_MAX];
+    bool      profile;
 } Config;
 
 /* Parse INI file. Returns 0 on success, -1 on error. */

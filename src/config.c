@@ -84,6 +84,14 @@ int config_load(Config *cfg, const char *filename)
                 cfg->cpu_speed_hz = (uint32_t)strtoul(val, NULL, 0);
             else if (strcmp(key, "debug") == 0)
                 cfg->debug = atoi(val) != 0;
+            else if (strcmp(key, "model") == 0)
+                strncpy(cfg->cpu_model, val, sizeof(cfg->cpu_model) - 1);
+            else if (strcmp(key, "trace") == 0)
+                cfg->trace = atoi(val) != 0;
+            else if (strcmp(key, "trace_file") == 0)
+                strncpy(cfg->trace_file, val, CFG_STR_MAX - 1);
+            else if (strcmp(key, "profile") == 0)
+                cfg->profile = atoi(val) != 0;
         } else if (in_dev) {
             if (strcmp(key, "base") == 0)
                 cur.base = (uint16_t)strtoul(val, NULL, 16);

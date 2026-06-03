@@ -32,6 +32,16 @@ typedef struct CPU6502 {
     bool     reset_pending;
     bool     stopped;     /* STP / halt */
 
+    uint8_t  mode;        /* 0=NMOS 6502, 1=CMOS 65C02 */
+
+    /* Profiling */
+    uint64_t opcode_count[256];
+    uint64_t opcode_cycles[256];
+
+    /* Tracing */
+    bool     trace_enabled;
+    void     *trace_fp;   /* FILE* or NULL for stderr */
+
     /* Bus callbacks */
     uint8_t (*read) (void *ctx, uint16_t addr);
     void    (*write)(void *ctx, uint16_t addr, uint8_t val);
@@ -47,3 +57,4 @@ int  cpu6502_step(CPU6502 *cpu);   /* returns cycles consumed */
 void cpu6502_nmi(CPU6502 *cpu);
 void cpu6502_irq(CPU6502 *cpu);
 void cpu6502_irq_clear(CPU6502 *cpu);
+void cpu6502_dump_profile(const CPU6502 *cpu, void *fp);  /* FILE* fp */

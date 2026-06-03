@@ -1,5 +1,7 @@
 #include "cpu6502.h"
+#include "disasm.h"
 #include <stdio.h>
+#include <string.h>
 
 /* ── Bus helpers ──────────────────────────────────────────── */
 #define RD(a)       cpu->read(cpu->bus_ctx, (uint16_t)(a))
@@ -82,6 +84,9 @@ static void do_adc(CPU6502 *cpu, uint8_t m)
         if (hi > 9) hi += 6;
         cpu->A = (uint8_t)((hi << 4) | (lo & 0x0F));
         if (hi > 15) SET_FLAG(FLAG_C); else CLR_FLAG(FLAG_C);
+        /* 65C02: set N/Z from decimal result */
+        if (cpu->mode == 1)
+            set_nz(cpu, cpu->A);
     } else {
         uint16_t res = cpu->A + m + (TST_FLAG(FLAG_C) ? 1 : 0);
         if (~(cpu->A ^ m) & (res ^ cpu->A) & 0x80) SET_FLAG(FLAG_V); else CLR_FLAG(FLAG_V);
@@ -116,6 +121,9 @@ static void do_sbc(CPU6502 *cpu, uint8_t m)
         }
 
         cpu->A = (uint8_t)(((uint8_t)hi << 4) | ((uint8_t)lo & 0x0F));
+        /* 65C02: set N/Z from decimal result */
+        if (cpu->mode == 1)
+            set_nz(cpu, cpu->A);
     } else {
         cpu->A = bres;
     }
@@ -215,6 +223,10 @@ static int do_branch(CPU6502 *cpu, bool taken)
  * ═══════════════════════════════════════════════════════════ */
 int cpu6502_step(CPU6502 *cpu)
 {
+    /* WAI wakes up on interrupt; STP stays stopped */
+    if (cpu->stopped && (cpu->nmi_pending || cpu->irq_pending || cpu->reset_pending))
+        cpu->stopped = false;
+
     if (cpu->stopped) return 1;
 
     if (cpu->reset_pending)  { int c = do_reset(cpu); cpu->cycles += (uint64_t)c; return c; }
@@ -227,6 +239,16 @@ int cpu6502_step(CPU6502 *cpu)
     uint8_t  m;
     int      cycles;
     uint8_t  op = FETCH();
+
+    /* Tracing: log instruction before execution */
+    if (cpu->trace_enabled) {
+        char buf[64];
+        disasm((uint16_t)(cpu->PC - 1), cpu->read, cpu->bus_ctx, buf, sizeof(buf));
+        FILE *f = cpu->trace_fp ? (FILE*)cpu->trace_fp : stderr;
+        fprintf(f, "%04X  %-20s  A:%02X X:%02X Y:%02X SP:%02X P:%02X CYC:%llu\n",
+                (uint16_t)(cpu->PC - 1), buf, cpu->A, cpu->X, cpu->Y, cpu->SP, cpu->P,
+                (unsigned long long)cpu->cycles);
+    }
 
     switch (op) {
 
@@ -469,6 +491,244 @@ int cpu6502_step(CPU6502 *cpu)
     case 0xD8: CLR_FLAG(FLAG_D); cycles=2; break;
     case 0xF8: SET_FLAG(FLAG_D); cycles=2; break;
 
+    /* ── 65C02 CMOS extensions ──────────────────────── */
+    /* BRA: Branch Always (available in 65C02) */
+    case 0x80: cycles = do_branch(cpu, true); break;
+
+    /* BIT immediate ($89) - 65C02: only affects Z flag */
+    case 0x89:
+        if (cpu->mode == 1) {
+            m = FETCH();
+            CLR_FLAG(FLAG_Z);
+            if ((cpu->A & m) == 0) SET_FLAG(FLAG_Z);
+            cycles = 2;
+        } else {
+            fprintf(stderr, "CPU: $89 BIT #imm is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+
+    /* TSB: Test and Set Bits */
+    case 0x04:  /* TSB zp */
+        if (cpu->mode == 1) {
+            ea = addr_zp(cpu);
+            m = RD(ea);
+            CLR_FLAG(FLAG_Z);
+            if ((cpu->A & m) == 0) SET_FLAG(FLAG_Z);
+            WR(ea, (uint8_t)(m | cpu->A));
+            cycles = 5;
+        } else {
+            fprintf(stderr, "CPU: $04 TSB zp is 65C02 only\n");
+            cycles = 3;
+        }
+        break;
+    case 0x0C:  /* TSB abs */
+        if (cpu->mode == 1) {
+            ea = addr_abs(cpu);
+            m = RD(ea);
+            CLR_FLAG(FLAG_Z);
+            if ((cpu->A & m) == 0) SET_FLAG(FLAG_Z);
+            WR(ea, (uint8_t)(m | cpu->A));
+            cycles = 6;
+        } else {
+            fprintf(stderr, "CPU: $0C TSB abs is 65C02 only\n");
+            cycles = 4;
+        }
+        break;
+
+    /* TRB: Test and Reset Bits */
+    case 0x14:  /* TRB zp */
+        if (cpu->mode == 1) {
+            ea = addr_zp(cpu);
+            m = RD(ea);
+            CLR_FLAG(FLAG_Z);
+            if ((cpu->A & m) == 0) SET_FLAG(FLAG_Z);
+            WR(ea, (uint8_t)(m & ~cpu->A));
+            cycles = 5;
+        } else {
+            fprintf(stderr, "CPU: $14 TRB zp is 65C02 only\n");
+            cycles = 3;
+        }
+        break;
+    case 0x1C:  /* TRB abs */
+        if (cpu->mode == 1) {
+            ea = addr_abs(cpu);
+            m = RD(ea);
+            CLR_FLAG(FLAG_Z);
+            if ((cpu->A & m) == 0) SET_FLAG(FLAG_Z);
+            WR(ea, (uint8_t)(m & ~cpu->A));
+            cycles = 6;
+        } else {
+            fprintf(stderr, "CPU: $1C TRB abs is 65C02 only\n");
+            cycles = 4;
+        }
+        break;
+
+    /* INC A: Increment Accumulator (65C02) */
+    case 0x1A:
+        if (cpu->mode == 1) {
+            cpu->A++;
+            set_nz(cpu, cpu->A);
+            cycles = 2;
+        } else {
+            fprintf(stderr, "CPU: $1A INC A is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+
+    /* BIT zp,X: Extended BIT with indexed addressing (65C02) */
+    case 0x34:
+        if (cpu->mode == 1) {
+            do_bit(cpu, RD(addr_zpx(cpu)));
+            cycles = 4;
+        } else {
+            fprintf(stderr, "CPU: $34 BIT zp,X is 65C02 only\n");
+            cycles = 3;
+        }
+        break;
+
+    /* DEC A: Decrement Accumulator (65C02) */
+    case 0x3A:
+        if (cpu->mode == 1) {
+            cpu->A--;
+            set_nz(cpu, cpu->A);
+            cycles = 2;
+        } else {
+            fprintf(stderr, "CPU: $3A DEC A is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+
+    /* BIT abs,X: Extended BIT with indexed absolute (65C02) */
+    case 0x3C:
+        if (cpu->mode == 1) {
+            do_bit(cpu, RD(addr_abx(cpu, &extra)));
+            cycles = 4 + extra;
+        } else {
+            fprintf(stderr, "CPU: $3C BIT abs,X is 65C02 only\n");
+            cycles = 4;
+        }
+        break;
+
+    /* STZ: Store Zero */
+    case 0x64:  /* STZ zp */
+        if (cpu->mode == 1) {
+            WR(addr_zp(cpu), 0);
+            cycles = 3;
+        } else {
+            fprintf(stderr, "CPU: $64 STZ zp is 65C02 only\n");
+            cycles = 3;
+        }
+        break;
+    case 0x74:  /* STZ zp,X */
+        if (cpu->mode == 1) {
+            WR(addr_zpx(cpu), 0);
+            cycles = 4;
+        } else {
+            fprintf(stderr, "CPU: $74 STZ zp,X is 65C02 only\n");
+            cycles = 4;
+        }
+        break;
+    case 0x9C:  /* STZ abs */
+        if (cpu->mode == 1) {
+            WR(addr_abs(cpu), 0);
+            cycles = 4;
+        } else {
+            fprintf(stderr, "CPU: $9C STZ abs is 65C02 only\n");
+            cycles = 4;
+        }
+        break;
+    case 0x9E:  /* STZ abs,X */
+        if (cpu->mode == 1) {
+            WR(addr_abx(cpu, NULL), 0);
+            cycles = 5;
+        } else {
+            fprintf(stderr, "CPU: $9E STZ abs,X is 65C02 only\n");
+            cycles = 5;
+        }
+        break;
+
+    /* Push X/Y and Pull X/Y (65C02) */
+    case 0x5A:  /* PHY */
+        if (cpu->mode == 1) {
+            PUSH(cpu->Y);
+            cycles = 3;
+        } else {
+            fprintf(stderr, "CPU: $5A PHY is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+    case 0x7A:  /* PLY */
+        if (cpu->mode == 1) {
+            cpu->Y = POP();
+            set_nz(cpu, cpu->Y);
+            cycles = 4;
+        } else {
+            fprintf(stderr, "CPU: $7A PLY is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+    case 0xDA:  /* PHX */
+        if (cpu->mode == 1) {
+            PUSH(cpu->X);
+            cycles = 3;
+        } else {
+            fprintf(stderr, "CPU: $DA PHX is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+    case 0xFA:  /* PLX */
+        if (cpu->mode == 1) {
+            cpu->X = POP();
+            set_nz(cpu, cpu->X);
+            cycles = 4;
+        } else {
+            fprintf(stderr, "CPU: $FA PLX is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+
+    /* WAI: Wait for Interrupt (65C02) */
+    case 0xCB:
+        if (cpu->mode == 1) {
+            cpu->stopped = true;
+            cycles = 3;
+        } else {
+            fprintf(stderr, "CPU: $CB WAI is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+
+    /* STP: Stop (65C02) */
+    case 0xDB:
+        if (cpu->mode == 1) {
+            cpu->stopped = true;
+            cycles = 3;
+        } else {
+            fprintf(stderr, "CPU: $DB STP is 65C02 only\n");
+            cycles = 2;
+        }
+        break;
+
+    /* JMP (abs,X): Indirect indexed jump (65C02 - fixes page wrap bug) */
+    case 0x7C:
+        if (cpu->mode == 1) {
+            uint16_t base = addr_abs(cpu);
+            uint16_t addr = (uint16_t)(base + cpu->X);
+            if (cpu->mode == 1) {
+                /* 65C02: no page wrap bug */
+                cpu->PC = RD16(addr);
+            } else {
+                /* NMOS: has page wrap bug (shouldn't reach here) */
+                cpu->PC = rd16_wrap(cpu, addr);
+            }
+            cycles = 6;
+        } else {
+            fprintf(stderr, "CPU: $7C JMP (abs,X) is 65C02 only\n");
+            cycles = 3;
+        }
+        break;
+
     /* ── Illegal / unknown – treat as single-byte NOP ── */
     default:
         fprintf(stderr, "CPU: unknown opcode $%02X at $%04X\n",
@@ -476,8 +736,64 @@ int cpu6502_step(CPU6502 *cpu)
         cycles = 2; break;
     }
 
+    /* Profiling: update opcode statistics */
+    cpu->opcode_count[op]++;
+    cpu->opcode_cycles[op] += (uint64_t)cycles;
+
     cpu->cycles += (uint64_t)cycles;
     return cycles;
+}
+
+/* Dump CPU profiling statistics */
+void cpu6502_dump_profile(const CPU6502 *cpu, void *fp)
+{
+    if (!fp) return;
+    FILE *f = (FILE*)fp;
+
+    fprintf(f, "\n=== CPU Profiling Statistics ===\n");
+    fprintf(f, "Total cycles: %llu\n", (unsigned long long)cpu->cycles);
+    fprintf(f, "\nTop 20 opcodes by cycle count:\n");
+    fprintf(f, "%-8s %-20s %12s %12s %12s\n",
+            "Opcode", "Mnemonic", "Count", "Total Cycles", "Avg Cycles");
+    fprintf(f, "%-8s %-20s %12s %12s %12s\n",
+            "--------", "--------------------", "------------", "------------", "------------");
+
+    /* Sort by total cycles (simple bubble sort for <= 256 items) */
+    uint8_t sorted[256];
+    for (int i = 0; i < 256; i++) sorted[i] = i;
+
+    for (int i = 0; i < 255; i++) {
+        for (int j = i + 1; j < 256; j++) {
+            if (cpu->opcode_cycles[sorted[j]] > cpu->opcode_cycles[sorted[i]]) {
+                uint8_t tmp = sorted[i];
+                sorted[i] = sorted[j];
+                sorted[j] = tmp;
+            }
+        }
+    }
+
+    int printed = 0;
+    for (int i = 0; i < 256 && printed < 20; i++) {
+        uint8_t op = sorted[i];
+        if (cpu->opcode_count[op] == 0) continue;
+
+        char buf[64];
+        /* Create a temporary read function context for disasm */
+        disasm(0, cpu->read, cpu->bus_ctx, buf, sizeof(buf));
+
+        char mnemonic[32];
+        if (snprintf(mnemonic, sizeof(mnemonic), "$%02X", op) < 0)
+            snprintf(mnemonic, sizeof(mnemonic), "???");
+
+        fprintf(f, "%-8s %-20s %12llu %12llu %12.2f\n",
+                mnemonic, "instr",
+                (unsigned long long)cpu->opcode_count[op],
+                (unsigned long long)cpu->opcode_cycles[op],
+                cpu->opcode_count[op] > 0 ?
+                    (double)cpu->opcode_cycles[op] / cpu->opcode_count[op] : 0.0);
+        printed++;
+    }
+    fprintf(f, "\n");
 }
 
 /* ── Public API ─────────────────────────────────────────────── */
@@ -494,6 +810,11 @@ void cpu6502_init(CPU6502 *cpu,
     cpu->cycles = 0;
     cpu->nmi_pending = cpu->irq_pending = cpu->reset_pending = false;
     cpu->stopped = false;
+    cpu->mode = 0;
+    memset(cpu->opcode_count, 0, sizeof(cpu->opcode_count));
+    memset(cpu->opcode_cycles, 0, sizeof(cpu->opcode_cycles));
+    cpu->trace_enabled = false;
+    cpu->trace_fp = NULL;
     cpu->read    = read;
     cpu->write   = write;
     cpu->bus_ctx = ctx;

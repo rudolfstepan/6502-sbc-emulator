@@ -100,6 +100,8 @@ static void usage(const char *prog)
         "  -r <rom>      load ROM file (overrides config)\n"
         "  -s <speed>    CPU speed in Hz (0=unlimited, default 1MHz)\n"
         "  -d            start in debug/monitor mode\n"
+        "  -t [file]     enable instruction tracing (default: stderr)\n"
+        "  -p            dump CPU profile on exit\n"
         "  -m            show memory map and exit\n"
         "  -h            show this help\n"
         "\n"
@@ -147,12 +149,23 @@ int main(int argc, char *argv[])
     int     speed_override = -1;
     bool    debug_flag    = false;
     bool    show_map      = false;
+    bool    trace_flag    = false;
+    char    trace_file[256] = "";
+    bool    profile_flag  = false;
 
     /* ── Parse arguments ─────────────────────────────────── */
     for (int i = 1; i < argc; i++) {
         if (strcmp(argv[i], "-h") == 0) { usage(argv[0]); return 0; }
         if (strcmp(argv[i], "-d") == 0) { debug_flag = true; continue; }
         if (strcmp(argv[i], "-m") == 0) { show_map = true; continue; }
+        if (strcmp(argv[i], "-p") == 0) { profile_flag = true; continue; }
+        if (strcmp(argv[i], "-t") == 0) {
+            trace_flag = true;
+            if (i+1 < argc && argv[i+1][0] != '-') {
+                snprintf(trace_file, sizeof(trace_file), "%s", argv[++i]);
+            }
+            continue;
+        }
         if (strcmp(argv[i], "-r") == 0 && i+1 < argc) {
             snprintf(rom_override, sizeof(rom_override), "%s", argv[++i]);
             continue;
@@ -342,6 +355,33 @@ int main(int argc, char *argv[])
     /* ── Init CPU ─────────────────────────────────────────── */
     CPU6502 cpu;
     cpu6502_init(&cpu, cpu_bus_read, cpu_bus_write, &bus);
+
+    /* Set CPU model (6502 or 65C02) */
+    if (strcmp(cfg.cpu_model, "65c02") == 0 || strcmp(cfg.cpu_model, "65C02") == 0)
+        cpu.mode = 1;
+    else
+        cpu.mode = 0;  /* Default to NMOS 6502 */
+
+    /* Setup tracing */
+    if (trace_flag || cfg.trace) {
+        cpu.trace_enabled = true;
+        if (trace_file[0]) {
+            cpu.trace_fp = fopen(trace_file, "w");
+            if (!cpu.trace_fp) {
+                fprintf(stderr, "Cannot open trace file: %s\n", trace_file);
+                cpu.trace_fp = stderr;
+            }
+        } else if (cfg.trace_file[0]) {
+            cpu.trace_fp = fopen(cfg.trace_file, "w");
+            if (!cpu.trace_fp) {
+                fprintf(stderr, "Cannot open trace file: %s\n", cfg.trace_file);
+                cpu.trace_fp = stderr;
+            }
+        } else {
+            cpu.trace_fp = stderr;
+        }
+    }
+
     cpu6502_reset(&cpu);
 
     /* ── VIC Demo messages disabled - MS BASIC will initialize the screen ──── */
@@ -477,6 +517,16 @@ int main(int argc, char *argv[])
 done:
     printf("\nEmulator stopped after %llu cycles.\n",
            (unsigned long long)cpu.cycles);
+
+    /* Dump profile if requested */
+    if (profile_flag || cfg.profile) {
+        cpu6502_dump_profile(&cpu, stdout);
+    }
+
+    /* Close trace file if it was opened */
+    if (cpu.trace_fp && cpu.trace_fp != stderr) {
+        fclose((FILE*)cpu.trace_fp);
+    }
 
     /* cleanup */
     soundchip_shutdown();
