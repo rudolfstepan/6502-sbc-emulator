@@ -19,7 +19,7 @@ jobs:
       - name: Install dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y build-essential libsdl2-dev curl
+          sudo apt-get install -y build-essential pkg-config libsdl2-dev cc65 curl python3
 
       - name: Build runtime bundle
         run: |
@@ -38,74 +38,69 @@ jobs:
           path: sbc6502-linux-x86_64.tar.gz
 
   build-windows:
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Set up MSYS2
-        uses: msys2/setup-msys2@v2
-        with:
-          msystem: MINGW64
-          update: true
-          install: >-
-            mingw-w64-x86_64-gcc
-            mingw-w64-x86_64-make
-            mingw-w64-x86_64-pkgconf
-            mingw-w64-x86_64-SDL2
-            git
-            python
-            unzip
-
-      - name: Install cc65
-        shell: msys2 {0}
+      - name: Install cross-build dependencies
         run: |
-          mkdir -p /c/tools/cc65pkg
-          curl -L "https://community.chocolatey.org/api/v2/package/cc65-compiler/2.19.0" -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg
-          unzip -o /c/tools/cc65pkg/cc65-compiler.2.19.0.nupkg -d /c/tools/cc65pkg/extracted
-          mkdir -p /c/tools/cc65
-          cp -r /c/tools/cc65pkg/extracted/tools/* /c/tools/cc65/
+          sudo apt-get update
+          sudo apt-get install -y \
+            build-essential \
+            gcc-mingw-w64-x86-64 \
+            cc65 \
+            curl \
+            tar \
+            python3
 
-      - name: Build runtime bundle
-        shell: msys2 {0}
+      - name: Build ROMs for runtime bundle
+        run: make roms
+
+      - name: Download SDL2 MinGW development package
         run: |
-          export PATH="/c/tools/cc65/bin:/mingw64/bin:/usr/bin:$PATH"
-          make clean
-          make
-          make roms
+          SDL_VERSION=2.30.11
+          curl -fsSL -o SDL2-devel-mingw.tar.gz \
+            "https://github.com/libsdl-org/SDL/releases/download/release-${SDL_VERSION}/SDL2-devel-${SDL_VERSION}-mingw.tar.gz"
+          tar -xzf SDL2-devel-mingw.tar.gz
+          echo "SDL_PREFIX=$PWD/SDL2-${SDL_VERSION}/x86_64-w64-mingw32" >> "$GITHUB_ENV"
 
-      - name: Package Windows bundle
-        shell: pwsh
+      - name: Cross-compile Windows runtime bundle
         run: |
-          if (Test-Path .\sbc6502-windows-x86_64.zip) { Remove-Item .\sbc6502-windows-x86_64.zip -Force }
-          Compress-Archive -Path .\bin -DestinationPath .\sbc6502-windows-x86_64.zip
+          mkdir -p bin
 
-      - name: Upload Windows artifact
+          x86_64-w64-mingw32-gcc \
+            -std=c99 -Wall -Wextra -O2 -g \
+            -I"${SDL_PREFIX}/include" -I"${SDL_PREFIX}/include/SDL2" -Dmain=SDL_main \
+            src/*.c \
+            -o bin/sbc6502.exe \
+            -L"${SDL_PREFIX}/lib" -lmingw32 -lSDL2main -lSDL2 -lm
+
+          cp "${SDL_PREFIX}/bin/SDL2.dll" bin/SDL2.dll
+
+          for dll in libwinpthread-1.dll libgcc_s_seh-1.dll; do
+            path="$(x86_64-w64-mingw32-gcc -print-file-name=${dll})"
+            if [ -f "$path" ]; then
+              cp "$path" "bin/${dll}"
+            fi
+          done
+
+          bash tools/stage_runtime.sh bin
+
+      - name: Verify Windows cross bundle
+        run: |
+          test -f bin/sbc6502.exe
+          test -f bin/SDL2.dll
+          test -f bin/chess.ini
+          test -f bin/sbc.ini
+          test -f bin/roms/chess.rom
+          test -f bin/roms/kernel.rom
+          test -f bin/roms/msbasic.rom
+
+      - name: Upload Windows cross runtime bundle artifact
+        if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: sbc6502-windows-x86_64
-          path: sbc6502-windows-x86_64.zip
-
-  publish-release:
-    needs: [build-linux, build-windows]
-    runs-on: ubuntu-latest
-    steps:
-      - name: Download Linux artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sbc6502-linux-x86_64
-          path: artifacts
-
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: sbc6502-windows-x86_64
-          path: artifacts
-
-      - name: Publish release assets
-        uses: softprops/action-gh-release@v2
-        with:
-          files: |
-            artifacts/sbc6502-linux-x86_64.tar.gz
-            artifacts/sbc6502-windows-x86_64.zip
-          generate_release_notes: true
+          name: sbc6502-bin-windows-cross-${{ github.event_name }}-${{ github.run_number }}-${{ github.run_attempt }}
+          path: bin/
+          if-no-files-found: error
