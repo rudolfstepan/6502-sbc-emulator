@@ -17,7 +17,7 @@ SIM = sim/tb_bus_decode.vhd sim/tb_sbc_reset.vhd sim/tb_sbc_bus_write.vhd \
       sim/tb_rom_image.vhd sim/tb_t65_adapter.vhd sim/tb_sbc_t65_boot.vhd \
       sim/tb_sbc_t65_uart.vhd sim/tb_sbc_t65_via.vhd sim/tb_sbc_t65_irq.vhd \
       sim/tb_sbc_t65_kernel_smoke.vhd sim/tb_vic_core.vhd sim/tb_char_rom.vhd \
-      sim/tb_vic_pixel_gen.vhd sim/tb_vic_raster_irq.vhd
+      sim/tb_vic_pixel_gen.vhd sim/tb_vic_raster_irq.vhd sim/tb_sbc_vic_display.vhd
 
 .PHONY: analyze roms test clean
 
@@ -50,6 +50,8 @@ test: roms
 	$(GHDL) -r $(GHDL_FLAGS) tb_vic_pixel_gen $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_vic_raster_irq
 	$(GHDL) -r $(GHDL_FLAGS) tb_vic_raster_irq $(GHDL_RUN_FLAGS)
+	$(GHDL) -e $(GHDL_FLAGS) tb_sbc_vic_display
+	$(GHDL) -r $(GHDL_FLAGS) tb_sbc_vic_display $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_rom_image
 	$(GHDL) -r $(GHDL_FLAGS) tb_rom_image $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_t65_adapter
