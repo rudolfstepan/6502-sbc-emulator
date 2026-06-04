@@ -69,6 +69,9 @@ architecture rtl of uart6551 is
 
   -- Data format configuration signals
   signal data_length : natural range 5 to 8 := 8;  -- Default 8 bits
+  signal parity_enable : std_logic := '0';
+  signal parity_odd : std_logic := '0';  -- 0=odd, 1=even
+  signal stop_bits : natural range 1 to 2 := 1;  -- 1 or 2 stop bits
 
   -- Helper function to get data length from CTRL register
   function get_data_length(ctrl : data_t) return natural is
@@ -79,6 +82,25 @@ architecture rtl of uart6551 is
       when "10" => return 7;  -- 7 bits
       when others => return 8;  -- 8 bits (default)
     end case;
+  end function;
+
+  -- Helper function to calculate parity bit for data bits (0-6 only, bit 7 is parity)
+  -- Returns parity bit value based on data and parity mode
+  function calc_parity_8bit(data : data_t; parity_mode : std_logic) return std_logic is
+    variable parity : std_logic;
+  begin
+    -- Calculate even parity for bits 0-6 only (bit 7 is the parity bit itself)
+    parity := data(0) xor data(1) xor data(2) xor data(3) xor
+              data(4) xor data(5) xor data(6);
+
+    -- Adjust for odd/even mode
+    -- parity_mode = '0' means odd parity (return not parity)
+    -- parity_mode = '1' means even parity (return parity)
+    if parity_mode = '0' then
+      return not parity;  -- Odd parity
+    else
+      return parity;      -- Even parity
+    end if;
   end function;
 
 begin
@@ -142,8 +164,15 @@ begin
         next_status := status_reg;
         next_status(ST_TDRE) := '1';  -- Always ready in simplified model
 
-        -- Update data length based on current CTRL register
+        -- Update configuration from CTRL register
         data_length <= get_data_length(ctrl_reg);
+        parity_enable <= ctrl_reg(5);                -- Bit 5: parity enable
+        parity_odd <= ctrl_reg(6);                   -- Bit 6: 0=odd, 1=even
+        if ctrl_reg(4) = '0' then
+          stop_bits <= 1;
+        else
+          stop_bits <= 2;
+        end if;
 
         -- Handle incoming RX data
         if rx_valid = '1' then
@@ -152,6 +181,16 @@ begin
           else
             rx_reg <= rx_data;
             next_status(ST_RDRF) := '1';
+
+            -- Check parity if enabled
+            -- For stub interface: bit 7 is parity bit, bits 0-6 are data
+            if parity_enable = '1' then
+              -- Calculate parity for received data (bits 0-7)
+              -- and compare with bit 7 (which should contain the parity)
+              if calc_parity_8bit(rx_data, parity_odd) /= rx_data(7) then
+                next_status(ST_PE) := '1';  -- Set parity error flag
+              end if;
+            end if;
           end if;
         end if;
 
