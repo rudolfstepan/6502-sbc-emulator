@@ -20,7 +20,13 @@ entity vic_core is
     -- Video timing outputs (for pixel generator, optional for now)
     h_counter    : out integer range 0 to 1023;  -- Horizontal pixel counter
     v_counter    : out integer range 0 to 1023;  -- Vertical pixel counter
-    raster_irq   : out std_logic       -- Raster interrupt strobe
+    raster_irq   : out std_logic;      -- Raster interrupt strobe
+
+    -- Video read port for the pixel generator
+    pixel_text_addr  : in  integer range 0 to 2047;
+    pixel_text_data  : out data_t;
+    pixel_color_addr : in  integer range 0 to 255;
+    pixel_color_data : out data_t
   );
 end entity;
 
@@ -32,6 +38,10 @@ architecture rtl of vic_core is
   -- Color RAM: 0x8800-0x88FF (256 bytes, optional colors)
   type color_ram_t is array (0 to 255) of data_t;
   signal color_ram : color_ram_t := (others => (others => '0'));
+
+  attribute ram_style : string;
+  attribute ram_style of text_ram : signal is "block";
+  attribute ram_style of color_ram : signal is "distributed";
 
   -- Control registers: 0x9000-0x900F (16 bytes)
   signal scroll_x    : data_t := (others => '0');  -- 0x9000: Horizontal scroll
@@ -52,6 +62,8 @@ architecture rtl of vic_core is
   signal reservedA   : data_t := (others => '0');  -- 0x900F: Reserved
 
   signal dout_reg   : data_t := (others => '0');  -- Output register
+  signal pixel_text_data_reg  : data_t := (others => '0');
+  signal pixel_color_data_reg : data_t := (others => '0');
   signal raster_irq_flag : std_logic := '0';
   signal raster_irq_armed : std_logic := '0';  -- IRQ armed when condition matches
   signal h_count : integer range 0 to 1023 := 0;
@@ -62,6 +74,8 @@ begin
   dout <= dout_reg;
   h_counter <= h_count;
   v_counter <= v_count;
+  pixel_text_data <= pixel_text_data_reg;
+  pixel_color_data <= pixel_color_data_reg;
 
   -- Main register access process
   process(clk)
@@ -71,10 +85,10 @@ begin
   begin
     if rising_edge(clk) then
       raster_irq <= '0';  -- Clear interrupt strobe by default
+      pixel_text_data_reg <= text_ram(pixel_text_addr);
+      pixel_color_data_reg <= color_ram(pixel_color_addr);
 
       if reset_n = '0' then
-        text_ram <= (others => (others => '0'));
-        color_ram <= (others => (others => '0'));
         scroll_x <= (others => '0');
         scroll_y <= (others => '0');
         raster_cmp <= (others => '0');

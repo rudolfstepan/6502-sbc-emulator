@@ -4,10 +4,11 @@
 -- to execute. This version includes clock division to properly interface the T65 (which runs
 -- at full speed internally) to the rest of the system.
 --
--- System Architecture:
---  - T65 CPU: Cycle-accurate 6502 processor with all instruction support
---  - 32KB SRAM: Program and data memory (0x0000-0x7FFF)
---  - 16KB ROM: Firmware and system code (0xC000-0xFFFF)
+-- System Architecture (Minimal Core):
+--  - T65 CPU: Cycle-accurate 6502 processor
+--  - 4KB SRAM: Program and data memory (0x0000-0x0FFF)
+--  - 2KB ROM: Boot code (0xF800-0xFFFF)
+--  - VIC: Video display controller only
 --  - VIA 6522: Parallel I/O controller with timers
 --  - UART 6551: Serial communications interface
 --  - VIC (stub): Video display controller
@@ -63,51 +64,74 @@ architecture rtl of sbc_t65_top is
 
   signal sram_dout  : data_t;
   signal rom_dout   : data_t;
-  signal via_dout   : data_t;
-  signal uart_dout  : data_t;
-  signal disk_dout  : data_t;
   signal vic_dout   : data_t;
-  signal sound_dout : data_t;
-
-  signal via_irq      : std_logic;
-  signal uart_irq     : std_logic;
-  signal vic_irq      : std_logic;
-  signal via_porta_out : data_t;
-  signal via_portb_out : data_t;
-  signal uart_tx_data  : data_t;
-  signal uart_tx_valid : std_logic;
+  signal vic_irq    : std_logic;
 
   signal sram_we    : std_logic;
-  signal via_cs     : std_logic;
-  signal uart_cs    : std_logic;
-  signal disk_cs    : std_logic;
   signal vic_cs     : std_logic;
-  signal sound_cs   : std_logic;
   signal cpu_irq_n  : std_logic;
   signal irq_comb   : std_logic;
+
+  -- Boot sequence signals
+  signal boot_counter : natural range 0 to 31 := 0;
+  signal boot_done    : boolean := false;
+  signal boot_vic_cs  : std_logic;
+  signal boot_vic_we  : std_logic;
+  signal boot_vic_addr : addr_t;
+  signal boot_vic_din  : data_t;
 begin
   process(clk)
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
         cpu_enable <= '0';
+        boot_counter <= 0;
+        boot_done <= false;
       else
         cpu_enable <= not cpu_enable;
+
+        -- Boot sequence: Write "WELCOME TO 6502 SBC!" to VIC text RAM
+        if not boot_done then
+          boot_counter <= boot_counter + 1;
+          if boot_counter >= 20 then
+            boot_done <= true;
+          end if;
+        end if;
       end if;
     end if;
   end process;
 
+  -- Boot message writer
+  with boot_counter select boot_vic_din <=
+    x"57" when 0,  -- W
+    x"45" when 1,  -- E
+    x"4C" when 2,  -- L
+    x"43" when 3,  -- C
+    x"4F" when 4,  -- O
+    x"4D" when 5,  -- M
+    x"45" when 6,  -- E
+    x"20" when 7,  -- space
+    x"54" when 8,  -- T
+    x"4F" when 9,  -- O
+    x"20" when 10, -- space
+    x"36" when 11, -- 6
+    x"35" when 12, -- 5
+    x"30" when 13, -- 0
+    x"32" when 14, -- 2
+    x"20" when 15, -- space
+    x"53" when 16, -- S
+    x"42" when 17, -- B
+    x"43" when 18, -- C
+    x"21" when 19, -- !
+    x"00" when others;
+
+  boot_vic_addr <= std_logic_vector(to_unsigned(boot_counter, 16)) when boot_counter < 20 else (others => '0');
+  boot_vic_cs <= '1' when not boot_done else '0';
+  boot_vic_we <= '1' when not boot_done else '0';
+
   cpu_bus_we <= cpu_we and not cpu_enable;
 
-  sram_we  <= cpu_bus_we when dev_sel = DEV_SRAM else '0';
-  via_cs   <= '1' when dev_sel = DEV_VIA else '0';
-  uart_cs  <= '1' when dev_sel = DEV_UART else '0';
-  disk_cs  <= '1' when dev_sel = DEV_DISK else '0';
-  vic_cs   <= '1' when dev_sel = DEV_VIC_TEXT or dev_sel = DEV_VIC_BLIT or
-                   dev_sel = DEV_VIC_SPR or dev_sel = DEV_VIC_SPD or
-                   dev_sel = DEV_VIC_REG or dev_sel = DEV_VIC_BMP else '0';
-  sound_cs <= '1' when dev_sel = DEV_SOUND0 or dev_sel = DEV_SOUND1 or
-                   dev_sel = DEV_SOUND2 or dev_sel = DEV_SOUND3 else '0';
+  sram_we <= cpu_bus_we when dev_sel = DEV_SRAM else '0';
 
   decode_i : entity work.bus_decode
     port map (
@@ -131,73 +155,31 @@ begin
 
   sram_i : entity work.sync_ram
     generic map (
-      ADDR_WIDTH => 15,
+      ADDR_WIDTH => 12,
       ASYNC_READ => true
     )
     port map (
       clk  => clk,
       we   => sram_we,
-      addr => cpu_addr(14 downto 0),
+      addr => cpu_addr(11 downto 0),
       din  => cpu_dout,
       dout => sram_dout
     );
 
   rom_i : entity work.rom
     generic map (
-      ADDR_WIDTH => 14,
+      ADDR_WIDTH => 11,
       INIT_FILE  => ROM_INIT_FILE,
       ASYNC_READ => true
     )
     port map (
       clk  => clk,
-      addr => cpu_addr(13 downto 0),
+      addr => cpu_addr(10 downto 0),
       dout => rom_dout
     );
 
-  via_i : entity work.via6522
-    port map (
-      clk       => clk,
-      reset_n   => reset_n,
-      cs        => via_cs,
-      we        => cpu_bus_we,
-      addr      => cpu_addr,
-      din       => cpu_dout,
-      dout      => via_dout,
-      porta_in  => (others => '0'),
-      portb_in  => (others => '0'),
-      porta_out => via_porta_out,
-      portb_out => via_portb_out,
-      irq       => via_irq
-    );
-
-  uart_i : entity work.uart6551
-    port map (
-      clk      => clk,
-      reset_n  => reset_n,
-      cs       => uart_cs,
-      we       => cpu_bus_we,
-      addr     => cpu_addr,
-      din      => cpu_dout,
-      dout     => uart_dout,
-      rx_data  => (others => '0'),
-      rx_valid => '0',
-      tx_data  => uart_tx_data,
-      tx_valid => uart_tx_valid,
-      irq      => uart_irq
-    );
-
-  disk_i : entity work.reg_stub
-    generic map (REG_COUNT => 16)
-    port map (
-      clk     => clk,
-      reset_n => reset_n,
-      cs      => disk_cs,
-      we      => cpu_bus_we,
-      addr    => cpu_addr,
-      din     => cpu_dout,
-      dout    => disk_dout,
-      irq     => open
-    );
+  -- Minimal core: VIC display only, no other peripherals
+  -- VIA, UART, Disk removed to reduce LUT usage
 
   vic_i : entity work.vic_core
     port map (
@@ -211,42 +193,31 @@ begin
       irq       => vic_irq,
       h_counter => open,
       v_counter => open,
-      raster_irq => open
+      raster_irq => open,
+      pixel_text_addr => 0,
+      pixel_text_data => open,
+      pixel_color_addr => 0,
+      pixel_color_data => open
     );
 
-  sound_i : entity work.reg_stub
-    generic map (REG_COUNT => 40)
-    port map (
-      clk     => clk,
-      reset_n => reset_n,
-      cs      => sound_cs,
-      we      => cpu_bus_we,
-      addr    => cpu_addr,
-      din     => cpu_dout,
-      dout    => sound_dout,
-      irq     => open
-    );
-
+  -- Minimal data bus: Only RAM, ROM, and VIC
   with dev_sel select cpu_din <=
-    sram_dout  when DEV_SRAM,
-    rom_dout   when DEV_ROM,
-    via_dout   when DEV_VIA,
-    uart_dout  when DEV_UART,
-    disk_dout  when DEV_DISK,
-    vic_dout   when DEV_VIC_TEXT | DEV_VIC_BLIT | DEV_VIC_SPR | DEV_VIC_SPD | DEV_VIC_REG | DEV_VIC_BMP,
-    sound_dout when DEV_SOUND0 | DEV_SOUND1 | DEV_SOUND2 | DEV_SOUND3,
-    x"FF"      when others;
+    sram_dout when DEV_SRAM,
+    rom_dout  when DEV_ROM,
+    vic_dout  when DEV_VIC_TEXT | DEV_VIC_BLIT | DEV_VIC_SPR | DEV_VIC_SPD | DEV_VIC_REG | DEV_VIC_BMP,
+    x"FF"     when others;
 
-  irq_comb <= via_irq or uart_irq or vic_irq;
+  irq_comb <= vic_irq;
   irq_out <= irq_comb;
   cpu_irq_n <= not irq_comb;
-  uart_tx <= uart_tx_data(0) when uart_tx_valid = '1' else uart_rx;
+
+  -- Debug outputs (stub)
   dbg_cpu_addr <= cpu_addr;
   dbg_cpu_data <= cpu_dout;
   dbg_cpu_din <= cpu_din;
   dbg_cpu_we <= cpu_bus_we;
   dbg_cpu_sync <= cpu_sync;
-  dbg_uart_tx_data <= uart_tx_data;
-  dbg_uart_tx_valid <= uart_tx_valid;
-  dbg_via_portb_out <= via_portb_out;
+  dbg_uart_tx_data <= (others => '0');
+  dbg_uart_tx_valid <= '0';
+  dbg_via_portb_out <= (others => '0');
 end architecture;

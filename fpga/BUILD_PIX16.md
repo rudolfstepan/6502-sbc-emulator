@@ -1,11 +1,11 @@
 # PIX16 Hardware Build Instructions
 
-This document describes how to build and deploy the 6502 SBC VIC display to the PIX16 Spartan-6 FPGA development board.
+This document describes how to build and deploy the 6502 SBC VIC display to the PIX16 Spartan-6 FPGA development board with the checked-in Xilinx ISE project.
 
 ## Prerequisites
 
 ### Hardware
-- PIX16 Spartan-6 FPGA Development Board (XC6SLX9-2FTG256C)
+- PIX16 Spartan-6 FPGA Development Board with XC6SLX16-2FTG256 device
 - USB cable for programming
 - VGA monitor for display output
 
@@ -22,23 +22,37 @@ Choose ONE of the following toolchains:
 
 ## Build with ISE 14.7
 
-### Step 1: Create ISE Project
-```bash
-cd fpga
-ise_new_project.tcl pix16_display \
-  -device XC6SLX9 \
-  -family Spartan6 \
-  -top_module pix16_top \
-  -constraint_file constraints/pix16.ucf
+### Step 1: Open the checked-in ISE project
+```text
+ISE Design Suite 14.7
+-> File > Open Project
+-> fpga/fpga/fpga.xise
 ```
+
+The project is configured for:
+
+| Setting | Value |
+|---------|-------|
+| Family | Spartan-6 |
+| Device | xc6slx16 |
+| Package | ftg256 |
+| Speed grade | -2 |
+| Top module | pix16_top |
+| Constraint file | ../constraints/pix16.ucf |
 
 ### Step 2: Add Source Files
 The project should automatically include:
+- `rtl/sbc_pkg.vhd` (shared package and memory map)
+- `rtl/bus_decode.vhd` (address decoder)
+- `rtl/cpu6502_slot.vhd` (ROM-scripted test CPU slot)
+- `rtl/mem/rom.vhd` (test ROM loader)
 - `rtl/pix16_top.vhd` (top-level)
 - `rtl/boards/pix16_board.vhd` (board integration)
 - `rtl/peripherals/vic_core.vhd` (VIC controller)
 - `rtl/peripherals/vic_pixel_gen.vhd` (pixel generator)
 - `rtl/mem/char_rom.vhd` (character ROM)
+
+The board test ROM is `rtl/mem/pix16_welcome_test.hex`. It is loaded by `rom.vhd` and contains scripted writes into the VIC text RAM so the VGA output shows the welcome text.
 
 ### Step 3: Configure Synthesis
 - Language: VHDL
@@ -48,19 +62,19 @@ The project should automatically include:
 ### Step 4: Run Synthesis & Implementation
 ```
 ISE Design Suite 14.7
-→ File > Open Project > pix16_display.ise
-→ Process > Run All (or use GUI)
+-> Open fpga/fpga/fpga.xise
+-> Process > Run All
 ```
 
-Expected output: `pix16_top.bit` (bitstream file)
+Expected output: `fpga/fpga/pix16_top.bit` (bitstream file)
 
 ### Step 5: Program FPGA
 #### Using ISE iMPACT
 ```
-→ Tools > iMPACT
-→ Create New Project
-→ Select pix16_top.bit
-→ Configure FPGA
+-> Tools > iMPACT
+-> Create New Project
+-> Select fpga/fpga/pix16_top.bit
+-> Configure FPGA
 ```
 
 #### Using Command Line
@@ -75,7 +89,8 @@ impact -batch impact_commands.txt
 - Apply power to board
 - Board LEDs should illuminate
 - RESET button should reset the design
-- VGA output should display a test pattern or character display
+- VGA output should lock at 640x480 @ 60Hz
+- The visible output should show the welcome text written by `pix16_welcome_test.hex`
 
 ## Build with Open Source Tools (Experimental)
 
@@ -86,7 +101,7 @@ ghdl -a --std=08 rtl/pix16_top.vhd
 # (nextpnr doesn't yet support VHDL directly)
 
 # Run nextpnr
-nextpnr-xilinx --device xc6slx9_flg256 \
+nextpnr-xilinx --device xc6slx16_ftg256 \
   --freq 50 \
   --json design.json \
   --constraint constraints/pix16.pdc \
@@ -109,6 +124,18 @@ nextpnr-xilinx --device xc6slx9_flg256 \
 - Check resistor ladder DAC soldering
 - Verify sync signal connections (HS, VS)
 - Check RGB resistor values (should be ~620Ω per schematic)
+- Confirm the ISE project targets `xc6slx16-ftg256-2`
+- Confirm the pixel generator uses the 50MHz input clock with a 25MHz pixel clock-enable
+
+### Blank VGA Screen
+- Confirm `rtl/mem/pix16_welcome_test.hex` is present
+- Confirm `pix16_board.vhd` maps `TEST_ROM_INIT_FILE` to `../rtl/mem/pix16_welcome_test.hex`
+- Confirm `vic_core.vhd` exposes the pixel read port to `vic_pixel_gen.vhd`
+
+### Very Slow Synthesis
+- Check the XST report for repeated `Found 8-bit register for signal <text_ram<N>>` messages.
+- The VIC text RAM should be inferred as RAM, not thousands of flip-flops.
+- `vic_core.vhd` uses synchronous pixel RAM readback and `ram_style` attributes to keep XST from expanding the text RAM into registers.
 
 ## Pin Assignment Reference
 
@@ -129,5 +156,5 @@ See `constraints/pix16.ucf` for complete pinout:
 After successful programming:
 1. Implement SDRAM controller for extended memory
 2. Add camera interface (OV5640)
-3. Integrate 6502 CPU with display subsystem
+3. Replace the ROM-scripted test CPU slot with the real T65 system path
 4. Load boot ROM with test programs

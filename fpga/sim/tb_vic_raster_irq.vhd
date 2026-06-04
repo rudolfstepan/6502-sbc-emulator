@@ -22,6 +22,10 @@ architecture test of tb_vic_raster_irq is
   signal h_counter    : integer range 0 to 1023;
   signal v_counter    : integer range 0 to 1023;
   signal raster_irq   : std_logic;
+  signal pixel_text_addr  : integer range 0 to 2047 := 0;
+  signal pixel_text_data  : data_t;
+  signal pixel_color_addr : integer range 0 to 255 := 0;
+  signal pixel_color_data : data_t;
 
   constant CLK_PERIOD : time := 10 ns;
 
@@ -40,7 +44,11 @@ begin
       irq        => irq,
       h_counter  => h_counter,
       v_counter  => v_counter,
-      raster_irq => raster_irq
+      raster_irq => raster_irq,
+      pixel_text_addr => pixel_text_addr,
+      pixel_text_data => pixel_text_data,
+      pixel_color_addr => pixel_color_addr,
+      pixel_color_data => pixel_color_data
     );
 
   test : process

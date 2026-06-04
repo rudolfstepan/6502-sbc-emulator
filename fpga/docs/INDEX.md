@@ -13,6 +13,8 @@ Welcome to the 6502 SBC FPGA documentation. This directory contains comprehensiv
 - **[Simulation](./06_SIMULATION.md)** - Running and analyzing simulations
 - **[Development Guide](./07_DEVELOPMENT.md)** - Contributing and development workflow
 - **[Roadmap](./roadmap.md)** - Project roadmap and milestones
+- **[PIX16 Build Guide](../BUILD_PIX16.md)** - Xilinx ISE build and programming guide for the PIX16 Spartan-6 board
+- **[Hardware Support](../HARDWARE_SUPPORT.md)** - PIX16 board pinout, target device, and VGA smoke-test notes
 
 ## Project Structure
 
@@ -89,13 +91,15 @@ The FPGA maintains 100% software compatibility with the C emulator:
 - ✅ T65 CPU core integration
 - ✅ VIA 6522 partial implementation
 - ✅ UART 6551 partial implementation
+- ✅ PIX16 ISE project targeting `xc6slx16-ftg256-2`
+- ✅ Board-level VGA smoke test with ROM-scripted welcome text
 - ✅ Comprehensive documentation
 
 **In Progress**
 - VIC video controller expansion
 - Complete UART implementation
 - Full VIA functionality
-- Real board synthesis
+- Real T65-driven board boot flow
 
 ## Key Files
 
@@ -105,6 +109,8 @@ The FPGA maintains 100% software compatibility with the C emulator:
 | `rtl/bus_decode.vhd` | Address decoder |
 | `rtl/sbc_top.vhd` | Main system integration (test mode) |
 | `rtl/sbc_t65_top.vhd` | System with T65 CPU |
+| `rtl/pix16_top.vhd` | PIX16 board top for the ISE project |
+| `../fpga/fpga.xise` | Xilinx ISE project for `xc6slx16-ftg256-2` |
 | `rtl/peripherals/*.vhd` | Peripheral controllers |
 | `rtl/mem/*.vhd` | Memory components |
 | `sim/tb_*.vhd` | Testbenches |

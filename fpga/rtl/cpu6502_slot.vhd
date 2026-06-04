@@ -146,7 +146,7 @@ begin
 
           when CAPTURE_RESET_HI =>
             -- Form 16-bit program counter from reset vector (little-endian)
-            pc <= unsigned(data_in & reset_vec_lo);  -- High byte in upper 8 bits
+            pc <= unsigned(std_logic_vector'(data_in & reset_vec_lo));  -- High byte in upper 8 bits
             addr_reg <= data_in & reset_vec_lo;     -- Prefetch first instruction at start address
             state <= FETCH_OPCODE_SET;
 

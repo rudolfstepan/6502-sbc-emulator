@@ -7,6 +7,9 @@ use ieee.numeric_std.all;
 use work.sbc_pkg.all;
 
 entity pix16_board is
+  generic (
+    TEST_ROM_INIT_FILE : string := "../rtl/mem/pix16_welcome_test.hex"
+  );
   port (
     -- System
     clk         : in  std_logic;      -- 50MHz oscillator input
@@ -54,6 +57,7 @@ architecture rtl of pix16_board is
   signal h_sync      : std_logic;
   signal v_sync      : std_logic;
   signal pixel_valid : std_logic;
+  signal pixel_data  : data_t;
 
   -- VIC bus signals
   signal vic_cs      : std_logic := '0';
@@ -63,6 +67,20 @@ architecture rtl of pix16_board is
   signal vic_dout    : data_t;
   signal vic_irq     : std_logic;
   signal raster_irq  : std_logic;
+  signal text_ram_addr : integer range 0 to 2047;
+  signal text_ram_data : data_t;
+  signal color_ram_addr : integer range 0 to 255;
+  signal color_ram_data : data_t;
+
+  -- Test ROM bus master
+  signal cpu_addr   : addr_t := (others => '0');
+  signal cpu_dout   : data_t := (others => '0');
+  signal cpu_din    : data_t := (others => '0');
+  signal cpu_we     : std_logic := '0';
+  signal dev_sel    : device_sel_t;
+  signal rom_dout   : data_t;
+  signal dbg_read_data  : data_t;
+  signal dbg_read_valid : std_logic;
 
   -- Character ROM interface
   signal char_rom_addr : std_logic_vector(9 downto 0);
@@ -96,6 +114,50 @@ begin
   reset_sync <= reset_n and pll_locked;
 
   -- =========================================================================
+  -- Test ROM Bus Master
+  -- =========================================================================
+  decode_i : entity work.bus_decode
+    port map (
+      addr => cpu_addr,
+      sel  => dev_sel
+    );
+
+  cpu_i : entity work.cpu6502_slot
+    port map (
+      clk      => clk_pll,
+      reset_n  => reset_sync,
+      irq_n    => not vic_irq,
+      data_in  => cpu_din,
+      addr     => cpu_addr,
+      data_out => cpu_dout,
+      we       => cpu_we,
+      dbg_read_data  => dbg_read_data,
+      dbg_read_valid => dbg_read_valid
+    );
+
+  rom_i : entity work.rom
+    generic map (
+      ADDR_WIDTH => 14,
+      INIT_FILE  => TEST_ROM_INIT_FILE,
+      ASYNC_READ => true
+    )
+    port map (
+      clk  => clk_pll,
+      addr => cpu_addr(13 downto 0),
+      dout => rom_dout
+    );
+
+  vic_cs <= '1' when dev_sel = DEV_VIC_TEXT or dev_sel = DEV_VIC_REG else '0';
+  vic_we <= cpu_we;
+  vic_addr <= cpu_addr;
+  vic_din <= cpu_dout;
+
+  with dev_sel select cpu_din <=
+    rom_dout when DEV_ROM,
+    vic_dout when DEV_VIC_TEXT | DEV_VIC_REG,
+    x"FF"    when others;
+
+  -- =========================================================================
   -- VIC Core Instance
   -- =========================================================================
   vic_core_i : entity work.vic_core
@@ -110,7 +172,11 @@ begin
       irq        => vic_irq,
       h_counter  => h_counter,
       v_counter  => v_counter,
-      raster_irq => raster_irq
+      raster_irq => raster_irq,
+      pixel_text_addr => text_ram_addr,
+      pixel_text_data => text_ram_data,
+      pixel_color_addr => color_ram_addr,
+      pixel_color_data => color_ram_data
     );
 
   -- =========================================================================
@@ -129,10 +195,10 @@ begin
     port map (
       clk           => clk_pll,
       reset_n       => reset_sync,
-      text_ram_addr => open,          -- Not used in basic test
-      text_ram_data => (others => '0'),
-      color_ram_addr => open,         -- Not used in basic test
-      color_ram_data => (others => '0'),
+      text_ram_addr => text_ram_addr,
+      text_ram_data => text_ram_data,
+      color_ram_addr => color_ram_addr,
+      color_ram_data => color_ram_data,
       char_rom_addr => char_rom_addr,
       char_rom_data => char_rom_data,
       scroll_x      => (others => '0'),
@@ -140,7 +206,7 @@ begin
       mode_reg      => x"80",         -- Display enabled, text mode
       h_sync        => h_sync,
       v_sync        => v_sync,
-      pixel_out     => open,          -- Test pattern only
+      pixel_out     => pixel_data,
       pixel_valid   => pixel_valid
     );
 
@@ -151,9 +217,8 @@ begin
   vga_out_hs <= h_sync;
   vga_out_vs <= v_sync;
 
-  -- Test pattern: Full brightness white when in active display area
-  vga_out_r <= "11111" when pixel_valid = '1' else "00000";
-  vga_out_g <= "111111" when pixel_valid = '1' else "000000";
-  vga_out_b <= "11111" when pixel_valid = '1' else "00000";
+  vga_out_r <= "11111" when pixel_data /= x"00" else "00000";
+  vga_out_g <= "111111" when pixel_data /= x"00" else "000000";
+  vga_out_b <= "11111" when pixel_data /= x"00" else "00000";
 
 end architecture;

@@ -4,6 +4,9 @@ library ieee;
 use ieee.std_logic_1164.all;
 
 entity pix16_top is
+  generic (
+    TEST_ROM_INIT_FILE : string := "../rtl/mem/pix16_welcome_test.hex"
+  );
   port (
     -- System
     clk         : in  std_logic;              -- 50MHz crystal oscillator
@@ -38,6 +41,9 @@ architecture rtl of pix16_top is
 begin
   -- Instantiate board integration layer
   board_i : entity work.pix16_board
+    generic map (
+      TEST_ROM_INIT_FILE => TEST_ROM_INIT_FILE
+    )
     port map (
       clk         => clk,
       reset_n     => reset_n,

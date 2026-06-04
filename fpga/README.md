@@ -22,6 +22,23 @@ The placeholders intentionally expose the intended bus contracts before each chi
 fully implemented. This lets us add real behavior one component at a time without
 changing the top-level wiring repeatedly.
 
+## PIX16 Spartan-6 Board Status
+
+The checked-in Xilinx ISE project for the PIX16 board lives at:
+
+```text
+fpga/fpga/fpga.xise
+```
+
+It targets `xc6slx16-ftg256-2` with `rtl/pix16_top.vhd` as the implementation top
+and `constraints/pix16.ucf` for the board pinout. The current bitstream flow is a
+VGA smoke test: `cpu6502_slot.vhd` executes the ROM script in
+`rtl/mem/pix16_welcome_test.hex`, writes the welcome text into VIC text RAM, and
+`vic_pixel_gen.vhd` renders it as 640x480 VGA output.
+
+ISE build products are intentionally ignored by `.gitignore`; `fpga.xise` is the
+project file that should be kept under version control.
+
 ## Current Tests
 
 Run from this directory:

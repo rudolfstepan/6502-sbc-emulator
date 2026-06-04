@@ -8,7 +8,7 @@ use work.sbc_pkg.all;
 
 entity vic_pixel_gen is
   port (
-    clk          : in  std_logic;      -- System clock (100 MHz)
+    clk          : in  std_logic;      -- System clock (50 MHz)
     reset_n      : in  std_logic;      -- Active-low reset
 
     -- Text/Color RAM interface (read-only from pixel gen perspective)
@@ -36,7 +36,7 @@ end entity;
 
 architecture rtl of vic_pixel_gen is
   -- VGA timing constants for 640×480 @ 60Hz
-  -- Pixel clock: 25.175 MHz (we use 25 MHz from 100 MHz / 4)
+  -- Pixel clock: 25.175 MHz (we use 25 MHz from 50 MHz / 2)
   constant H_VISIBLE  : natural := 640;
   constant H_BLANK    : natural := 16;  -- Front porch
   constant H_SYNC_WIDTH : natural := 96;  -- Sync pulse width
@@ -54,8 +54,7 @@ architecture rtl of vic_pixel_gen is
   constant V_SYNC_START : natural := V_VISIBLE + V_BLANK;
   constant V_SYNC_END   : natural := V_SYNC_START + V_SYNC_WIDTH;
 
-  signal pixel_clk     : std_logic := '0';
-  signal pixel_clk_div : natural range 0 to 3 := 0;
+  signal pixel_ce      : std_logic := '0';
 
   signal h_counter    : natural range 0 to H_TOTAL - 1 := 0;
   signal v_counter    : natural range 0 to V_TOTAL - 1 := 0;
@@ -77,32 +76,26 @@ architecture rtl of vic_pixel_gen is
   signal in_visible   : std_logic;
 
 begin
-  -- Pixel clock divider: 100 MHz → 25 MHz (divide by 4)
+  -- Pixel clock enable: 50 MHz -> 25 MHz (advance every other cycle)
   process(clk)
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
-        pixel_clk_div <= 0;
-        pixel_clk <= '0';
+        pixel_ce <= '0';
       else
-        if pixel_clk_div = 3 then
-          pixel_clk_div <= 0;
-          pixel_clk <= not pixel_clk;
-        else
-          pixel_clk_div <= pixel_clk_div + 1;
-        end if;
+        pixel_ce <= not pixel_ce;
       end if;
     end if;
   end process;
 
-  -- Horizontal and vertical counters (on pixel clock)
-  process(pixel_clk)
+  -- Horizontal and vertical counters (advance at the pixel rate)
+  process(clk)
   begin
-    if rising_edge(pixel_clk) then
+    if rising_edge(clk) then
       if reset_n = '0' then
         h_counter <= 0;
         v_counter <= 0;
-      else
+      elsif pixel_ce = '1' then
         if h_counter = H_TOTAL - 1 then
           h_counter <= 0;
           if v_counter = V_TOTAL - 1 then
@@ -124,9 +117,9 @@ begin
   char_line <= v_counter mod 8;
   char_pixel <= h_counter mod 8;
 
-  -- Generate sync signals
-  h_sync_sig <= '1' when (h_counter >= H_SYNC_START and h_counter < H_SYNC_END) else '0';
-  v_sync_sig <= '1' when (v_counter >= V_SYNC_START and v_counter < V_SYNC_END) else '0';
+  -- Generate sync signals (active-low, standard VGA polarity)
+  h_sync_sig <= '0' when (h_counter >= H_SYNC_START and h_counter < H_SYNC_END) else '1';
+  v_sync_sig <= '0' when (v_counter >= V_SYNC_START and v_counter < V_SYNC_END) else '1';
 
   -- Visible area
   in_visible <= '1' when (h_counter < H_VISIBLE and v_counter < V_VISIBLE) else '0';
@@ -137,6 +130,7 @@ begin
 
   -- Character ROM addressing: char_code & char_line
   char_rom_addr <= char_code(6 downto 0) & std_logic_vector(to_unsigned(char_line, 3));
+  rom_pattern <= char_rom_data;
 
   -- Extract pixel from character pattern
   -- Pattern bits are [7:0] = [leftmost:rightmost]
@@ -151,11 +145,16 @@ begin
   pixel_out <= x"FF" when (in_visible = '1' and pixel_bit = '1') else x"00";
 
   -- Latch character code and color for pipelined access
-  process(pixel_clk)
+  process(clk)
   begin
-    if rising_edge(pixel_clk) then
-      char_code <= text_ram_data;
-      char_color <= color_ram_data;
+    if rising_edge(clk) then
+      if reset_n = '0' then
+        char_code <= (others => '0');
+        char_color <= (others => '0');
+      elsif pixel_ce = '1' then
+        char_code <= text_ram_data;
+        char_color <= color_ram_data;
+      end if;
     end if;
   end process;
 

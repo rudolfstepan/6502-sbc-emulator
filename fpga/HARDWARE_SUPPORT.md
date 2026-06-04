@@ -2,12 +2,12 @@
 
 ## Overview
 
-This document describes the hardware support infrastructure created for deploying the 6502 SBC VIC text display to the **PIX16 Spartan-6 FPGA Development Board** (XC6SLX9-2FTG256C with 256Mbit SDRAM).
+This document describes the hardware support infrastructure created for deploying the 6502 SBC VIC text display to the **PIX16 Spartan-6 FPGA Development Board**. The checked-in ISE project targets an XC6SLX16-2FTG256 device with 256Mbit SDRAM on the board.
 
 ## Architecture
 
 ### Board Components
-- **FPGA**: XC6SLX9-2FTG256C (Spartan-6, FTG256 package)
+- **FPGA**: XC6SLX16-2FTG256 (Spartan-6, FTG256 package)
 - **System Clock**: 50MHz crystal oscillator
 - **Memory**: 256Mbit SDRAM (HY57V256SGT)
 - **Video Output**: VGA via 6553-color resistor-ladder DAC (5R + 6G + 5B)
@@ -56,6 +56,7 @@ This document describes the hardware support infrastructure created for deployin
 - **File**: `rtl/pix16_top.vhd`
 - **Purpose**: Top-level design hierarchy for ISE implementation
 - **Ports**: All board I/O (VGA, SDRAM, buttons, LEDs)
+- **ISE target**: `fpga/fpga/fpga.xise`, top `pix16_top`, device `xc6slx16-ftg256-2`
 
 #### 2. Board Integration Layer
 - **File**: `rtl/boards/pix16_board.vhd`
@@ -64,14 +65,15 @@ This document describes the hardware support infrastructure created for deployin
   - VIC core instantiation
   - Character ROM integration
   - Pixel generator with VGA sync signal generation
-  - Test pattern output (white during valid pixels)
+  - ROM-scripted welcome text written into VIC text RAM
   - Clock management placeholder
   - SDRAM interface stub (for future controller)
 
 #### 3. Existing VIC Components (Reused)
-- **vic_core.vhd**: 40×25 character display controller with raster interrupt
-- **vic_pixel_gen.vhd**: VGA 640×480@60Hz timing and pixel generation
+- **vic_core.vhd**: 40×25 character display controller with raster interrupt and synchronous pixel read port. The text RAM uses XST RAM inference hints to avoid synthesizing the display RAM as thousands of registers.
+- **vic_pixel_gen.vhd**: VGA 640×480@60Hz timing and pixel generation. It divides the 50MHz board clock by using a 25MHz pixel clock-enable.
 - **char_rom.vhd**: 128-character ASCII ROM (8×8 pixels per char)
+- **mem/pix16_welcome_test.hex**: ROM script used by `cpu6502_slot.vhd` to write the welcome text to VIC text RAM.
 
 ### Package Updates
 - **File**: `rtl/sbc_pkg.vhd`
@@ -90,22 +92,18 @@ This document describes the hardware support infrastructure created for deployin
 
 ### Building with ISE GUI
 ```
-1. ISE Design Suite > File > New Project
-2. Name: pix16_display
-3. Device: XC6SLX9-2FTG256
-4. Add RTL files from fpga/rtl/ directory
-5. Add constraint file: fpga/constraints/pix16.ucf
-6. Set top module: pix16_top
-7. Implement > Run All (or Process > Run All)
-8. Generate bitstream: pix16_top.bit
+1. ISE Design Suite > File > Open Project
+2. Open fpga/fpga/fpga.xise
+3. Verify device: xc6slx16-ftg256-2
+4. Verify top module: pix16_top
+5. Implement > Run All (or Process > Run All)
+6. Generate bitstream: fpga/fpga/pix16_top.bit
 ```
 
 ### Building with Command-Line ISE
 ```bash
-cd fpga
-xtclsh scripts/create_ise_project.tcl
-cd pix16_display
-ise pix16_display.ise -batch -run "Project → Run All"
+cd fpga/fpga
+ise fpga.xise -batch -run "Project -> Run All"
 ```
 
 ### Verification with GHDL
@@ -119,7 +117,7 @@ make hardware_analyze  # Verify VHDL compilation
 1. Connect USB programming cable to board
 2. Tools > iMPACT
 3. Create New Project > Parallel Cable IV (or appropriate cable)
-4. Select bitstream: `pix16_display/pix16_display.runs/impl_1/pix16_top.bit`
+4. Select bitstream: `fpga/fpga/pix16_top.bit`
 5. Right-click device > Program
 6. Wait for "Programming succeeded"
 
@@ -137,21 +135,25 @@ xc3sprog -c ftdi pix16_top.bit
 ### Expected Behavior After Programming
 1. Board powers on, LEDs illuminate
 2. Pushing RESET button cycles the design
-3. VGA output shows solid white display (from test pattern)
-4. H_SYNC and V_SYNC outputs generate proper VGA timing (60Hz)
+3. VGA monitor locks to 640x480 @ 60Hz
+4. VGA output shows the welcome text written by the test ROM
+5. H_SYNC and V_SYNC outputs generate proper VGA timing
 
 ### Troubleshooting
 - **No VGA signal**: Check resistor ladder DAC soldering on board
 - **Garbled display**: Verify sync polarity in VGA cable
+- **Monitor reports out of range**: Verify the current `vic_pixel_gen.vhd` uses a 25MHz pixel clock-enable from the 50MHz board clock
+- **Blank display with valid sync**: Verify `pix16_welcome_test.hex` is present and included through `TEST_ROM_INIT_FILE`
+- **Very slow synthesis**: Check that XST infers the VIC text RAM as RAM; repeated `text_ram<N>` register messages indicate broken RAM inference
 - **FPGA won't program**: Check USB cable, driver installation, JTAG mode jumper
 - **GHDL compile errors**: Ensure all RTL files use consistent VHDL-08 syntax
 
 ## Future Enhancements
 
-### Phase 2: Text Display Content
-- Integrate with 6502 CPU and bootloader
-- Load character data from ROM into VIC text RAM at startup
-- Display boot message on VGA output
+### Phase 2: Real CPU Display Content
+- Replace the ROM-scripted `cpu6502_slot` test path with the real T65 CPU path
+- Load character data from a real 6502 boot ROM into VIC text RAM at startup
+- Keep the current welcome text path as the board-level VGA smoke test
 
 ### Phase 3: SDRAM Controller
 - Implement 256Mbit SDRAM interface
@@ -182,8 +184,8 @@ All pin assignments derived from:
 
 ### Current Implementation
 - System clock: 50MHz (from crystal oscillator)
-- Pixel clock: 50MHz (direct; should be ~25MHz for proper VGA)
-- **NOTE**: Pixel clock timing needs adjustment for production use
+- Pixel timing: 25MHz pixel clock-enable derived from the 50MHz system clock
+- VGA mode: 640x480 @ 60Hz timing with standard active-low sync
 
 ### Recommended PLL Configuration
 - Input: 50MHz crystal
@@ -197,6 +199,7 @@ Use Xilinx CoreGen to create PLL in ISE project if needed.
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-06-04 | 1.1 | Updated for checked-in ISE project, XC6SLX16 target, working VGA timing, and ROM-scripted welcome text |
 | 2026-06-04 | 1.0 | Initial hardware support infrastructure created |
 
 ## Related Documentation

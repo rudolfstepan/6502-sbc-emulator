@@ -58,7 +58,11 @@ begin
       irq        => vic_irq,
       h_counter  => h_counter,
       v_counter  => v_counter,
-      raster_irq => raster_irq
+      raster_irq => raster_irq,
+      pixel_text_addr => text_ram_addr,
+      pixel_text_data => text_ram_data,
+      pixel_color_addr => color_ram_addr,
+      pixel_color_data => color_ram_data
     );
 
   -- Character ROM
@@ -88,10 +92,6 @@ begin
       pixel_valid   => pixel_valid
     );
 
-  -- Text RAM simulation (connects pixel gen to VIC core)
-  text_ram_data <= vic_dout when (text_ram_addr < 1000) else x"00";
-  -- Color RAM simulation
-  color_ram_data <= vic_dout when (color_ram_addr < 256) else x"00";
   -- Mode register passthrough
   scroll_x <= x"00";  -- No scroll for now
   scroll_y <= x"00";
