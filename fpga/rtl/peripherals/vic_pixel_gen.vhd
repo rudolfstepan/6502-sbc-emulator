@@ -59,11 +59,16 @@ architecture rtl of vic_pixel_gen is
   signal h_counter    : natural range 0 to H_TOTAL - 1 := 0;
   signal v_counter    : natural range 0 to V_TOTAL - 1 := 0;
 
-  -- Character grid position (40×25)
+  -- 2x scaled character grid (40×25 chars at 16×16 screen pixels each)
+  -- 40*16=640 px wide (no horizontal border), 25*16=400 px tall + 40px border top/bottom
+  constant V_BORDER   : natural := 40;  -- Top/bottom border in pixels
+
   signal char_col     : natural range 0 to 39;
   signal char_row     : natural range 0 to 24;
-  signal char_line    : natural range 0 to 7;  -- Pixel row within character
-  signal char_pixel   : natural range 0 to 7;  -- Pixel column within character
+  signal char_line    : natural range 0 to 7;  -- Pixel row within character (ROM line)
+  signal char_pixel   : natural range 0 to 7;  -- Pixel column within character (ROM bit)
+  signal v_offset     : natural range 0 to V_VISIBLE;  -- v_counter minus top border
+  signal in_text_area : std_logic;
 
   -- RAM access signals
   signal char_code    : data_t;
@@ -110,23 +115,29 @@ begin
     end if;
   end process;
 
-  -- Calculate character grid position from pixel coordinates
-  -- Use modulo to wrap around within 40×25 grid
-  char_col <= (h_counter / 8) mod 40;
-  char_row <= (v_counter / 8) mod 25;
-  char_line <= v_counter mod 8;
-  char_pixel <= h_counter mod 8;
+  -- 2x scaled character grid position from pixel coordinates
+  -- Horizontal: each char = 16 screen pixels (8 ROM pixels × 2)
+  -- Vertical:   40px top border, then each char = 16 screen pixels (8 ROM lines × 2)
+  in_text_area <= '1' when (h_counter < H_VISIBLE
+                            and v_counter >= V_BORDER
+                            and v_counter < V_BORDER + 25 * 16) else '0';
+
+  v_offset   <= v_counter - V_BORDER when v_counter >= V_BORDER else 0;
+  char_col   <= h_counter / 16;
+  char_row   <= v_offset / 16;
+  char_line  <= (v_offset / 2) mod 8;
+  char_pixel <= (h_counter / 2) mod 8;
 
   -- Generate sync signals (active-low, standard VGA polarity)
   h_sync_sig <= '0' when (h_counter >= H_SYNC_START and h_counter < H_SYNC_END) else '1';
   v_sync_sig <= '0' when (v_counter >= V_SYNC_START and v_counter < V_SYNC_END) else '1';
 
-  -- Visible area
+  -- Visible area (for sync / pixel_valid)
   in_visible <= '1' when (h_counter < H_VISIBLE and v_counter < V_VISIBLE) else '0';
 
   -- Text RAM addressing: row * 40 + col (40 characters per row)
-  text_ram_addr <= char_row * 40 + char_col when in_visible = '1' else 0;
-  color_ram_addr <= (char_row * 40 + char_col) mod 256 when in_visible = '1' else 0;
+  text_ram_addr <= char_row * 40 + char_col when in_text_area = '1' else 0;
+  color_ram_addr <= (char_row * 40 + char_col) mod 256 when in_text_area = '1' else 0;
 
   -- Character ROM addressing: char_code & char_line
   char_rom_addr <= char_code(6 downto 0) & std_logic_vector(to_unsigned(char_line, 3));
@@ -141,8 +152,8 @@ begin
   v_sync <= v_sync_sig;
   pixel_valid <= in_visible;
 
-  -- Pixel color output (combinational)
-  pixel_out <= x"FF" when (in_visible = '1' and pixel_bit = '1') else x"00";
+  -- Pixel color output (combinational) — only within the 2x-scaled text area
+  pixel_out <= x"FF" when (in_text_area = '1' and pixel_bit = '1') else x"00";
 
   -- Latch character code and color for pipelined access
   process(clk)
