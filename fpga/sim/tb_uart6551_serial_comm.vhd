@@ -4,6 +4,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use std.env.all;
 use work.sbc_pkg.all;
 
 entity tb_uart6551_serial_comm is
@@ -186,6 +187,7 @@ begin
     report "========================================" severity note;
     report "Serial Communication Tests Complete" severity note;
     report "========================================" severity note;
+    finish;
   end process;
 
 end architecture;

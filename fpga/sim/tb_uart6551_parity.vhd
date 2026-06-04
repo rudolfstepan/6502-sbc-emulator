@@ -4,6 +4,7 @@ library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
+use std.env.all;
 use work.sbc_pkg.all;
 
 entity tb_uart6551_parity is
@@ -216,6 +217,7 @@ begin
     report "========================================" severity note;
     report "UART Parity Support Tests Complete" severity note;
     report "========================================" severity note;
+    finish;
   end process;
 
 end architecture;
