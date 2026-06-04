@@ -19,7 +19,7 @@ SIM = sim/tb_bus_decode.vhd sim/tb_sbc_reset.vhd sim/tb_sbc_bus_write.vhd \
       sim/tb_sbc_t65_kernel_smoke.vhd sim/tb_vic_core.vhd sim/tb_char_rom.vhd \
       sim/tb_vic_pixel_gen.vhd sim/tb_vic_raster_irq.vhd sim/tb_sbc_vic_display.vhd
 
-.PHONY: analyze roms test clean
+.PHONY: analyze roms test clean hardware_analyze hardware_synth
 
 analyze:
 	$(GHDL) -a $(GHDL_FLAGS) $(T65_RTL) $(RTL)
@@ -69,3 +69,28 @@ test: roms
 
 clean:
 	$(GHDL) --clean
+
+## ============================================================================
+## Hardware Build Targets (PIX16 Spartan-6 Board)
+## ============================================================================
+
+HARDWARE_RTL = rtl/sbc_pkg.vhd \
+               rtl/mem/char_rom.vhd rtl/peripherals/vic_core.vhd \
+               rtl/peripherals/vic_pixel_gen.vhd \
+               rtl/boards/pix16_board.vhd rtl/pix16_top.vhd
+
+hardware_analyze:
+	$(GHDL) -a $(GHDL_FLAGS) $(HARDWARE_RTL)
+	@echo "Hardware design analysis complete"
+
+hardware_synth:
+	@echo "To synthesize for PIX16 board, use Xilinx ISE:"
+	@echo "  1. ise pix16_display.ise"
+	@echo "  2. Process > Run All"
+	@echo "  3. Program FPGA with pix16_top.bit"
+	@echo ""
+	@echo "Or create project with:"
+	@echo "  xtclsh scripts/create_ise_project.tcl"
+
+hardware_build: hardware_analyze hardware_synth
+	@echo "Hardware build setup complete. See BUILD_PIX16.md for details."

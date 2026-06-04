@@ -9,6 +9,10 @@ package sbc_pkg is
   subtype addr_t is std_logic_vector(15 downto 0);  -- 16-bit address bus
   subtype data_t is std_logic_vector(7 downto 0);   -- 8-bit data bus
 
+  -- VIC Memory Arrays
+  type text_ram_t is array (0 to 2047) of data_t;   -- 2KB text display buffer
+  type color_ram_t is array (0 to 255) of data_t;   -- Color buffer for text mode
+
   -- Memory map constants: Define address ranges for all peripherals and memory regions
   -- The 6502 has a 64KB address space (0x0000 - 0xFFFF)
 
