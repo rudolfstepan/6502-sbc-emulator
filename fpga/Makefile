@@ -47,7 +47,7 @@ test: roms
 	$(GHDL) -e $(GHDL_FLAGS) tb_char_rom
 	$(GHDL) -r $(GHDL_FLAGS) tb_char_rom $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_vic_pixel_gen
-	$(GHDL) -r $(GHDL_FLAGS) tb_vic_pixel_gen --stop-time=200us $(GHDL_RUN_FLAGS)
+	$(GHDL) -r $(GHDL_FLAGS) tb_vic_pixel_gen $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_rom_image
 	$(GHDL) -r $(GHDL_FLAGS) tb_rom_image $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_t65_adapter

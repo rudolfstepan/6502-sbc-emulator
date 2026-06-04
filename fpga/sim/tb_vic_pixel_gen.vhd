@@ -126,7 +126,6 @@ begin
     report "========================================" severity note;
     report "VIC Pixel Generator Tests Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;
