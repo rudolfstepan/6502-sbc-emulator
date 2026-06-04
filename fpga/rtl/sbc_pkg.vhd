@@ -38,7 +38,7 @@ package sbc_pkg is
 
   -- VIC Blit engine: Hardware graphics blitter (16 bytes)
   constant ADDR_VIC_BLIT_BASE   : unsigned(15 downto 0) := x"8840";
-  constant ADDR_VIC_BLIT_LAST   : unsigned(15 downto 0) := x"844F";
+  constant ADDR_VIC_BLIT_LAST   : unsigned(15 downto 0) := x"884F";
 
   -- VIC Sprite controller: Manages sprite graphics (64 bytes for 8 sprites)
   constant ADDR_VIC_SPR_BASE    : unsigned(15 downto 0) := x"8850";
