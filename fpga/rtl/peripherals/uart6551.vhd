@@ -1,164 +1,190 @@
--- UART 6551: Serial communications interface controller
--- Provides asynchronous serial I/O (RS-232) for console and modem communication
--- Simplified model: focuses on basic transmit/receive with interrupt capability
+-- UART 6551: Serial Communications Interface with Baud Rate Generation
+-- Enhanced version with configurable baud rates and serial parameters
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 use work.sbc_pkg.all;
 
 entity uart6551 is
   port (
-    clk          : in  std_logic;      -- System clock
+    clk          : in  std_logic;      -- System clock (100 MHz)
     reset_n      : in  std_logic;      -- Active-low synchronous reset
-    cs           : in  std_logic;      -- Chip Select: device active when high
-    we           : in  std_logic;      -- Write Enable: 1=write, 0=read
-    addr         : in  addr_t;         -- Register address (lower 2 bits select register)
-    din          : in  data_t;         -- Data input for register writes
-    dout         : out data_t;         -- Data output for register reads
-    rx_data      : in  data_t;         -- External receiver: serial input data byte
-    rx_valid     : in  std_logic;      -- External receiver: data valid signal
-    tx_data      : out data_t;         -- External transmitter: serial output data byte
-    tx_valid     : out std_logic;      -- External transmitter: request to transmit this byte
-    irq          : out std_logic       -- Interrupt Request to CPU
+    cs           : in  std_logic;      -- Chip Select
+    we           : in  std_logic;      -- Write Enable
+    addr         : in  addr_t;         -- Register address (lower 2 bits)
+    din          : in  data_t;         -- Data input for writes
+    dout         : out data_t;         -- Data output for reads
+    rx_data      : in  data_t;         -- External RX data (stub interface)
+    rx_valid     : in  std_logic;      -- External RX valid signal
+    tx_data      : out data_t;         -- TX data output
+    tx_valid     : out std_logic;      -- TX request signal
+    irq          : out std_logic       -- Interrupt Request
   );
 end entity;
 
 architecture rtl of uart6551 is
-  -- Register address map (lower 2 address bits)
-  constant REG_DATA   : std_logic_vector(1 downto 0) := "00";  -- Data register (R/W)
-  constant REG_STATUS : std_logic_vector(1 downto 0) := "01";  -- Status register (read-only)
-  constant REG_CMD    : std_logic_vector(1 downto 0) := "10";  -- Command register (write-only)
-  constant REG_CTRL   : std_logic_vector(1 downto 0) := "11";  -- Control register (write-only)
+  -- Register address map
+  constant REG_DATA   : std_logic_vector(1 downto 0) := "00";
+  constant REG_STATUS : std_logic_vector(1 downto 0) := "01";
+  constant REG_CMD    : std_logic_vector(1 downto 0) := "10";
+  constant REG_CTRL   : std_logic_vector(1 downto 0) := "11";
 
-  -- Status register bit definitions
-  constant ST_IRQ  : natural := 7;  -- Interrupt Request (1=interrupt pending)
-  constant ST_DSR  : natural := 6;  -- Data Set Ready (not used)
-  constant ST_DCD  : natural := 5;  -- Data Carrier Detect (not used)
-  constant ST_TDRE : natural := 4;  -- Transmit Data Register Empty (1=ready for new data)
-  constant ST_RDRF : natural := 3;  -- Receive Data Register Full (1=data available)
-  constant ST_OVR  : natural := 2;  -- Overrun error (1=data lost)
-  constant ST_FE   : natural := 1;  -- Framing error (not fully implemented)
-  constant ST_PE   : natural := 0;  -- Parity error (not fully implemented)
+  -- Status register bits
+  constant ST_IRQ  : natural := 7;
+  constant ST_DSR  : natural := 6;
+  constant ST_DCD  : natural := 5;
+  constant ST_TDRE : natural := 4;
+  constant ST_RDRF : natural := 3;
+  constant ST_OVR  : natural := 2;
+  constant ST_FE   : natural := 1;
+  constant ST_PE   : natural := 0;
 
-  -- Internal registers for UART state
-  signal rx_reg       : data_t := (others => '0');      -- Received data latch
-  signal tx_reg       : data_t := (others => '0');      -- Transmit data register
-  signal status_reg   : data_t := x"10";                -- Status flags (TDRE=1 at reset)
-  signal cmd_reg      : data_t := (others => '0');      -- Command register settings
-  signal ctrl_reg     : data_t := (others => '0');      -- Control register settings
-  signal dout_reg     : data_t := (others => '0');      -- Data output register latch
-  signal tx_valid_reg : std_logic := '0';               -- Transmit strobe signal
+  -- Baud rate dividers for 100 MHz clock with 16x oversampling
+  -- Divider = 100_000_000 / (baud_rate * 16)
+  constant BAUD_300     : natural := 20833;   -- 100M/(300*16)
+  constant BAUD_600     : natural := 10417;   -- 100M/(600*16)
+  constant BAUD_1200    : natural := 5208;    -- 100M/(1200*16)
+  constant BAUD_2400    : natural := 2604;    -- 100M/(2400*16)
+  constant BAUD_4800    : natural := 1302;    -- 100M/(4800*16)
+  constant BAUD_9600    : natural := 651;     -- 100M/(9600*16)
+  constant BAUD_19200   : natural := 325;     -- 100M/(19200*16)
+  constant BAUD_38400   : natural := 162;     -- 100M/(38400*16) [approximate]
+  constant BAUD_57600   : natural := 108;     -- 100M/(57600*16) [approximate]
+  constant BAUD_115200  : natural := 54;      -- 100M/(115200*16) [approximate]
+
+  -- Internal registers
+  signal rx_reg       : data_t := (others => '0');
+  signal tx_reg       : data_t := (others => '0');
+  signal status_reg   : data_t := x"10";
+  signal cmd_reg      : data_t := (others => '0');
+  signal ctrl_reg     : data_t := (others => '0');
+  signal dout_reg     : data_t := (others => '0');
+  signal tx_valid_reg : std_logic := '0';
+
+  -- Baud rate generator signals
+  signal baud_div_count : natural range 0 to 65535 := 0;
+  signal baud_clock : std_logic := '0';
+  signal baud_divider : natural range 0 to 65535 := BAUD_9600;
+
 begin
-  -- Output assignments: Connect internal latches to output ports
-  dout <= dout_reg;                     -- Register read data
-  tx_data <= tx_reg;                    -- Transmit data to external interface
-  tx_valid <= tx_valid_reg;             -- Transmit strobe to external interface
-  irq <= status_reg(ST_IRQ);            -- Interrupt to CPU
+  -- Output assignments
+  dout <= dout_reg;
+  tx_data <= tx_reg;
+  tx_valid <= tx_valid_reg;
+  irq <= status_reg(ST_IRQ);
 
-  -- Main UART control process: Handle RX, TX, and register access
+  -- Baud rate generator process
+  -- Generates baud clock at 16x the specified baud rate
   process(clk)
-    variable next_status : data_t;  -- Next status register value
   begin
     if rising_edge(clk) then
-      -- Clear transmit strobe every cycle (pulse signal)
+      if reset_n = '0' then
+        baud_div_count <= 0;
+        baud_clock <= '0';
+        baud_divider <= BAUD_9600;  -- Default to 9600 baud
+      else
+        -- Update baud divider from control register (bits 3:0)
+        case ctrl_reg(3 downto 0) is
+          when x"0" => baud_divider <= BAUD_300;
+          when x"1" => baud_divider <= BAUD_600;
+          when x"2" => baud_divider <= BAUD_1200;
+          when x"3" => baud_divider <= BAUD_2400;
+          when x"4" => baud_divider <= BAUD_4800;
+          when x"5" => baud_divider <= BAUD_9600;
+          when x"6" => baud_divider <= BAUD_19200;
+          when x"7" => baud_divider <= BAUD_38400;
+          when x"8" => baud_divider <= BAUD_57600;
+          when x"9" => baud_divider <= BAUD_115200;
+          when others => baud_divider <= BAUD_9600;  -- Unknown codes default to 9600
+        end case;
+
+        -- Clock divider counter
+        if baud_div_count = 0 then
+          baud_clock <= not baud_clock;  -- Toggle baud clock output
+          baud_div_count <= baud_divider - 1;
+        else
+          baud_div_count <= baud_div_count - 1;
+        end if;
+      end if;
+    end if;
+  end process;
+
+  -- Main UART control process (simplified for basic operation)
+  process(clk)
+    variable next_status : data_t;
+  begin
+    if rising_edge(clk) then
       tx_valid_reg <= '0';
 
-      -- Reset: Initialize all registers to known state
       if reset_n = '0' then
-        rx_reg <= (others => '0');     -- Clear RX data buffer
-        tx_reg <= (others => '0');     -- Clear TX data register
-        status_reg <= x"10";           -- Status: TDRE=1 (transmitter ready)
-        cmd_reg <= (others => '0');    -- Clear command settings
-        ctrl_reg <= (others => '0');   -- Clear control settings
-        dout_reg <= (others => '0');   -- Clear output latch
-
+        rx_reg <= (others => '0');
+        tx_reg <= (others => '0');
+        status_reg <= x"10";
+        cmd_reg <= (others => '0');
+        ctrl_reg <= (others => '0');
+        dout_reg <= (others => '0');
       else
-        -- Start each cycle with current status, mark transmitter ready
         next_status := status_reg;
-        next_status(ST_TDRE) := '1';   -- Always mark transmitter ready (simplified model)
+        next_status(ST_TDRE) := '1';  -- Always ready in simplified model
 
-        -- Check for incoming serial data from external receiver
+        -- Handle incoming RX data
         if rx_valid = '1' then
-          -- If receive buffer already has data, this is an overrun error
           if status_reg(ST_RDRF) = '1' then
-            next_status(ST_OVR) := '1';  -- Set overrun error flag
+            next_status(ST_OVR) := '1';
           else
-            -- Store new received byte in RX register
             rx_reg <= rx_data;
-            next_status(ST_RDRF) := '1';  -- Set data-available flag
+            next_status(ST_RDRF) := '1';
           end if;
         end if;
 
-        -- Register access: Handle CPU reads and writes
+        -- Register access
         if cs = '1' then
-          -- Write operations: CPU storing data to a register
           if we = '1' then
             case addr(1 downto 0) is
-              -- Data Register Write: Queue byte for transmission
               when REG_DATA =>
-                tx_reg <= din;               -- Store transmit data byte
-                tx_valid_reg <= '1';         -- Signal external transmitter to send this byte
-                next_status(ST_TDRE) := '1'; -- Mark transmitter ready
-
-              -- Status Register Write: Clear status flags and reset device
+                tx_reg <= din;
+                tx_valid_reg <= '1';
               when REG_STATUS =>
-                next_status := x"10";        -- Reset status to TDRE only
-                cmd_reg <= (others => '0');  -- Clear command register
-                ctrl_reg <= (others => '0'); -- Clear control register
-
-              -- Command Register Write: Configure interrupt behavior
+                next_status := x"10";
+                cmd_reg <= (others => '0');
+                ctrl_reg <= (others => '0');
               when REG_CMD =>
-                cmd_reg <= din;              -- Store command register (Bit 0: RX interrupt enable)
-
-              -- Control Register Write: Configure serial parameters (not fully used)
+                cmd_reg <= din;
               when REG_CTRL =>
-                ctrl_reg <= din;             -- Store control settings
-
+                ctrl_reg <= din;
               when others =>
-                null;  -- Undefined registers: no action
+                null;
             end case;
-
-          -- Read operations: CPU retrieving data from a register
           else
             case addr(1 downto 0) is
-              -- Data Register Read: Return received byte and clear flag
               when REG_DATA =>
-                dout_reg <= rx_reg;         -- Output received data byte
-                next_status(ST_RDRF) := '0'; -- Clear data-available flag after read
-
-              -- Status Register Read: Return current status
+                dout_reg <= rx_reg;
+                next_status(ST_RDRF) := '0';
               when REG_STATUS =>
-                dout_reg <= next_status;    -- Output status with current flags
-
-              -- Command Register Read: Return command settings
+                dout_reg <= next_status;
               when REG_CMD =>
-                dout_reg <= cmd_reg;        -- Output command register
-
-              -- Control Register Read: Return control settings
+                dout_reg <= cmd_reg;
               when REG_CTRL =>
-                dout_reg <= ctrl_reg;       -- Output control register
-
-              -- Undefined registers: Return 0xFF
+                dout_reg <= ctrl_reg;
               when others =>
                 dout_reg <= x"FF";
             end case;
           end if;
         else
-          -- Chip not selected: Output zeros (tri-state)
           dout_reg <= (others => '0');
         end if;
 
-        -- Compute interrupt signal: IRQ = data-available AND interrupt-enabled
+        -- Interrupt generation
         if next_status(ST_RDRF) = '1' and cmd_reg(0) = '1' then
-          next_status(ST_IRQ) := '1';       -- Interrupt pending
+          next_status(ST_IRQ) := '1';
         else
-          next_status(ST_IRQ) := '0';       -- No interrupt
+          next_status(ST_IRQ) := '0';
         end if;
 
-        -- Latch updated status for next cycle
         status_reg <= next_status;
       end if;
     end if;
   end process;
-end architecture;
 
+end architecture;
