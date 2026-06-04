@@ -199,17 +199,19 @@ begin
       irq     => open
     );
 
-  vic_i : entity work.reg_stub
-    generic map (REG_COUNT => 8192)
+  vic_i : entity work.vic_core
     port map (
-      clk     => clk,
-      reset_n => reset_n,
-      cs      => vic_cs,
-      we      => cpu_bus_we,
-      addr    => cpu_addr,
-      din     => cpu_dout,
-      dout    => vic_dout,
-      irq     => vic_irq
+      clk       => clk,
+      reset_n   => reset_n,
+      cs        => vic_cs,
+      we        => cpu_bus_we,
+      addr      => cpu_addr,
+      din       => cpu_dout,
+      dout      => vic_dout,
+      irq       => vic_irq,
+      h_counter => open,
+      v_counter => open,
+      raster_irq => open
     );
 
   sound_i : entity work.reg_stub

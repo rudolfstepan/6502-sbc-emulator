@@ -8,14 +8,14 @@ T65_RTL = third_party/t65/rtl/T65_Pack.vhd third_party/t65/rtl/T65_ALU.vhd \
           third_party/t65/rtl/T65_MCode.vhd third_party/t65/rtl/T65.vhd
 RTL = rtl/sbc_pkg.vhd rtl/bus_decode.vhd rtl/mem/sync_ram.vhd rtl/mem/rom.vhd \
       rtl/peripherals/reg_stub.vhd rtl/peripherals/via6522.vhd \
-      rtl/peripherals/uart6551.vhd \
+      rtl/peripherals/uart6551.vhd rtl/peripherals/vic_core.vhd \
       rtl/cpu/t65_adapter.vhd rtl/cpu6502_slot.vhd rtl/sbc_top.vhd \
       rtl/sbc_t65_top.vhd
 SIM = sim/tb_bus_decode.vhd sim/tb_sbc_reset.vhd sim/tb_sbc_bus_write.vhd \
       sim/tb_sbc_sram_readback.vhd sim/tb_via6522.vhd sim/tb_uart6551.vhd \
       sim/tb_rom_image.vhd sim/tb_t65_adapter.vhd sim/tb_sbc_t65_boot.vhd \
       sim/tb_sbc_t65_uart.vhd sim/tb_sbc_t65_via.vhd sim/tb_sbc_t65_irq.vhd \
-      sim/tb_sbc_t65_kernel_smoke.vhd
+      sim/tb_sbc_t65_kernel_smoke.vhd sim/tb_vic_core.vhd
 
 .PHONY: analyze roms test clean
 
@@ -40,6 +40,8 @@ test: roms
 	$(GHDL) -r $(GHDL_FLAGS) tb_via6522 $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_uart6551
 	$(GHDL) -r $(GHDL_FLAGS) tb_uart6551 $(GHDL_RUN_FLAGS)
+	$(GHDL) -e $(GHDL_FLAGS) tb_vic_core
+	$(GHDL) -r $(GHDL_FLAGS) tb_vic_core $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_rom_image
 	$(GHDL) -r $(GHDL_FLAGS) tb_rom_image $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_t65_adapter
