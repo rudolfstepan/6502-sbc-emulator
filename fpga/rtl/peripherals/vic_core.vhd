@@ -36,7 +36,7 @@ architecture rtl of vic_core is
   -- Control registers: 0x9000-0x900F (16 bytes)
   signal scroll_x    : data_t := (others => '0');  -- 0x9000: Horizontal scroll
   signal scroll_y    : data_t := (others => '0');  -- 0x9001: Vertical scroll
-  signal raster_cmp  : data_t := (others => '0');  -- 0x9002: Raster compare
+  signal raster_cmp  : data_t := x"FF";            -- 0x9002: Raster compare (init to 255 to avoid false match)
   signal mode_reg    : data_t := x"80";            -- 0x9003: Mode (display enabled)
   signal color_reg   : data_t := (others => '0');  -- 0x9004: Border/BG color
   signal reserved0   : data_t := (others => '0');  -- 0x9005: Reserved
@@ -53,8 +53,10 @@ architecture rtl of vic_core is
 
   signal dout_reg   : data_t := (others => '0');  -- Output register
   signal raster_irq_flag : std_logic := '0';
+  signal raster_irq_armed : std_logic := '0';  -- IRQ armed when condition matches
   signal h_count : integer range 0 to 1023 := 0;
   signal v_count : integer range 0 to 1023 := 0;
+  signal prev_raster_match : std_logic := '0';  -- Detect rising edge of raster match
 
 begin
   dout <= dout_reg;
@@ -157,10 +159,26 @@ begin
           dout_reg <= (others => '0');
         end if;
 
-        -- Raster interrupt generation (simplified, fires at start of frame)
-        if mode_reg(5) = '1' and raster_cmp = x"00" then
+        -- Raster interrupt generation
+        -- Compare current vertical position with raster compare register
+        -- Only compare lower 8 bits of v_count (0-255 range)
+        if std_logic_vector(to_unsigned(v_count, 8)) = raster_cmp then
+          raster_irq_armed <= '1';
+        else
+          raster_irq_armed <= '0';
+        end if;
+
+        -- Generate interrupt on rising edge of raster match (when raster_irq_armed goes high)
+        if raster_irq_armed = '1' and prev_raster_match = '0' then
           raster_irq_flag <= '1';
           raster_irq <= '1';
+        end if;
+
+        prev_raster_match <= raster_irq_armed;
+
+        -- Clear raster flag when status register is read
+        if unsigned(addr) = x"8811" and we = '0' then
+          raster_irq_flag <= '0';
         end if;
 
       else
