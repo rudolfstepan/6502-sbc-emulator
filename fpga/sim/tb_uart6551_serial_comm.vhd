@@ -186,7 +186,6 @@ begin
     report "========================================" severity note;
     report "Serial Communication Tests Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;

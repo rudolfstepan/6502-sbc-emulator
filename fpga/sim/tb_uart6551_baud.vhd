@@ -117,7 +117,6 @@ begin
     report "========================================" severity note;
     report "UART Baud Rate Generator Test Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;

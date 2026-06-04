@@ -88,7 +88,6 @@ begin
     report "========================================" severity note;
     report "Character ROM Tests Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;

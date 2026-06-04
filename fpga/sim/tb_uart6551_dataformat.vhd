@@ -172,7 +172,6 @@ begin
     report "========================================" severity note;
     report "Data Format Configuration Tests Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;

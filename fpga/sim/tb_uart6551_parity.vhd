@@ -216,7 +216,6 @@ begin
     report "========================================" severity note;
     report "UART Parity Support Tests Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;

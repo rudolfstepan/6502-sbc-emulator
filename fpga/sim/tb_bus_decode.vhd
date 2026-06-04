@@ -1,6 +1,7 @@
 library ieee;
 use ieee.std_logic_1164.all;
 
+use std.env.all;
 use work.sbc_pkg.all;
 
 entity tb_bus_decode is
@@ -36,6 +37,6 @@ begin
     addr <= x"B000"; wait for 1 ns; assert sel = DEV_NONE report "unmapped decode failed" severity failure;
 
     report "tb_bus_decode passed";
-    wait;
+    finish;
   end process;
 end architecture;

@@ -217,7 +217,6 @@ begin
     report "========================================" severity note;
     report "VIC Core Tests Complete" severity note;
     report "========================================" severity note;
-    wait;
   end process;
 
 end architecture;
