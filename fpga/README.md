@@ -1,0 +1,140 @@
+# 6502 SBC FPGA
+
+This directory contains the hardware implementation track for the 6502 SBC emulator.
+The goal is to rebuild the emulator's machine as synthesizable VHDL for real FPGA
+targets while keeping the memory map and software-facing behavior compatible.
+
+## Current Scope
+
+The first milestone is a hardware skeleton:
+
+- shared address/data bus types and constants
+- fixed memory map decoder matching the C emulator
+- FPGA top-level shell
+- imported T65 6502-compatible VHDL CPU core plus local adapter
+- synthesizable RAM/ROM building blocks
+- a first synthesizable VIA 6522 MVP
+- a first synthesizable UART 6551 MVP
+- placeholder device blocks for disk MVP, VIC, and sound
+- simulation entry points for incremental verification
+
+The placeholders intentionally expose the intended bus contracts before each chip is
+fully implemented. This lets us add real behavior one component at a time without
+changing the top-level wiring repeatedly.
+
+## Current Tests
+
+Run from this directory:
+
+```sh
+make test
+```
+
+The current GHDL tests cover:
+
+- address decoding for all mapped device windows
+- reset-vector fetch from ROM at `$FFFC-$FFFD`
+- ROM-scripted bus write into SRAM address space
+- SRAM readback after write
+- VIA 6522 register, port-mask, IER/IFR, and timer-IRQ behavior
+- UART 6551 status, TX, RX, overrun, programmed reset, and RX IRQ behavior
+- conversion of a real emulator ROM into VHDL hex and reset-vector readback
+- T65 adapter analysis/elaboration and defined bus outputs after reset
+- T65 system boot from a tiny real 6502 ROM that executes `LDA #$42; STA $0002`
+- T65 execution of a tiny real 6502 ROM that writes `$41` to UART DATA at `$8810`
+- T65 execution of a tiny real 6502 ROM that drives VIA Port B through DDRB/ORB
+- T65 handling of a VIA Timer 1 IRQ and execution of an IRQ handler through
+  the `$FFFE-$FFFF` vector
+- T65 boot smoke test with composed `kernel.rom + msbasic.rom`, verifying reset
+  fetch, VIA DDRA init, and kernel screen-pointer setup
+
+## CPU Core
+
+The local third-party CPU import lives under `third_party/t65/`. It currently
+contains the T65(b) VHDL core and a project-local adapter:
+
+```text
+third_party/t65/rtl/     imported T65 source files
+rtl/cpu/t65_adapter.vhd  local 16-bit bus adapter
+```
+
+The adapter maps T65's 24-bit address bus down to the SBC's 16-bit address space,
+exports write-enable/data signals, and feeds memory/peripheral read data directly
+to T65's `DI` input for the documented 6502 instruction subset used so far.
+
+For now, `sbc_top.vhd` still uses the script-driven `cpu6502_slot` so the existing
+smoke tests remain deterministic. A second top-level, `rtl/sbc_t65_top.vhd`, swaps
+in `t65_adapter` and is covered by a tiny real 6502 ROM boot test.
+
+T65 currently uses the ROM and SRAM components' `ASYNC_READ` mode in
+`sbc_t65_top.vhd`. The T65 system top advances the CPU every other system clock
+and registers read data during the stable bus phase so FPGA-style synchronous
+writes and asynchronous reads have deterministic simulation timing. The
+script-driven smoke-test top keeps the default synchronous memory paths.
+
+`sim/tb_sbc_t65_indirect_vic.vhd` is kept as an experimental/quarantined test for
+`STA ($zp),Y` into VIC text RAM. It currently exposes a T65 indirect-addressing
+integration issue and is intentionally not part of the default `make test` target.
+
+## ROM Conversion
+
+The VHDL ROM loader reads text files in `offset byte` format. Convert emulator ROM
+artifacts with:
+
+```sh
+python tools/bin_to_vhdl_hex.py --size 0x4000 --output sim/generated/chess_rom.hex ../roms/chess.rom
+```
+
+Multiple ROM windows can be composed with `file@offset`:
+
+```sh
+python tools/bin_to_vhdl_hex.py --size 0x4000 --output sim/generated/sbc_rom.hex ../roms/kernel.rom@0x0000 ../roms/msbasic.rom@0x1000
+```
+
+`make test` currently generates `sim/generated/chess_rom.hex` and
+`sim/generated/sbc_rom.hex` automatically. The generated SBC image composes
+`kernel.rom` at offset `$0000` and `msbasic.rom` at offset `$1000`.
+
+## Memory Map
+
+```text
+$0000-$7FFF   SRAM
+$8000-$87FF   VIC text/color RAM
+$8800-$880F   VIA 6522
+$8810-$8813   UART 6551
+$8820-$882F   DISK MVP
+$8830-$8839   SOUND Voice 0
+$8840-$884F   VIC blitter registers
+$8850-$888F   VIC sprite registers
+$8890-$8899   SOUND Voice 1
+$889A-$88A3   SOUND Voice 2
+$88A4-$88AD   SOUND Voice 3
+$8900-$89FF   VIC sprite pixel data
+$9000-$900F   VIC control registers
+$9010-$AF4F   VIC bitmap RAM
+$C000-$FFFF   ROM
+```
+
+## Suggested Milestones
+
+1. Bus, reset, clocking, SRAM/ROM, and a trivial ROM-driven smoke test.
+2. CPU core integration, ideally with Klaus Dormann functional-test compatibility.
+3. VIA 6522 enough for keyboard/IRQ behavior.
+4. UART 6551 transmit/receive with FPGA board UART pins.
+5. VIC text mode, then bitmap RAM, raster IRQs, sprites, and blitter.
+6. Sound voice register file, then waveform generation, ADSR, and mixer/PWM or I2S.
+7. Board-specific constraints and PLL/clock-domain work.
+
+## Layout
+
+```text
+fpga/
+  constraints/        board-specific pin constraints
+  docs/               FPGA implementation notes
+  rtl/                synthesizable VHDL
+    cpu/              CPU adapters
+    mem/              RAM/ROM primitives
+    peripherals/      memory-mapped chips
+  third_party/        imported open-source cores
+  sim/                testbenches
+```
