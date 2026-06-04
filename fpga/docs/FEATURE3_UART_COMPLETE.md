@@ -55,6 +55,27 @@ System Clock
              - Parity checking
 ```
 
+## Implementation Status
+
+### Phase 1: Baud Rate Generator ✅ COMPLETE
+- ✅ Clock divider for 300-115200 baud
+- ✅ 16x oversampling for serial timing
+- ✅ Baud selection via CTRL[3:0]
+- ✅ All standard baud rates supported
+- ✅ Default 9600 baud
+
+### Phase 2: Data Format Configuration ✅ COMPLETE
+- ✅ Support for 5/6/7/8 bit data formats
+- ✅ Data length selection via CTRL[1:0]
+- ✅ Helper function for format calculation
+- ✅ Combined configuration (baud + data format)
+- ✅ All format combinations tested
+
+### Phase 3: Parity Support (In Progress)
+- ⏳ Odd/even parity generation
+- ⏳ Parity error detection
+- ⏳ Stop bits configuration (1 or 2)
+
 ## Implementation Plan
 
 ### Phase 1: Baud Rate Generator (2-3 days)

@@ -67,6 +67,20 @@ architecture rtl of uart6551 is
   signal baud_clock : std_logic := '0';
   signal baud_divider : natural range 0 to 65535 := BAUD_9600;
 
+  -- Data format configuration signals
+  signal data_length : natural range 5 to 8 := 8;  -- Default 8 bits
+
+  -- Helper function to get data length from CTRL register
+  function get_data_length(ctrl : data_t) return natural is
+  begin
+    case ctrl(1 downto 0) is
+      when "00" => return 5;  -- 5 bits
+      when "01" => return 6;  -- 6 bits
+      when "10" => return 7;  -- 7 bits
+      when others => return 8;  -- 8 bits (default)
+    end case;
+  end function;
+
 begin
   -- Output assignments
   dout <= dout_reg;
@@ -127,6 +141,9 @@ begin
       else
         next_status := status_reg;
         next_status(ST_TDRE) := '1';  -- Always ready in simplified model
+
+        -- Update data length based on current CTRL register
+        data_length <= get_data_length(ctrl_reg);
 
         -- Handle incoming RX data
         if rx_valid = '1' then
