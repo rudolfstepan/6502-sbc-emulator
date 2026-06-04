@@ -29,27 +29,40 @@ architecture rtl of sync_ram is
   signal ram : ram_t := (others => (others => '0'));
 
 begin
-  -- Synchronous memory access process (triggered on rising clock edge)
-  process(clk)
-  begin
-    if rising_edge(clk) then
-      -- Write operation: When we='1', store input data to addressed location
-      if we = '1' then
-        ram(to_integer(unsigned(addr))) <= din;
-      end if;
+  -- Synchronous memory write and synchronous read (when ASYNC_READ=false)
+  sync_write_g : if not ASYNC_READ generate
+    process(clk)
+    begin
+      if rising_edge(clk) then
+        -- Write operation: When we='1', store input data to addressed location
+        if we = '1' then
+          ram(to_integer(unsigned(addr))) <= din;
+        end if;
 
-      -- Synchronous read path: Update output register on every clock edge
-      -- Includes write-through behavior: if we='1', dout gets the new data value
-      if not ASYNC_READ then
+        -- Synchronous read path: Update output register on every clock edge
+        -- Includes write-through behavior: if we='1', dout gets the new data value
         dout <= ram(to_integer(unsigned(addr)));
       end if;
-    end if;
-  end process;
+    end process;
+  end generate;
 
-  -- Optional asynchronous read path (combinational logic, no clock delay)
-  -- When ASYNC_READ=true, this logic overrides the synchronous read for faster access
+  -- Synchronous memory write only (when ASYNC_READ=true)
+  async_write_g : if ASYNC_READ generate
+    process(clk)
+    begin
+      if rising_edge(clk) then
+        -- Write operation only (async read provides read path)
+        if we = '1' then
+          ram(to_integer(unsigned(addr))) <= din;
+        end if;
+      end if;
+    end process;
+  end generate;
+
+  -- Asynchronous read path (combinational logic, no clock delay)
+  -- When ASYNC_READ=true, this logic provides the read path for faster access
   async_read_g : if ASYNC_READ generate
-    process(all)  -- Sensitivity to all inputs (combinational logic)
+    process(addr, we, din, ram)
     begin
       -- Handle undefined address bits safely (simulation only)
       if is_x(addr) then

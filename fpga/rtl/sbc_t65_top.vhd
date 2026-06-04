@@ -55,7 +55,6 @@ architecture rtl of sbc_t65_top is
   signal cpu_addr   : addr_t := (others => '0');   -- 16-bit address bus
   signal cpu_dout   : data_t := (others => '0');   -- CPU output data (write)
   signal cpu_din    : data_t := (others => '0');   -- CPU input data (read multiplexer)
-  signal cpu_din_q  : data_t := (others => '0');   -- Latched CPU input (pipeline stage)
   signal cpu_we     : std_logic := '0';            -- CPU write enable
   signal cpu_bus_we : std_logic := '0';            -- Gated write enable with clock division
   signal cpu_sync   : std_logic := '0';            -- CPU sync (instruction boundary)
@@ -92,12 +91,8 @@ begin
     if rising_edge(clk) then
       if reset_n = '0' then
         cpu_enable <= '0';
-        cpu_din_q <= (others => '0');
       else
         cpu_enable <= not cpu_enable;
-        if cpu_enable = '0' then
-          cpu_din_q <= cpu_din;
-        end if;
       end if;
     end if;
   end process;
@@ -127,7 +122,7 @@ begin
       enable   => cpu_enable,
       irq_n    => cpu_irq_n,
       nmi_n    => '1',
-      data_in  => cpu_din_q,
+      data_in  => cpu_din,
       addr     => cpu_addr,
       data_out => cpu_dout,
       we       => cpu_we,

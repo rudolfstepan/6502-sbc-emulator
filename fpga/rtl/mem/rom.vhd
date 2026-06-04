@@ -95,7 +95,7 @@ begin
   -- Asynchronous read path (optional): Combinational logic for immediate access
   -- Provides zero-latency reads but may impact timing closure
   async_read_g : if ASYNC_READ generate
-    process(all)  -- Combinational: always evaluates input changes
+    process(addr, image)
     begin
       -- Handle undefined address bits in simulation
       if is_x(addr) then
