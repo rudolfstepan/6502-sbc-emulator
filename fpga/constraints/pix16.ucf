@@ -32,11 +32,11 @@ NET "vga_out_b<0>" LOC = P7 | IOSTANDARD = "LVCMOS33";
 NET "vga_out_vs" LOC = L13 | IOSTANDARD = "LVCMOS33";
 NET "vga_out_hs" LOC = M14 | IOSTANDARD = "LVCMOS33";
 
-## Optional: User Interface (commented out - pins not available in ftg256 package)
-## NET "key<0>" LOC = C12 | IOSTANDARD = "LVCMOS33";
-## NET "key<1>" LOC = P13 | IOSTANDARD = "LVCMOS33";
-## NET "key<2>" LOC = T14 | IOSTANDARD = "LVCMOS33";
-## NET "key<3>" LOC = R14 | IOSTANDARD = "LVCMOS33";
-##
-## NET "led<0>" LOC = P4 | IOSTANDARD = "LVCMOS33";
-## NET "led<1>" LOC = N5 | IOSTANDARD = "LVCMOS33";
+## User Interface (from board demo 02_key_test)
+NET "key<0>" LOC = C3 | IOSTANDARD = "LVCMOS33";
+NET "key<1>" LOC = D3 | IOSTANDARD = "LVCMOS33";
+NET "key<2>" LOC = E4 | IOSTANDARD = "LVCMOS33";
+NET "key<3>" LOC = E3 | IOSTANDARD = "LVCMOS33";
+
+NET "led<0>" LOC = P4 | IOSTANDARD = "LVCMOS33";
+NET "led<1>" LOC = N5 | IOSTANDARD = "LVCMOS33";

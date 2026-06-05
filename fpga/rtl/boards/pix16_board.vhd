@@ -72,15 +72,11 @@ architecture rtl of pix16_board is
   signal color_ram_addr : integer range 0 to 255;
   signal color_ram_data : data_t;
 
-  -- Test ROM bus master
+  -- Test runner bus master
   signal cpu_addr   : addr_t := (others => '0');
   signal cpu_dout   : data_t := (others => '0');
-  signal cpu_din    : data_t := (others => '0');
   signal cpu_we     : std_logic := '0';
   signal dev_sel    : device_sel_t;
-  signal rom_dout   : data_t;
-  signal dbg_read_data  : data_t;
-  signal dbg_read_valid : std_logic;
 
   -- Character ROM interface
   signal char_rom_addr : std_logic_vector(9 downto 0);
@@ -114,7 +110,7 @@ begin
   reset_sync <= reset_n and pll_locked;
 
   -- =========================================================================
-  -- Test ROM Bus Master
+  -- Test Runner Bus Master
   -- =========================================================================
   decode_i : entity work.bus_decode
     port map (
@@ -122,40 +118,20 @@ begin
       sel  => dev_sel
     );
 
-  cpu_i : entity work.cpu6502_slot
+  test_runner_i : entity work.test_runner
     port map (
-      clk      => clk_pll,
-      reset_n  => reset_sync,
-      irq_n    => not vic_irq,
-      data_in  => cpu_din,
-      addr     => cpu_addr,
-      data_out => cpu_dout,
-      we       => cpu_we,
-      dbg_read_data  => dbg_read_data,
-      dbg_read_valid => dbg_read_valid
+      clk     => clk_pll,
+      reset_n => reset_sync,
+      key     => key,
+      addr    => cpu_addr,
+      dout    => cpu_dout,
+      we      => cpu_we
     );
 
-  rom_i : entity work.rom
-    generic map (
-      ADDR_WIDTH => 14,
-      INIT_FILE  => TEST_ROM_INIT_FILE,
-      ASYNC_READ => true
-    )
-    port map (
-      clk  => clk_pll,
-      addr => cpu_addr(13 downto 0),
-      dout => rom_dout
-    );
-
-  vic_cs <= '1' when dev_sel = DEV_VIC_TEXT or dev_sel = DEV_VIC_REG else '0';
-  vic_we <= cpu_we;
+  vic_cs   <= '1' when dev_sel = DEV_VIC_TEXT or dev_sel = DEV_VIC_REG else '0';
+  vic_we   <= cpu_we;
   vic_addr <= cpu_addr;
-  vic_din <= cpu_dout;
-
-  with dev_sel select cpu_din <=
-    rom_dout when DEV_ROM,
-    vic_dout when DEV_VIC_TEXT | DEV_VIC_REG,
-    x"FF"    when others;
+  vic_din  <= cpu_dout;
 
   -- =========================================================================
   -- VIC Core Instance
