@@ -1,7 +1,8 @@
 -- Minimales SBC Top-Level: T65 CPU + RAM + VRAM + ROM + VIC + VIA + UART
 --
 -- Speicherkarte:
---   $0000-$0FFF  4 KB CPU-SRAM
+--   $0000-$01FF  512 B FPGA-RAM (Zero Page + Stack)
+--   $0200-$0FFF  CPU-SRAM
 --   $8000-$87FF  2 KB VRAM      (single-port, geteilt zwischen CPU und VIC)
 --   $8800-$880F  VIA 6522       (Timer 1 -> IRQ, Port B)
 --   $8810-$8813  UART 6551      (TX)
@@ -64,6 +65,7 @@ architecture rtl of sbc_minimal_top is
   signal dev_sel : device_sel_t;
 
   -- Memory outputs
+  signal zp_dout   : data_t;
   signal sram_dout : data_t;
   signal vram_dout : data_t;
   signal rom_dout  : data_t;
@@ -71,6 +73,8 @@ architecture rtl of sbc_minimal_top is
   signal uart_dout : data_t;
 
   -- Write enables
+  signal zp_cs      : std_logic;
+  signal zp_we      : std_logic;
   signal sram_we    : std_logic;
   signal vram_we    : std_logic;
   signal vram_we_mux : std_logic;
@@ -113,8 +117,12 @@ begin
   cpu_rdy    <= not vic_stealing;
   cpu_irq_n  <= not (via_irq or uart_irq);
 
+  -- Fast internal RAM for 6502 Zero Page ($0000-$00FF) and stack ($0100-$01FF).
+  zp_cs   <= '1' when dev_sel = DEV_SRAM and cpu_addr(15 downto 9) = "0000000" else '0';
+  zp_we   <= cpu_bus_we when zp_cs = '1' else '0';
+
   -- Write enables
-  sram_we <= cpu_bus_we when dev_sel = DEV_SRAM     else '0';
+  sram_we <= cpu_bus_we when dev_sel = DEV_SRAM and zp_cs = '0' else '0';
   vram_we <= cpu_bus_we when dev_sel = DEV_VIC_TEXT else '0';
   via_cs  <= '1'        when dev_sel = DEV_VIA      else '0';
   uart_cs <= '1'        when dev_sel = DEV_UART     else '0';
@@ -125,13 +133,27 @@ begin
   vram_we_mux <= '0' when vic_stealing = '1' else vram_we;
 
   -- CPU data mux
-  with dev_sel select cpu_din <=
-    sram_dout when DEV_SRAM,
-    rom_dout  when DEV_ROM,
-    vram_dout when DEV_VIC_TEXT,
-    via_dout  when DEV_VIA,
-    uart_dout when DEV_UART,
-    x"FF"     when others;
+  process(dev_sel, zp_cs, zp_dout, sram_dout, rom_dout, vram_dout, via_dout, uart_dout)
+  begin
+    case dev_sel is
+      when DEV_SRAM =>
+        if zp_cs = '1' then
+          cpu_din <= zp_dout;
+        else
+          cpu_din <= sram_dout;
+        end if;
+      when DEV_ROM =>
+        cpu_din <= rom_dout;
+      when DEV_VIC_TEXT =>
+        cpu_din <= vram_dout;
+      when DEV_VIA =>
+        cpu_din <= via_dout;
+      when DEV_UART =>
+        cpu_din <= uart_dout;
+      when others =>
+        cpu_din <= x"FF";
+    end case;
+  end process;
 
   -- -------------------------------------------------------------------------
   decode_i : entity work.bus_decode
@@ -151,6 +173,11 @@ begin
       we       => cpu_we,
       sync     => cpu_sync
     );
+
+  zp_ram_i : entity work.sync_ram
+    generic map (ADDR_WIDTH => 9, ASYNC_READ => true)
+    port map (clk => clk, we => zp_we,
+              addr => cpu_addr(8 downto 0), din => cpu_dout, dout => zp_dout);
 
   sram_i : entity work.sync_ram
     generic map (ADDR_WIDTH => 12, ASYNC_READ => true)

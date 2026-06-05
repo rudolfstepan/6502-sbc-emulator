@@ -17,7 +17,7 @@ rtl/
 ├── sbc_minimal_top.vhd            — minimal SBC core with VGA output
 │   ├── cpu/t65_adapter.vhd        — T65 CPU wrapper (+ RDY bus-steal port)
 │   │   └── third_party/t65/       — external T65 6502 core
-│   ├── mem/sync_ram.vhd           — CPU SRAM and VRAM (single-port)
+│   ├── mem/sync_ram.vhd           — ZP/stack RAM, CPU SRAM, and VRAM
 │   ├── mem/rom.vhd                — kernel ROM
 │   ├── mem/char_rom.vhd           — 8×8 character patterns
 │   ├── peripherals/via6522.vhd   — VIA 6522: Timer 1 IRQ + Port B
@@ -77,7 +77,8 @@ function in_range(addr, first, last) return boolean;
 
 ### `sbc_minimal_top.vhd` — Minimal SBC Core
 
-The complete minimal system: CPU, SRAM, VRAM, ROM, VIC, VGA output.
+The complete minimal system: CPU, internal zero-page/stack RAM, SRAM, VRAM,
+ROM, VIA, UART, VIC, and VGA output.
 
 **Ports:**
 
@@ -109,14 +110,21 @@ end entity;
 | `vic_stealing` | High for 40 cycles during each H-blank |
 | `vram_addr` | Mux: `vic_addr[10:0]` during steal, else `cpu_addr[10:0]` |
 | `vram_we_mux` | Zero during steal (VIC only reads), else `vram_we` |
+| `zp_cs` | Selects internal FPGA RAM for `$0000-$01FF` |
+| `zp_we` | Write enable for zero-page/stack RAM |
 
 **Memory instances:**
 
 | Instance | Module | Generic | Address |
 | --- | --- | --- | --- |
-| `sram_i` | `sync_ram` | ADDR_WIDTH=12, ASYNC_READ=true | $0000–$0FFF |
+| `zp_ram_i` | `sync_ram` | ADDR_WIDTH=9, ASYNC_READ=true | $0000–$01FF |
+| `sram_i` | `sync_ram` | ADDR_WIDTH=12, ASYNC_READ=true | $0200–$0FFF |
 | `vram_i` | `sync_ram` | ADDR_WIDTH=11, ASYNC_READ=true | $8000–$87FF |
 | `rom_i` | `rom` | ADDR_WIDTH=11, ASYNC_READ=true | $F800–$FFFF |
+
+`bus_decode` still maps `$0000-$7FFF` to `DEV_SRAM`; `sbc_minimal_top` splits
+that logical selection internally so zero-page and stack traffic use `zp_ram_i`
+while the rest of the minimal RAM range uses `sram_i`.
 
 ---
 
@@ -179,7 +187,7 @@ Write enable derivation: `we = (NOT t65_r_w_n) AND t65_vda`.
 
 ### `mem/sync_ram.vhd` — Synchronous RAM
 
-Single-port block RAM. Used for both CPU SRAM and VRAM.
+Single-port block RAM. Used for zero-page/stack RAM, CPU SRAM, and VRAM.
 
 ```vhdl
 entity sync_ram is
@@ -344,6 +352,32 @@ Key registers used by the demo kernel:
 UART 6551 — TX/RX data path, status register (TDRE/RDRF/OVR), RX interrupt.
 Used by `sbc_minimal_top` for TX-only in the demo (RX tied to zero).
 Writing to the DATA register ($8810) pulses `tx_valid` and updates `tx_data`.
+The board wrapper feeds the serializer `busy` signal back to `tx_busy`, so TDRE
+is clear while a byte is actively being transmitted and firmware can safely emit
+multi-line reset diagnostics.
+
+---
+
+## Reset ROM Diagnostics
+
+`rom_demo.s` prints reset-time state over UART before interrupts are enabled:
+
+```text
+[RESET] 6502 SBC DEBUG
+...
+SYS CHECK
+  ZP   OK
+  STK  OK
+  RAM  OK
+  VRAM OK
+  VIA  OK
+  UART OK
+CHECK DONE, CLI NEXT
+```
+
+The memory probes write `$AA` and `$55` to one representative byte in each
+region, verify the readback, and then restore the original byte. The check runs
+before `CLI`, so VIA Timer 1 cannot interrupt the probe sequence.
 
 ---
 

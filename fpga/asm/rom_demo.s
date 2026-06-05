@@ -70,6 +70,12 @@ ZP_CUR_HI   = $03   ; cursor: VRAM row-start address high
 ZP_COL      = $04   ; cursor: current column (0-39)
 ZP_STR_LO   = $05   ; print_str source pointer low
 ZP_STR_HI   = $06   ; print_str source pointer high
+ZP_TMP      = $07   ; self-test scratch/save byte
+
+; ---- Self-test probe addresses ----
+RAM_PROBE   = $0200
+STK_PROBE   = $0180
+VRAM_PROBE  = INPUT_ROW
 
 ; ============================================================
 .segment "CODE"
@@ -121,6 +127,7 @@ reset:
 
     ; send reset/debug state to host console before interrupts start
     jsr     print_debug
+    jsr     system_check
 
     ; start CPU interrupts
     cli
@@ -245,6 +252,138 @@ print_debug:
     lda     #<str_dbg_ready
     ldx     #>str_dbg_ready
     jmp     print_msg
+
+; ============================================================
+;  RESET SYSTEM CHECK
+; ============================================================
+
+system_check:
+    lda     #<str_chk_head
+    ldx     #>str_chk_head
+    jsr     print_msg
+    jsr     check_zp
+    jsr     check_stack
+    jsr     check_ram
+    jsr     check_vram
+    jsr     check_via
+    jsr     check_uart
+    lda     #<str_chk_done
+    ldx     #>str_chk_done
+    jmp     print_msg
+
+print_ok:
+    lda     #<str_ok
+    ldx     #>str_ok
+    jmp     print_msg
+
+print_fail:
+    lda     #<str_fail
+    ldx     #>str_fail
+    jmp     print_msg
+
+check_zp:
+    lda     #<str_chk_zp
+    ldx     #>str_chk_zp
+    jsr     print_msg
+    ldx     ZP_TMP
+    lda     #$AA
+    sta     ZP_TMP
+    cmp     ZP_TMP
+    bne     chk_zp_fail
+    lda     #$55
+    sta     ZP_TMP
+    cmp     ZP_TMP
+    bne     chk_zp_fail
+    stx     ZP_TMP
+    jmp     print_ok
+chk_zp_fail:
+    stx     ZP_TMP
+    jmp     print_fail
+
+check_stack:
+    lda     #<str_chk_stack
+    ldx     #>str_chk_stack
+    jsr     print_msg
+    ldx     STK_PROBE
+    lda     #$AA
+    sta     STK_PROBE
+    cmp     STK_PROBE
+    bne     chk_stack_fail
+    lda     #$55
+    sta     STK_PROBE
+    cmp     STK_PROBE
+    bne     chk_stack_fail
+    stx     STK_PROBE
+    jmp     print_ok
+chk_stack_fail:
+    stx     STK_PROBE
+    jmp     print_fail
+
+check_ram:
+    lda     #<str_chk_ram
+    ldx     #>str_chk_ram
+    jsr     print_msg
+    ldx     RAM_PROBE
+    lda     #$AA
+    sta     RAM_PROBE
+    cmp     RAM_PROBE
+    bne     chk_ram_fail
+    lda     #$55
+    sta     RAM_PROBE
+    cmp     RAM_PROBE
+    bne     chk_ram_fail
+    stx     RAM_PROBE
+    jmp     print_ok
+chk_ram_fail:
+    stx     RAM_PROBE
+    jmp     print_fail
+
+check_vram:
+    lda     #<str_chk_vram
+    ldx     #>str_chk_vram
+    jsr     print_msg
+    ldx     VRAM_PROBE
+    lda     #$AA
+    sta     VRAM_PROBE
+    cmp     VRAM_PROBE
+    bne     chk_vram_fail
+    lda     #$55
+    sta     VRAM_PROBE
+    cmp     VRAM_PROBE
+    bne     chk_vram_fail
+    stx     VRAM_PROBE
+    jmp     print_ok
+chk_vram_fail:
+    stx     VRAM_PROBE
+    jmp     print_fail
+
+check_via:
+    lda     #<str_chk_via
+    ldx     #>str_chk_via
+    jsr     print_msg
+    lda     VIA_ACR
+    cmp     #$40
+    bne     chk_via_fail
+    lda     VIA_IER
+    cmp     #$C0
+    bne     chk_via_fail
+    lda     VIA_DDRB
+    cmp     #$FF
+    bne     chk_via_fail
+    jmp     print_ok
+chk_via_fail:
+    jmp     print_fail
+
+check_uart:
+    lda     #<str_chk_uart
+    ldx     #>str_chk_uart
+    jsr     print_msg
+    lda     UART_STATUS
+    and     #$80
+    bne     chk_uart_fail
+    jmp     print_ok
+chk_uart_fail:
+    jmp     print_fail
 
 ; ============================================================
 ;  IRQ HANDLER  (VIA Timer 1, ~750 Hz)
@@ -475,7 +614,8 @@ str_dbg_reset:
     .byte "CPU=T65  MODE=6502  IRQ=OFF",$0D,$0A
     .byte "CLK=50MHz  ROM=F800-FFFF",$0D,$0A,$00
 str_dbg_map:
-    .byte "MAP RAM=0000-7FFF VRAM=8000-87FF VIA=8800 UART=8810",$0D,$0A,$00
+    .byte "MAP ZP/STK=0000-01FF RAM=0200+",$0D,$0A
+    .byte "    VRAM=8000-87FF VIA=8800 UART=8810",$0D,$0A,$00
 str_dbg_uart:
     .byte "UART ST=$",$00
 str_dbg_via:
@@ -487,7 +627,28 @@ str_dbg_t1:
 str_dbg_zp:
     .byte "ZP FAST TICK CUR COL = $",$00
 str_dbg_ready:
-    .byte "DEBUG DONE, CLI NEXT",$0D,$0A,$0D,$0A,$00
+    .byte "DEBUG DONE",$0D,$0A,$00
+
+str_chk_head:
+    .byte "SYS CHECK",$0D,$0A,$00
+str_chk_zp:
+    .byte "  ZP   ",$00
+str_chk_stack:
+    .byte "  STK  ",$00
+str_chk_ram:
+    .byte "  RAM  ",$00
+str_chk_vram:
+    .byte "  VRAM ",$00
+str_chk_via:
+    .byte "  VIA  ",$00
+str_chk_uart:
+    .byte "  UART ",$00
+str_ok:
+    .byte "OK",$0D,$0A,$00
+str_fail:
+    .byte "FAIL",$0D,$0A,$00
+str_chk_done:
+    .byte "CHECK DONE, CLI NEXT",$0D,$0A,$0D,$0A,$00
 
 hex_table:
     .byte "0123456789ABCDEF"

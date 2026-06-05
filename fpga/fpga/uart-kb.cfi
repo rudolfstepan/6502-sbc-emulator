@@ -1,0 +1,11 @@
+# PROMGEN: Xilinx Prom Generator P.20131013
+# Copyright (c) 1995-2013 Xilinx, Inc.  All rights reserved.
+
+SOFTWARE_VERSION P.20131013
+DATE            06/05/2026 - 23:29
+SOURCE          \\vmware-host\shared folders\6502-sbc-emulator\fpga\fpga\uart-kb.mcs
+DEVICE          4096K
+DATA_WIDTH      1
+FILL_DATA       0xFF
+SIGNATURE       0x38F56B31
+START_ADDRESS   0x00000000 END_ADDRESS 0x00071543 DIRECTION_UP   "Z:/6502-sbc-emulator/fpga/fpga/pix16_sbc_minimal_top.bit" 6slx16ftg256

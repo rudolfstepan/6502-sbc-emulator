@@ -7,6 +7,7 @@ Build and program the 6502 SBC minimal system onto the PIX16 Spartan-6 FPGA boar
 - PIX16 development board — Xilinx XC6SLX16-2FTG256
 - USB cable (JTAG programming)
 - VGA monitor
+- USB-UART console connection via the board CH340C
 
 ## Software
 
@@ -89,6 +90,21 @@ impact -batch impact_commands.txt
 - LED 0 lit (power indicator)
 - LED 1 follows KEY 0
 - VGA monitor locks to 640×480 @ 60 Hz
+- UART console prints reset diagnostics and the system check:
+
+```text
+[RESET] 6502 SBC DEBUG
+...
+SYS CHECK
+  ZP   OK
+  STK  OK
+  RAM  OK
+  VRAM OK
+  VIA  OK
+  UART OK
+CHECK DONE, CLI NEXT
+```
+
 - Screen shows:
 
 ```text
@@ -107,6 +123,11 @@ The minimal SBC uses **C64-style bus stealing**: the VIC and CPU share a single-
 video RAM. During each horizontal blanking interval the VIC takes the bus for 40 clock
 cycles, prefetches 40 character codes into an internal line buffer, and then releases
 the bus. The CPU is halted during this window via the T65 `RDY` pin.
+
+Zero page and stack (`$0000-$01FF`) are implemented as internal FPGA RAM. This
+keeps IRQ entry/return, `JSR/RTS`, stack pushes/pulls, and zero-page
+read-modify-write instructions off the external/main RAM path. Main RAM begins
+at `$0200` from the firmware's point of view.
 
 ```text
 H-blank (320 system clocks per line)

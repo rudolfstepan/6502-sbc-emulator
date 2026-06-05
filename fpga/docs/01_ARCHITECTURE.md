@@ -79,13 +79,19 @@ One scan line = 1600 system clock cycles (800 pixel clocks × 2)
 
 | Address Range | Size | Device | Notes |
 | --- | --- | --- | --- |
-| $0000–$0FFF | 4 KB | CPU SRAM | Stack, zero page, variables |
+| $0000–$01FF | 512 B | Internal FPGA RAM | Zero page and stack, no external wait states |
+| $0200–$0FFF | 3.5 KB | CPU SRAM | General RAM for the minimal build |
 | $8000–$87FF | 2 KB | VRAM | Shared single-port; CPU writes, VIC reads |
 | $8800–$880F | 16 B | VIA 6522 | Timer 1 → IRQ; Port B → board LEDs |
 | $8810–$8813 | 4 B | UART 6551 | TX byte stream |
 | $F800–$FFFF | 2 KB | ROM | Kernel + reset vector at $FFFC |
 
 The ROM is mirrored across the full $C000–$FFFF range via `cpu_addr[10:0]` indexing.
+
+The bus decoder still reports `$0000-$7FFF` as `DEV_SRAM`. The active top-levels
+physically intercept `$0000-$01FF` and route it to a small internal RAM before the
+main RAM path. This keeps 6502 zero-page, stack, IRQ entry, `JSR/RTS`, and
+read-modify-write traffic off SDRAM and away from external wait states.
 
 IRQ sources are OR-combined: `cpu_irq_n = NOT (via_irq OR uart_irq)`.
 
@@ -104,18 +110,21 @@ cd fpga/asm && make        # assembles, links, installs fpga/sim/rom_welcome.hex
 ```
 
 The kernel initialises VIA Timer 1 in free-running mode (period $FFFF ≈ 1.3 ms),
-enables the T1 interrupt, and idles. The ISR fires ~750 Hz; every 256nd call
-(~330 ms) it:
+prints reset diagnostics over UART, runs a quick power-on system check, enables
+the T1 interrupt, and idles. The system check probes zero page, stack RAM, main
+RAM, VRAM, VIA configuration, and UART status, printing `OK` or `FAIL` for each
+line before `CLI`.
+
+The ISR fires ~750 Hz; every 256th call (~330 ms) it:
 
 - increments a tick counter and writes two hex digits to VIC row 8,
-- sends the tick byte via UART TX,
 - toggles VIA Port B bit 0 (LED blink, visible on board).
 
 ```text
 Row 2:  **** 6502 SINGLE BOARD COMPUTER ****
 Row 4:  4096 BYTES RAM     2048 BYTES ROM
 Row 6: BEREIT.
-Row 8: VIA-T1:  XX    UART:  XX    (live counter, ~3 Hz)
+Row 8: VIA-T1:  XX    (live counter, ~3 Hz)
 ```
 
 ROM hex format: `XXXX YY` (4-digit ROM offset, 2-digit byte, no comments —
@@ -183,6 +192,8 @@ The VGA pixel clock is 25 MHz, derived from a `pixel_ce` toggle inside `vic_vga`
 3. CPU reads reset vector from $FFFC–$FFFD (ROM).
 4. CPU jumps to reset address ($F800 in kernel ROM).
 5. Kernel initialises stack and writes welcome text to VRAM.
+6. Kernel prints reset diagnostics and the system check result over UART.
+7. Kernel enables interrupts and enters the UART keyboard polling loop.
 
 ---
 
