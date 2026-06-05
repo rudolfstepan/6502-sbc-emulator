@@ -68,3 +68,9 @@ fpga/fpga/*_usage.xml
 fpga/fpga/webtalk*.xml
 fpga/fpga/webtalk.log
 fpga/fpga/*_webtalk.html
+
+# ca65/ld65 assembly build artifacts
+fpga/asm/*.bin
+fpga/asm/*.lst
+fpga/asm/*.map
+fpga/asm/*.o
