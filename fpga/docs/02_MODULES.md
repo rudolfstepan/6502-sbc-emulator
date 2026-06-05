@@ -10,7 +10,7 @@ project for reference or simulation but are not included in the current build.
 
 ### Active (synthesized for PIX16 board)
 
-```
+```text
 rtl/
 ├── sbc_pkg.vhd                    — shared types, memory map, constants
 ├── bus_decode.vhd                 — address → device selection
@@ -20,14 +20,26 @@ rtl/
 │   ├── mem/sync_ram.vhd           — CPU SRAM and VRAM (single-port)
 │   ├── mem/rom.vhd                — kernel ROM
 │   ├── mem/char_rom.vhd           — 8×8 character patterns
+│   ├── peripherals/via6522.vhd   — VIA 6522: Timer 1 IRQ + Port B
+│   ├── peripherals/uart6551.vhd  — UART 6551: TX byte stream
 │   └── peripherals/vic_vga.vhd   — VIC: bus stealing + VGA output
 │
 └── boards/pix16_sbc_minimal_top.vhd  — PIX16 board wrapper (UCF ports)
 ```
 
+### Assembly toolchain
+
+```text
+fpga/asm/
+├── rom_demo.s           — ca65 6502 assembly source (kernel + ISR + strings)
+├── rom_demo.cfg         — ld65 linker config: 2 KB ROM at $F800
+├── bin_to_fpga_hex.py   — binary → FPGA sim hex converter (skips 0xEA fill)
+└── Makefile             — make all  →  installs ../sim/rom_welcome.hex
+```
+
 ### Inactive (reference / simulation only)
 
-```
+```text
 rtl/
 ├── sbc_t65_top.vhd                — full SBC (VIA + UART + VIC core)
 ├── sbc_top.vhd                    — test-mode SBC (ROM-scripted CPU slot)
@@ -35,8 +47,6 @@ rtl/
 ├── boards/pix16_board.vhd         — old board integration
 ├── peripherals/vic_core.vhd       — old dual-port VIC (replaced by vic_vga)
 ├── peripherals/vic_pixel_gen.vhd  — old pixel generator (replaced by vic_vga)
-├── peripherals/via6522.vhd        — VIA 6522 parallel I/O + timers
-├── peripherals/uart6551.vhd       — UART 6551 serial interface
 └── peripherals/reg_stub.vhd       — generic register placeholder
 ```
 
@@ -197,7 +207,7 @@ Loaded at synthesis from a hex file. Format: one `XXXX YY` entry per line
 
 Default fill: `0xEA` (NOP). Reset vector placed at the last two entries of the 2 KB window:
 
-```
+```text
 07FC 00   ; reset vector low  → $F800
 07FD F8   ; reset vector high
 ```
@@ -262,7 +272,7 @@ For each of the 40 steal cycles:
 
 **Display pipeline (combinational from scan counters):**
 
-```
+```text
 hc, vc → col, char_row, char_line, char_px → linebuf(col) → char_addr
        → char_rom_data → pixel_bit → vga_r/g/b
 ```
@@ -312,14 +322,28 @@ no VGA signal in hardware.
 Standalone pixel generator that consumed the text RAM read port of `vic_core`.
 Merged into `vic_vga`.
 
-### `peripherals/via6522.vhd` *(inactive in minimal SBC)*
+### `peripherals/via6522.vhd`
 
-Full VIA 6522 implementation. Used by `sbc_t65_top`. Ports: parallel A/B, two 16-bit
-timers, interrupt flags.
+VIA 6522 — parallel I/O + dual 16-bit timers + interrupt flags.
+Used by `sbc_minimal_top` for Timer 1 IRQ and Port B (LED blink).
 
-### `peripherals/uart6551.vhd` *(inactive in minimal SBC)*
+Key registers used by the demo kernel:
 
-UART with TX/RX data path, status register (TDRE/RDRF/OVR), and RX interrupt.
+| Register | Offset | Purpose |
+| --- | --- | --- |
+| ORB | $00 | Port B output latch (bit 0 → LED) |
+| DDRB | $02 | Port B direction ($FF = all output) |
+| T1CL | $04 | Counter low — **read clears T1 IRQ flag** |
+| T1CH | $05 | Counter high — write loads latches and starts timer |
+| T1LL/T1LH | $06/$07 | Timer 1 latches (auto-reload value) |
+| ACR | $0B | Bit 6 = 1 → free-running mode |
+| IER | $0E | Bit 7 = set/clear, bit 6 = T1 enable |
+
+### `peripherals/uart6551.vhd`
+
+UART 6551 — TX/RX data path, status register (TDRE/RDRF/OVR), RX interrupt.
+Used by `sbc_minimal_top` for TX-only in the demo (RX tied to zero).
+Writing to the DATA register ($8810) pulses `tx_valid` and updates `tx_data`.
 
 ---
 

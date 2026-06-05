@@ -27,6 +27,8 @@ The 6502 SBC FPGA is a synthesizable hardware implementation of a 6502-based sin
 │  │             │    │  4 KB    │   │  2 KB    │ │             │
 │  │ DEV_SRAM    │───►│$0000-0FFF│   │$F800-FFFF│ │             │
 │  │ DEV_VIC_TEXT│    └──────────┘   └──────────┘ │             │
+│  │ DEV_VIA     │───►VIA 6522 ($8800) IRQ─────────┤             │
+│  │ DEV_UART    │───►UART 6551 ($8810)             │             │
 │  │ DEV_ROM     │                                 │             │
 │  └──────┬──────┘                                 │             │
 │         │                                        │             │
@@ -79,9 +81,13 @@ One scan line = 1600 system clock cycles (800 pixel clocks × 2)
 | --- | --- | --- | --- |
 | $0000–$0FFF | 4 KB | CPU SRAM | Stack, zero page, variables |
 | $8000–$87FF | 2 KB | VRAM | Shared single-port; CPU writes, VIC reads |
+| $8800–$880F | 16 B | VIA 6522 | Timer 1 → IRQ; Port B → board LEDs |
+| $8810–$8813 | 4 B | UART 6551 | TX byte stream |
 | $F800–$FFFF | 2 KB | ROM | Kernel + reset vector at $FFFC |
 
 The ROM is mirrored across the full $C000–$FFFF range via `cpu_addr[10:0]` indexing.
+
+IRQ sources are OR-combined: `cpu_irq_n = NOT (via_irq OR uart_irq)`.
 
 ### VGA Output
 
@@ -91,16 +97,29 @@ Border: 40 px top and bottom. Character patterns from `char_rom.vhd` (8×8, ASCI
 
 ### Kernel ROM
 
-`sim/rom_welcome.hex` — a manually assembled 6502 kernel at $F800 that writes a
-C64-style welcome screen to VRAM using three `LDA str,X / STA $80xx,X` loops:
+Source: `fpga/asm/rom_demo.s` (ca65 assembly) — built with the cc65 toolchain.
 
+```bash
+cd fpga/asm && make        # assembles, links, installs fpga/sim/rom_welcome.hex
 ```
+
+The kernel initialises VIA Timer 1 in free-running mode (period $FFFF ≈ 1.3 ms),
+enables the T1 interrupt, and idles. The ISR fires ~750 Hz; every 256nd call
+(~330 ms) it:
+
+- increments a tick counter and writes two hex digits to VIC row 8,
+- sends the tick byte via UART TX,
+- toggles VIA Port B bit 0 (LED blink, visible on board).
+
+```text
 Row 2:  **** 6502 SINGLE BOARD COMPUTER ****
 Row 4:  4096 BYTES RAM     2048 BYTES ROM
 Row 6: BEREIT.
+Row 8: VIA-T1:  XX    UART:  XX    (live counter, ~3 Hz)
 ```
 
-ROM hex format: `XXXX YY` (4-digit offset, 2-digit byte, no comments).
+ROM hex format: `XXXX YY` (4-digit ROM offset, 2-digit byte, no comments —
+`rom.vhd` uses raw `hread`, comments cause synthesis errors).
 
 ---
 

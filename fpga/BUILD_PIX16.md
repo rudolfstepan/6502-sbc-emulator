@@ -16,6 +16,16 @@ Xilinx ISE Design Suite 14.7 (last version supporting Spartan-6).
 
 ## Build with ISE 14.7
 
+### Step 0 — Build the ROM (optional, pre-built hex is checked in)
+
+```bash
+cd fpga/asm
+make          # requires cc65 toolchain at C:/tools/cc65/bin
+```
+
+This assembles `rom_demo.s`, links it, and installs `fpga/sim/rom_welcome.hex`.
+The hex file is already committed; only re-run this step when changing the kernel.
+
 ### Step 1 — Open the project
 
 ```text
