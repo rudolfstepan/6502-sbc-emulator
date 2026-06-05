@@ -1,545 +1,340 @@
 # VHDL Modules Reference
 
-This document provides an overview of all VHDL modules in the project and their relationships.
+This document covers all VHDL modules in the project. The **active synthesis target** is
+`pix16_sbc_minimal_top` → `sbc_minimal_top`. Modules marked *(inactive)* are present in the
+project for reference or simulation but are not included in the current build.
+
+---
 
 ## Module Hierarchy
 
+### Active (synthesized for PIX16 board)
+
 ```
 rtl/
-├── sbc_pkg.vhd              ◄─── All modules depend on this package
-├── bus_decode.vhd           ◄─── Used by all top-level modules
-├── sbc_top.vhd              ◄─── Test mode system integration
-├── sbc_t65_top.vhd          ◄─── T65 CPU mode integration
+├── sbc_pkg.vhd                    — shared types, memory map, constants
+├── bus_decode.vhd                 — address → device selection
+├── sbc_minimal_top.vhd            — minimal SBC core with VGA output
+│   ├── cpu/t65_adapter.vhd        — T65 CPU wrapper (+ RDY bus-steal port)
+│   │   └── third_party/t65/       — external T65 6502 core
+│   ├── mem/sync_ram.vhd           — CPU SRAM and VRAM (single-port)
+│   ├── mem/rom.vhd                — kernel ROM
+│   ├── mem/char_rom.vhd           — 8×8 character patterns
+│   └── peripherals/vic_vga.vhd   — VIC: bus stealing + VGA output
 │
-├── cpu/
-│   └── t65_adapter.vhd      ◄─── Wraps T65 CPU core
-│       └── third_party/t65/ ◄─── External T65 implementation
-│
-├── mem/
-│   ├── sync_ram.vhd         ◄─── SRAM component
-│   └── rom.vhd              ◄─── ROM component (file-based init)
-│
-└── peripherals/
-    ├── reg_stub.vhd         ◄─── Generic register file (stubs)
-    ├── via6522.vhd          ◄─── VIA parallel I/O + timers
-    └── uart6551.vhd         ◄─── UART serial interface
+└── boards/pix16_sbc_minimal_top.vhd  — PIX16 board wrapper (UCF ports)
 ```
 
-## Core Modules
+### Inactive (reference / simulation only)
 
-### sbc_pkg.vhd - Package Definition
+```
+rtl/
+├── sbc_t65_top.vhd                — full SBC (VIA + UART + VIC core)
+├── sbc_top.vhd                    — test-mode SBC (ROM-scripted CPU slot)
+├── pix16_top.vhd                  — old PIX16 top (test_runner + vic_core)
+├── boards/pix16_board.vhd         — old board integration
+├── peripherals/vic_core.vhd       — old dual-port VIC (replaced by vic_vga)
+├── peripherals/vic_pixel_gen.vhd  — old pixel generator (replaced by vic_vga)
+├── peripherals/via6522.vhd        — VIA 6522 parallel I/O + timers
+├── peripherals/uart6551.vhd       — UART 6551 serial interface
+└── peripherals/reg_stub.vhd       — generic register placeholder
+```
 
-**Purpose**: Central definitions for types, constants, and utility functions
+---
 
-**Key Contents**:
+## Package
+
+### `sbc_pkg.vhd`
+
+Central definitions used by every other module.
 
 ```vhdl
--- Types
-subtype addr_t is std_logic_vector(15 downto 0);  -- 16-bit address
-subtype data_t is std_logic_vector(7 downto 0);   -- 8-bit data
+subtype addr_t is std_logic_vector(15 downto 0);
+subtype data_t is std_logic_vector(7 downto 0);
 
--- Memory map constants
-ADDR_SRAM_BASE / ADDR_SRAM_LAST       -- 0x0000-0x7FFF
-ADDR_ROM_BASE / ADDR_ROM_LAST         -- 0xC000-0xFFFF
--- ... (all other device address ranges)
-
--- Device enumeration
 type device_sel_t is (
-  DEV_NONE, DEV_SRAM, DEV_ROM, DEV_VIA,
-  DEV_UART, DEV_DISK, DEV_VIC_TEXT, DEV_VIC_BMP,
-  -- ... (all device types)
+  DEV_NONE, DEV_SRAM, DEV_VIC_TEXT, DEV_VIA, DEV_UART,
+  DEV_DISK, DEV_VIC_BLIT, DEV_VIC_SPR, DEV_SOUND0..3,
+  DEV_VIC_SPD, DEV_VIC_REG, DEV_VIC_BMP, DEV_ROM
 );
 
--- Utility functions
 function in_range(addr, first, last) return boolean;
 ```
 
-**Used By**: All other modules
-
-**Features**:
-- Centralized memory map (easy to edit/extend)
-- Reusable address/data types
-- Device selection enumeration
-- Address range checking function
-
 ---
 
-### bus_decode.vhd - Address Decoder
+## Top-Level Modules
 
-**Purpose**: Map CPU address bus to device selection signal
+### `sbc_minimal_top.vhd` — Minimal SBC Core
 
-**Port Interface**:
+The complete minimal system: CPU, SRAM, VRAM, ROM, VIC, VGA output.
+
+**Ports:**
+
 ```vhdl
-entity bus_decode is
+entity sbc_minimal_top is
+  generic (ROM_INIT_FILE : string := "");
   port (
-    addr : in  addr_t;           -- 16-bit CPU address
-    sel  : out device_sel_t       -- Which device is active
+    clk, reset_n  : in  std_logic;
+    vga_r         : out std_logic_vector(4 downto 0);
+    vga_g         : out std_logic_vector(5 downto 0);
+    vga_b         : out std_logic_vector(4 downto 0);
+    vga_hs, vga_vs : out std_logic;
+    dbg_cpu_addr  : out addr_t;
+    dbg_cpu_data  : out data_t;
+    dbg_cpu_din   : out data_t;
+    dbg_cpu_we    : out std_logic;
+    dbg_cpu_sync  : out std_logic
   );
 end entity;
 ```
 
-**Behavior**:
-- Purely combinational logic
-- Evaluates CPU address against all address range constants
-- Sets device selection output based on address match
-- Default: DEV_NONE if address is unmapped
+**Key signals:**
 
-**Example**:
+| Signal | Description |
+| --- | --- |
+| `cpu_enable` | Toggles every clock — T65 effective half-speed |
+| `cpu_bus_we` | `cpu_we AND NOT cpu_enable` — write on stable half-cycle |
+| `cpu_rdy` | `NOT vic_stealing` — CPU halted during VIC bus steal |
+| `vic_stealing` | High for 40 cycles during each H-blank |
+| `vram_addr` | Mux: `vic_addr[10:0]` during steal, else `cpu_addr[10:0]` |
+| `vram_we_mux` | Zero during steal (VIC only reads), else `vram_we` |
+
+**Memory instances:**
+
+| Instance | Module | Generic | Address |
+| --- | --- | --- | --- |
+| `sram_i` | `sync_ram` | ADDR_WIDTH=12, ASYNC_READ=true | $0000–$0FFF |
+| `vram_i` | `sync_ram` | ADDR_WIDTH=11, ASYNC_READ=true | $8000–$87FF |
+| `rom_i` | `rom` | ADDR_WIDTH=11, ASYNC_READ=true | $F800–$FFFF |
+
+---
+
+### `boards/pix16_sbc_minimal_top.vhd` — PIX16 Board Wrapper
+
+Thin wrapper that exposes the exact ports required by `pix16.ucf`. Instantiates
+`sbc_minimal_top` and passes VGA signals through. SDRAM pins are absent (not in UCF).
+
 ```vhdl
-if in_range(addr, ADDR_SRAM_BASE, ADDR_SRAM_LAST) then
-  sel <= DEV_SRAM;
-elsif in_range(addr, ADDR_ROM_BASE, ADDR_ROM_LAST) then
-  sel <= DEV_ROM;
--- ... etc for all devices
-else
-  sel <= DEV_NONE;
-end if;
+entity pix16_sbc_minimal_top is
+  generic (ROM_INIT_FILE : string := "../sim/rom_welcome.hex");
+  port (
+    clk, reset_n             : in  std_logic;
+    vga_out_r                : out std_logic_vector(4 downto 0);
+    vga_out_g                : out std_logic_vector(5 downto 0);
+    vga_out_b                : out std_logic_vector(4 downto 0);
+    vga_out_hs, vga_out_vs   : out std_logic;
+    key                      : in  std_logic_vector(3 downto 0);
+    led                      : out std_logic_vector(1 downto 0)
+  );
+end entity;
 ```
 
-**Performance**: Zero propagation delay (combinational)
+`led(0)` is hardwired high (power indicator). `led(1)` mirrors `NOT key(0)`.
 
 ---
 
-## Top-Level System
+## CPU
 
-### sbc_top.vhd - Test Mode System
+### `cpu/t65_adapter.vhd` — T65 CPU Wrapper
 
-**Purpose**: Complete 6502 SBC with ROM-scripted test CPU
+Adapts the T65 24-bit bus to the 16-bit system bus and exposes the `RDY` pin for
+bus stealing.
 
-**Characteristics**:
-- Uses `cpu6502_slot` instead of real T65 CPU
-- Deterministic ROM-scripted sequences for testing
-- All peripherals connected and functional
-- Debug outputs for waveform analysis
-
-**Key Instantiations**:
-```
-cpu6502_slot ──► SRAM ──┐
-                 ROM  ──├──► bus_decode
-                 VIA  ──┤
-                 UART ──┤
-                 VIC  ──┤
-                 Disk ──┤
-                 Sound ┘
-```
-
-**Generics**:
-- `ROM_INIT_FILE`: Path to ROM hex file
-
-**Debug Outputs**:
-- `dbg_cpu_addr`: CPU address bus
-- `dbg_cpu_data`: CPU data output
-- `dbg_cpu_we`: Write enable signal
-- `dbg_read_data`: Latched read data
-- `dbg_read_valid`: Read strobe
-
-**Testing**: Used for all non-T65 smoke tests
-
----
-
-### sbc_t65_top.vhd - T65 CPU Mode
-
-**Purpose**: Complete 6502 SBC with real T65 CPU core
-
-**Characteristics**:
-- Uses `t65_adapter` to integrate T65 CPU
-- Clock divider (T65 runs at 2x system frequency)
-- Real 6502 ROM execution capability
-- Extended debug outputs
-
-**Key Instantiations**:
-```
-t65_adapter ──► (same peripherals as sbc_top)
-```
-
-**Generics**:
-- `ROM_INIT_FILE`: Path to ROM hex file
-
-**Debug Outputs** (extended):
-- All from `sbc_top` plus:
-- `dbg_cpu_din`: CPU read data bus
-- `dbg_cpu_sync`: Instruction sync signal
-- `dbg_uart_tx_data`: UART transmit data
-- `dbg_uart_tx_valid`: UART TX strobe
-- `dbg_via_portb_out`: VIA Port B output
-
-**Testing**: Used for T65 integration tests
-
----
-
-## CPU Integration
-
-### t65_adapter.vhd - T65 Integration Wrapper
-
-**Purpose**: Adapt T65's 24-bit bus to system's 16-bit bus
-
-**Port Interface**:
 ```vhdl
 entity t65_adapter is
   port (
-    -- System clock and control
-    clk, reset_n : in std_logic;
-    enable : in std_logic;
-    
-    -- Interrupt inputs
-    irq_n, nmi_n : in std_logic;
-    
-    -- System bus interface
-    data_in : in data_t;
-    addr : out addr_t;              -- 16-bit (from T65's 24-bit)
-    data_out : out data_t;
-    we : out std_logic;             -- Write enable
-    sync : out std_logic            -- Instruction sync
+    clk, reset_n : in  std_logic;
+    enable       : in  std_logic;          -- clock gate (div-2)
+    rdy          : in  std_logic := '1';   -- '0' halts CPU (bus steal)
+    irq_n, nmi_n : in  std_logic;
+    data_in      : in  data_t;
+    addr         : out addr_t;
+    data_out     : out data_t;
+    we           : out std_logic;
+    sync         : out std_logic
   );
 end entity;
 ```
 
-**Translation Mapping**:
-- T65 address [23:0] → System address [15:0] (lower 16 bits)
-- T65 R/W_n + VDA → System we (write enable)
-- T65 DI ← System data_in (directly)
-- T65 DO → System data_out (directly)
+`rdy` defaults to `'1'` so existing instantiations without the port remain valid.
 
-**Control Signals**:
-- `enable`: Clock enable for T65 (gating)
-- `irq_n`: Active-low interrupt
-- `nmi_n`: Active-low NMI
+The T65 advances only when both `enable = '1'` AND `rdy = '1'`.
 
-**Features**:
-- Direct instantiation of T65 core
-- Minimal translation logic
-- All T65 debug signals available via generics
+Write enable derivation: `we = (NOT t65_r_w_n) AND t65_vda`.
 
 ---
 
-## Memory Modules
+## Memory
 
-### sync_ram.vhd - Synchronous RAM
+### `mem/sync_ram.vhd` — Synchronous RAM
 
-**Purpose**: Configurable block RAM for SRAM
+Single-port block RAM. Used for both CPU SRAM and VRAM.
 
-**Port Interface**:
 ```vhdl
 entity sync_ram is
   generic (
-    ADDR_WIDTH : positive := 15;   -- Log2 of capacity
-    ASYNC_READ : boolean := false   -- Async reads?
+    ADDR_WIDTH : positive := 15;
+    ASYNC_READ : boolean  := false
   );
   port (
     clk  : in  std_logic;
-    we   : in  std_logic;           -- Write enable
+    we   : in  std_logic;
     addr : in  std_logic_vector(ADDR_WIDTH-1 downto 0);
-    din  : in  data_t;              -- Data in (write data)
-    dout : out data_t               -- Data out (read data)
+    din  : in  data_t;
+    dout : out data_t
   );
 end entity;
 ```
 
-**Behavior**:
-- **Synchronous Write**: Data stored on rising clock edge when we=1
-- **Synchronous Read** (default): Output latched on rising clock edge
-- **Asynchronous Read** (optional): Combinational read path
-- **Write-Through**: In async mode, new data appears on output immediately
+With `ASYNC_READ = true` the read path is combinational (write-through on `we = '1'`).
+This is required for the VIC's single-cycle bus steal reads.
 
-**Memory Capacity**:
-- ADDR_WIDTH=15: 32KB (as in sbc_top)
-- ADDR_WIDTH=14: 16KB
-- ADDR_WIDTH=16: 64KB
+### `mem/rom.vhd` — Kernel ROM
 
-**Initialization**:
-- Automatically cleared to zeros at startup
-- No initialization file support
+Loaded at synthesis from a hex file. Format: one `XXXX YY` entry per line
+(4-digit hex offset, 2-digit hex byte, no comments — comments cause synthesis errors).
 
-**Usage in sbc_top**:
-```vhdl
-sram_i : entity work.sync_ram
-  generic map (ADDR_WIDTH => 15)      -- 32KB
-  port map (
-    clk  => clk,
-    we   => sram_we,
-    addr => cpu_addr(14 downto 0),    -- Lower 15 bits
-    din  => cpu_dout,
-    dout => sram_dout
-  );
+Default fill: `0xEA` (NOP). Reset vector placed at the last two entries of the 2 KB window:
+
 ```
+07FC 00   ; reset vector low  → $F800
+07FD F8   ; reset vector high
+```
+
+### `mem/char_rom.vhd` — Character ROM
+
+1 KB combinational ROM. 128 characters × 8 rows of 8 pixels.  
+Address: `char_code[6:0] & row[2:0]`. Output: 8-bit pixel row (bit 7 = leftmost pixel).
 
 ---
 
-### rom.vhd - Read-Only Memory
+## VIC
 
-**Purpose**: Boot firmware and system code
+### `peripherals/vic_vga.vhd` — VIC with Bus Stealing and VGA Output *(new)*
 
-**Port Interface**:
+Replaces the old `vic_core` + `vic_pixel_gen` pair. Handles video timing, bus stealing,
+character rendering, and VGA signal generation in a single module.
+
+**Ports:**
+
 ```vhdl
-entity rom is
-  generic (
-    ADDR_WIDTH : positive := 14;   -- Log2 of capacity
-    INIT_FILE  : string := "";      -- Hex file path
-    ASYNC_READ : boolean := false   -- Async reads?
-  );
+entity vic_vga is
   port (
-    clk  : in  std_logic;
-    addr : in  std_logic_vector(ADDR_WIDTH-1 downto 0);
-    dout : out data_t               -- Read-only output
+    clk, reset_n : in  std_logic;
+    -- Bus steal interface
+    vic_addr     : out addr_t;          -- VRAM address to read
+    vram_data    : in  data_t;          -- async VRAM output
+    vic_stealing : out std_logic;       -- '1' = CPU halted, VIC has bus
+    -- Character ROM
+    char_addr    : out std_logic_vector(9 downto 0);
+    char_data    : in  data_t;
+    -- VGA output
+    vga_hs, vga_vs : out std_logic;
+    vga_r        : out std_logic_vector(4 downto 0);
+    vga_g        : out std_logic_vector(5 downto 0);
+    vga_b        : out std_logic_vector(4 downto 0)
   );
 end entity;
 ```
 
-**File Format**:
-Text file with lines: `offset byte_value` (both hex, space-separated)
+**Internal state:**
 
-Example:
+| Signal | Description |
+| --- | --- |
+| `pce` | Pixel clock enable — toggles every system clock (25 MHz effective) |
+| `hc`, `vc` | Horizontal / vertical scan counters (pixel clock units) |
+| `linebuf` | 40-byte register array — one char code per column |
+| `fetching` | High during the 40-cycle bus steal window |
+| `fetch_col` | Current column being fetched (0–39) |
+| `fetch_row` | Character row being prefetched for the next scan line |
+
+**Bus steal timing:**
+
+The steal begins on the pixel clock edge where `hc = H_VISIBLE - 1 = 639` (last visible pixel).
+For each of the 40 steal cycles:
+
+1. `vic_stealing` asserted → CPU halted via `RDY`.
+2. `vic_addr` driven to `$8000 + fetch_row × 40 + fetch_col`.
+3. VRAM (async read) immediately outputs the character code.
+4. `linebuf(fetch_col)` latched on the rising clock edge.
+5. `fetch_col` incremented; steal ends after column 39.
+
+**Display pipeline (combinational from scan counters):**
+
 ```
-0000 A9
-0001 42
-0002 8D
-0003 02
+hc, vc → col, char_row, char_line, char_px → linebuf(col) → char_addr
+       → char_rom_data → pixel_bit → vga_r/g/b
 ```
 
-**Capacity**:
-- ADDR_WIDTH=14: 16KB (as in sbc_top)
-- ADDR_WIDTH=13: 8KB
-- ADDR_WIDTH=15: 32KB
+All combinational — no additional pipeline latency on top of the line-buffer prefetch.
 
-**Initialization**:
-- Loaded from hex file at synthesis time
-- Default fill: NOP instruction (0xEA)
-- Supports multiple source files with offset mapping
+**VGA timing constants (640×480 @ ~60 Hz, 50 MHz clock):**
 
-**ROM Composition** (via build script):
-```bash
-# Convert two ROM files and compose at different offsets
-python tools/bin_to_vhdl_hex.py --size 0x4000 \
-  --output rom.hex \
-  kernel.rom@0x0000 \
-  msbasic.rom@0x1000
-```
-
-**Reading Modes**:
-- **Synchronous** (default): Output latched on rising clock
-- **Asynchronous**: Combinational read (faster but uses more FPGA resources)
+| Parameter | Value |
+| --- | --- |
+| H_TOTAL | 800 pixel clocks |
+| V_TOTAL | 525 lines |
+| H_SYNC pulse | clocks 656–751 (active low) |
+| V_SYNC pulse | lines 490–491 (active low) |
+| Text area V | lines 40–439 (40 px top/bottom border) |
+| Char size | 16×16 screen pixels (2× scaled 8×8) |
 
 ---
 
-## Peripheral Modules
+## Address Decoder
 
-### reg_stub.vhd - Generic Register File
+### `bus_decode.vhd`
 
-**Purpose**: Placeholder for devices not yet fully implemented
+Purely combinational. Maps a 16-bit CPU address to `device_sel_t`.
 
-**Port Interface**:
 ```vhdl
-entity reg_stub is
-  generic (
-    REG_COUNT : positive := 16      -- Number of registers
-  );
-  port (
-    clk, reset_n : in std_logic;
-    cs : in std_logic;              -- Chip select
-    we : in std_logic;              -- Write enable
-    addr : in addr_t;               -- Address (all bits used)
-    din : in data_t;                -- Data input
-    dout : out data_t;              -- Data output
-    irq : out std_logic             -- Interrupt (hardwired to 0)
-  );
+entity bus_decode is
+  port (addr : in addr_t; sel : out device_sel_t);
 end entity;
 ```
 
-**Behavior**:
-- Stores writes in register array
-- Returns writes on subsequent reads (write-through)
-- Address wraparound: `index = addr mod REG_COUNT`
-- Reset: All registers cleared to 0x00
-- IRQ always disabled (hardwired '0')
-
-**Used For**:
-- **VIC Controller** (8192 registers): Video memory and control
-- **Disk Controller** (16 registers): Future disk interface
-- **Sound Synthesizer** (40 registers): Future audio channels
-
-**Characteristics**:
-- Allows address probing before full implementation
-- Single-cycle read/write
-- No special behavior (just storage)
+Used by `sbc_minimal_top` to gate SRAM writes, VRAM writes, and ROM reads.
+During a VIC bus steal, `cpu_addr` is stable (CPU halted), so `dev_sel` is also stable.
 
 ---
 
-### via6522.vhd - VIA 6522 Parallel I/O + Timers
+## Inactive Modules (reference)
 
-**Port Interface**:
-```vhdl
-entity via6522 is
-  port (
-    clk, reset_n : in std_logic;
-    cs : in std_logic;              -- Chip select
-    we : in std_logic;              -- Write enable
-    addr : in addr_t;               -- Register address
-    din : in data_t;                -- Data input
-    dout : out data_t;              -- Data output
-    porta_in, portb_in : in data_t; -- External inputs
-    porta_out, portb_out : out data_t;  -- Outputs
-    irq : out std_logic             -- Interrupt request
-  );
-end entity;
-```
+### `peripherals/vic_core.vhd` *(inactive)*
 
-**Register Map** (address bits [3:0]):
+Original VIC with dual-port text RAM (CPU write port + pixel generator read port).
+Replaced by `vic_vga` because the Spartan-6 dual-port block RAM inference produced
+no VGA signal in hardware.
 
-| Offset | Name | R/W | Function |
-|--------|------|-----|----------|
-| 0x0 | ORB | R/W | Output Register B |
-| 0x1 | ORA | R/W | Output Register A |
-| 0x2 | DDRB | R/W | Data Direction B (1=output) |
-| 0x3 | DDRA | R/W | Data Direction A (1=output) |
-| 0x4 | T1CL | R | Timer 1 Counter Low |
-| 0x5 | T1CH | R/W | Timer 1 Counter High (write starts timer) |
-| 0x6 | T1LL | R/W | Timer 1 Latch Low |
-| 0x7 | T1LH | R/W | Timer 1 Latch High |
-| 0x8 | T2CL | R | Timer 2 Counter Low |
-| 0x9 | T2CH | R/W | Timer 2 Counter High (write starts timer) |
-| 0xA | SR | R/W | Shift Register |
-| 0xB | ACR | R/W | Auxiliary Control (timer modes) |
-| 0xC | PCR | R/W | Peripheral Control (handshakes) |
-| 0xD | IFR | R/W | Interrupt Flag Register |
-| 0xE | IER | R/W | Interrupt Enable Register |
-| 0xF | ORA2 | R/W | Output Register A (alternate) |
+### `peripherals/vic_pixel_gen.vhd` *(inactive)*
 
-**Features**:
-- 2 parallel ports (8 bits each)
-- Port direction control (DDR registers)
-- 2 independent 16-bit timers
-- Interrupt flag and enable registers
-- Timer 1 can operate in continuous or one-shot mode
-- Interrupt generation on timer expiry or GPIO edges
+Standalone pixel generator that consumed the text RAM read port of `vic_core`.
+Merged into `vic_vga`.
 
-**Interrupts**:
-- Bit 6: Timer 1 timeout
-- Bit 5: Timer 2 timeout
-- Bits 4-0: Handshake interrupts
+### `peripherals/via6522.vhd` *(inactive in minimal SBC)*
+
+Full VIA 6522 implementation. Used by `sbc_t65_top`. Ports: parallel A/B, two 16-bit
+timers, interrupt flags.
+
+### `peripherals/uart6551.vhd` *(inactive in minimal SBC)*
+
+UART with TX/RX data path, status register (TDRE/RDRF/OVR), and RX interrupt.
 
 ---
 
-### uart6551.vhd - UART 6551 Serial Interface
+## Testbenches
 
-**Port Interface**:
-```vhdl
-entity uart6551 is
-  port (
-    clk, reset_n : in std_logic;
-    cs : in std_logic;              -- Chip select
-    we : in std_logic;              -- Write enable
-    addr : in addr_t;               -- Register address
-    din : in data_t;                -- Data input
-    dout : out data_t;              -- Data output
-    rx_data : in data_t;            -- External RX data
-    rx_valid : in std_logic;        -- External RX strobe
-    tx_data : out data_t;           -- External TX data
-    tx_valid : out std_logic;       -- External TX strobe
-    irq : out std_logic             -- Interrupt request
-  );
-end entity;
-```
+### `sim/tb_sbc_minimal.vhd`
 
-**Register Map** (address bits [1:0]):
-
-| Offset | Name | R/W | Function |
-|--------|------|-----|----------|
-| 0x0 | DATA | R/W | RX data (read), TX data (write) |
-| 0x1 | STATUS | R/W | Status flags (read-only except write resets) |
-| 0x2 | CMD | W | Command register (RX IRQ enable, reset) |
-| 0x3 | CTRL | W | Control register (baud, format - stub) |
-
-**Status Register Bits**:
-- Bit 7: IRQ pending
-- Bit 6: DSR (not used)
-- Bit 5: DCD (not used)
-- Bit 4: TDRE (transmitter data register empty)
-- Bit 3: RDRF (receiver data register full)
-- Bit 2: OVR (overrun error)
-- Bit 1: FE (framing error - stub)
-- Bit 0: PE (parity error - stub)
-
-**Behavior**:
-- **TX**: CPU writes to DATA register, tx_valid pulses, tx_data updated
-- **RX**: External rx_valid strobes new data, rx_data latched, RDRF set
-- **Overrun**: RX data arrives when RDRF already set (OVR flag)
-- **IRQ**: Asserted when RDRF=1 and CMD bit 0 (RX IRQ enable) is set
-- **Reset**: Write any value to STATUS register clears flags
+Verifies that the T65 CPU executes the kernel and writes the expected 24 ASCII bytes
+of `"WILLKOMMEN ZUM 6502 SBC!"` to VRAM addresses $8000–$8017 via the CPU debug bus.
+Times out with failure if not all characters arrive within 5000 clock cycles.
 
 ---
 
-## Testbench Modules
+**See Also:**
 
-### sim/tb_*.vhd - Test Benches
-
-**Purpose**: Unit and integration testing via simulation
-
-**Naming Convention**:
-- `tb_bus_decode.vhd` - Address decoder verification
-- `tb_sbc_*.vhd` - System integration tests
-- `tb_peripheral_*.vhd` - Peripheral-specific tests
-
-**Common Test Pattern**:
-1. Initialize clocks and signals
-2. Assert reset for N cycles
-3. Release reset
-4. Apply test stimulus (reads/writes)
-5. Check response against expected values
-6. Report PASS or FAIL
-
-**Example Test Structure**:
-```vhdl
-process
-begin
-  -- Reset phase
-  reset_n <= '0';
-  wait for 100 ns;
-  reset_n <= '1';
-  
-  -- Test phase
-  addr <= x"0000";
-  wait for 10 ns;
-  assert sel = DEV_SRAM report "SRAM not selected" severity error;
-  
-  wait;  -- End of test
-end process;
-```
-
----
-
-## Module Dependencies
-
-### Dependency Graph
-
-```
-sbc_pkg.vhd
-    ▲
-    │ (used by all below)
-    │
-    ├─── bus_decode.vhd
-    │        ▲
-    │        │
-    ├─── sbc_top.vhd ◄──────┐
-    │        │               │
-    │        ├── cpu6502_slot.vhd
-    │        ├── sync_ram.vhd
-    │        ├── rom.vhd
-    │        ├── via6522.vhd
-    │        ├── uart6551.vhd
-    │        └── reg_stub.vhd (×3 for VIC/Disk/Sound)
-    │
-    └─── sbc_t65_top.vhd ◄──┤
-             │               │
-             ├── t65_adapter.vhd
-             │        │
-             │        └── T65 core (external)
-             │
-             └── (same peripherals as sbc_top)
-```
-
----
-
-See Also:
-- [Component Reference](./05_COMPONENTS.md) - Detailed specs
-- [Simulation Guide](./06_SIMULATION.md) - Running tests
-- [Development Guide](./07_DEVELOPMENT.md) - Contributing code
+- [Architecture Overview](./01_ARCHITECTURE.md)
+- [Build Instructions](../BUILD_PIX16.md)
+- [Simulation Guide](./06_SIMULATION.md)

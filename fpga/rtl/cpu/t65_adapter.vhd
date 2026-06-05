@@ -17,6 +17,7 @@ entity t65_adapter is
     clk      : in  std_logic;      -- Master system clock
     reset_n  : in  std_logic;      -- Active-low reset to CPU
     enable   : in  std_logic;      -- Clock enable: 1=CPU runs, 0=CPU halted
+    rdy      : in  std_logic := '1'; -- Ready: '0' haelt CPU zwischen Zyklen (Bus-Steal)
 
     -- Interrupt inputs
     irq_n    : in  std_logic;      -- Active-low Interrupt Request from peripherals
@@ -73,8 +74,8 @@ begin
       Enable  => enable,         -- Clock enable (gating for external clock control)
       Clk     => clk,            -- Master clock input
 
-      -- Bus control (simplified model - always ready, no aborts)
-      Rdy     => '1',            -- Ready signal (always ready, no wait states)
+      -- Bus control
+      Rdy     => rdy,            -- Ready: '0' haelt CPU (Bus-Steal durch VIC)
       Abort_n => '1',            -- Abort signal (not used, always active)
 
       -- Interrupt inputs

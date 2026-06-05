@@ -1,0 +1,7 @@
+Storage Target: SPI Flash Single FPGA
+16M
+FF
+prom-sbc16
+Z:\6502-sbc-emulator\fpga\fpga\
+
+MCS
