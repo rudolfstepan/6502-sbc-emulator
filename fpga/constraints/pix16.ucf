@@ -40,3 +40,6 @@ NET "key<3>" LOC = E3 | IOSTANDARD = "LVCMOS33";
 
 NET "led<0>" LOC = P4 | IOSTANDARD = "LVCMOS33";
 NET "led<1>" LOC = N5 | IOSTANDARD = "LVCMOS33";
+
+## USB-UART (CH340C) — verified against demo 04_uart_test
+NET "uart_tx" LOC = D12 | IOSTANDARD = "LVCMOS33";

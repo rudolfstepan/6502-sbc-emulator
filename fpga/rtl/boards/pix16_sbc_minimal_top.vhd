@@ -1,6 +1,6 @@
--- PIX16 Board Top fuer minimales 6502-SBC
--- Passt exakt zu fpga/constraints/pix16.ucf.
--- VIA Port B bit 0/1 steuert die LEDs (sichtbarer Timer-Beweis).
+-- PIX16 Board Top — minimal 6502 SBC
+-- Matches fpga/constraints/pix16.ucf.
+-- uart_tx (D12) drives the CH340C USB-UART converter for host diagnostics.
 library ieee;
 use ieee.std_logic_1164.all;
 
@@ -19,15 +19,17 @@ entity pix16_sbc_minimal_top is
     vga_out_hs : out std_logic;
     vga_out_vs : out std_logic;
     key        : in  std_logic_vector(3 downto 0);
-    led        : out std_logic_vector(1 downto 0)
+    led        : out std_logic_vector(1 downto 0);
+    uart_tx    : out std_logic    -- to CH340C RXD (pin D12)
   );
 end entity;
 
 architecture rtl of pix16_sbc_minimal_top is
-  signal via_portb : data_t;
+  signal via_portb    : data_t;
+  signal uart_tx_data : data_t;
+  signal uart_tx_valid: std_logic;
 begin
-  -- LEDs spiegeln VIA Port B bits 1:0
-  -- bit 0 toggelt im ISR alle ~330ms -> sichtbares Blinken
+
   led(0) <= via_portb(0);
   led(1) <= via_portb(1);
 
@@ -42,12 +44,23 @@ begin
       vga_hs        => vga_out_hs,
       vga_vs        => vga_out_vs,
       via_portb     => via_portb,
-      uart_tx_data  => open,
-      uart_tx_valid => open,
+      uart_tx_data  => uart_tx_data,
+      uart_tx_valid => uart_tx_valid,
       dbg_cpu_addr  => open,
       dbg_cpu_data  => open,
       dbg_cpu_din   => open,
       dbg_cpu_we    => open,
       dbg_cpu_sync  => open
     );
+
+  uart_ser : entity work.uart_tx_ser
+    port map (
+      clk     => clk,
+      reset_n => reset_n,
+      data    => uart_tx_data,
+      valid   => uart_tx_valid,
+      tx      => uart_tx,
+      busy    => open
+    );
+
 end architecture;
