@@ -51,6 +51,7 @@ architecture rtl of pix16_sbc_sdram_top is
   signal via_portb    : data_t;
   signal uart_tx_data : data_t;
   signal uart_tx_valid: std_logic;
+  signal uart_tx_busy : std_logic;
   signal clk_n        : std_logic;
 
 begin
@@ -94,7 +95,8 @@ begin
       via_portb     => via_portb,
       uart_rx       => uart_rx,
       uart_tx_data  => uart_tx_data,
-      uart_tx_valid => uart_tx_valid
+      uart_tx_valid => uart_tx_valid,
+      uart_tx_busy  => uart_tx_busy
     );
 
   -- -------------------------------------------------------------------------
@@ -107,7 +109,7 @@ begin
       data    => uart_tx_data,
       valid   => uart_tx_valid,
       tx      => uart_tx,
-      busy    => open
+      busy    => uart_tx_busy
     );
 
   led(0) <= via_portb(0);

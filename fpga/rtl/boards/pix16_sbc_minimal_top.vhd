@@ -29,6 +29,7 @@ architecture rtl of pix16_sbc_minimal_top is
   signal via_portb    : data_t;
   signal uart_tx_data : data_t;
   signal uart_tx_valid: std_logic;
+  signal uart_tx_busy : std_logic;
 begin
 
   led(0) <= via_portb(0);
@@ -48,6 +49,7 @@ begin
       via_portb     => via_portb,
       uart_tx_data  => uart_tx_data,
       uart_tx_valid => uart_tx_valid,
+      uart_tx_busy  => uart_tx_busy,
       dbg_cpu_addr  => open,
       dbg_cpu_data  => open,
       dbg_cpu_din   => open,
@@ -62,7 +64,7 @@ begin
       data    => uart_tx_data,
       valid   => uart_tx_valid,
       tx      => uart_tx,
-      busy    => open
+      busy    => uart_tx_busy
     );
 
 end architecture;

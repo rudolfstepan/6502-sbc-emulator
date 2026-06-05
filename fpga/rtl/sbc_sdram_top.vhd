@@ -47,7 +47,8 @@ entity sbc_sdram_top is
     -- Peripherals
     via_portb     : out data_t;
     uart_tx_data  : out data_t;
-    uart_tx_valid : out std_logic
+    uart_tx_valid : out std_logic;
+    uart_tx_busy  : in  std_logic := '0'  -- from uart_tx_ser.busy
   );
 end entity;
 
@@ -87,6 +88,7 @@ architecture rtl of sbc_sdram_top is
 
   -- SDRAM wait-state signal
   signal sdram_rdy    : std_logic;
+  signal sdram_rst    : std_logic;
   signal sdram_ctrl_idle : std_logic;
 
   -- SDRAM burst interface (sdram_if <-> sdram_ctrl)
@@ -134,6 +136,7 @@ begin
   -- Both SDRAM wait states and VIC bus stealing stall the CPU
   cpu_rdy    <= sdram_rdy and not vic_stealing;
   cpu_irq_n  <= not (via_irq or uart_irq);
+  sdram_rst  <= not reset_n;
 
   -- Chip selects / write enables
   sdram_cs <= '1'        when dev_sel = DEV_SRAM     else '0';
@@ -210,7 +213,7 @@ begin
   sdram_ctrl_i : entity work.sdram_ctrl
     port map (
       clk               => clk,
-      rst               => not reset_n,
+      rst               => sdram_rst,
       wr_burst_req      => wr_burst_req,
       wr_burst_data     => wr_burst_data,
       wr_burst_len      => wr_burst_len,
@@ -284,6 +287,7 @@ begin
       rx_valid => uart_rx_valid,
       tx_data  => uart_tx_data,
       tx_valid => uart_tx_valid,
+      tx_busy  => uart_tx_busy,
       irq      => uart_irq
     );
 

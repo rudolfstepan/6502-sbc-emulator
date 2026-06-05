@@ -45,6 +45,8 @@ VIA_IER     = $880E
 
 UART_DATA   = $8810         ; read = RX byte (clears RDRF), write = TX byte
 UART_STATUS = $8811         ; bit 3 = RDRF (data available), bit 4 = TDRE
+UART_RDRF   = $08
+UART_TDRE   = $10
 
 ; ---- Screen row addresses ----
 ROW2        = VIC_BASE + 2 * 40     ; $8050
@@ -66,6 +68,8 @@ ZP_TICK     = $01   ; display tick counter
 ZP_CUR_LO   = $02   ; cursor: VRAM row-start address low
 ZP_CUR_HI   = $03   ; cursor: VRAM row-start address high
 ZP_COL      = $04   ; cursor: current column (0-39)
+ZP_STR_LO   = $05   ; print_str source pointer low
+ZP_STR_HI   = $06   ; print_str source pointer high
 
 ; ============================================================
 .segment "CODE"
@@ -115,6 +119,9 @@ reset:
     ; clear input area (rows 9-24) and reset cursor
     jsr     clear_input
 
+    ; send reset/debug state to host console before interrupts start
+    jsr     print_debug
+
     ; start CPU interrupts
     cli
 
@@ -123,12 +130,121 @@ reset:
 ; ============================================================
 main_loop:
     lda     UART_STATUS
-    and     #$08            ; RDRF bit
+    and     #UART_RDRF
     beq     main_loop       ; no data
 
     lda     UART_DATA       ; read byte (clears RDRF)
     jsr     put_char        ; display on VIC
     jmp     main_loop
+
+; ============================================================
+;  UART DEBUG OUTPUT
+; ============================================================
+
+print_char:
+    pha
+pd_tdre:
+    lda     UART_STATUS
+    and     #UART_TDRE
+    beq     pd_tdre
+    pla
+    sta     UART_DATA
+    rts
+
+print_crlf:
+    lda     #$0D
+    jsr     print_char
+    lda     #$0A
+    jmp     print_char
+
+print_str:
+    ldy     #$00
+ps_loop:
+    lda     (ZP_STR_LO),y
+    beq     ps_done
+    jsr     print_char
+    iny
+    bne     ps_loop
+ps_done:
+    rts
+
+print_hex:
+    pha
+    lsr
+    lsr
+    lsr
+    lsr
+    tax
+    lda     hex_table,x
+    jsr     print_char
+    pla
+    and     #$0F
+    tax
+    lda     hex_table,x
+    jmp     print_char
+
+print_msg:
+    sta     ZP_STR_LO
+    stx     ZP_STR_HI
+    jmp     print_str
+
+print_debug:
+    lda     UART_STATUS
+    pha
+
+    lda     #<str_dbg_reset
+    ldx     #>str_dbg_reset
+    jsr     print_msg
+
+    lda     #<str_dbg_map
+    ldx     #>str_dbg_map
+    jsr     print_msg
+
+    lda     #<str_dbg_uart
+    ldx     #>str_dbg_uart
+    jsr     print_msg
+    pla
+    jsr     print_hex
+    jsr     print_crlf
+
+    lda     #<str_dbg_via
+    ldx     #>str_dbg_via
+    jsr     print_msg
+    lda     VIA_ACR
+    jsr     print_hex
+    lda     #<str_dbg_ier
+    ldx     #>str_dbg_ier
+    jsr     print_msg
+    lda     VIA_IER
+    jsr     print_hex
+    lda     #<str_dbg_t1
+    ldx     #>str_dbg_t1
+    jsr     print_msg
+
+    lda     #<str_dbg_zp
+    ldx     #>str_dbg_zp
+    jsr     print_msg
+    lda     ZP_FAST
+    jsr     print_hex
+    lda     #$20
+    jsr     print_char
+    lda     ZP_TICK
+    jsr     print_hex
+    lda     #$20
+    jsr     print_char
+    lda     ZP_CUR_HI
+    jsr     print_hex
+    lda     ZP_CUR_LO
+    jsr     print_hex
+    lda     #$20
+    jsr     print_char
+    lda     ZP_COL
+    jsr     print_hex
+    jsr     print_crlf
+
+    lda     #<str_dbg_ready
+    ldx     #>str_dbg_ready
+    jmp     print_msg
 
 ; ============================================================
 ;  IRQ HANDLER  (VIA Timer 1, ~750 Hz)
@@ -353,6 +469,25 @@ str_line6:
     .byte "BEREIT.", $00
 str_line8:
     .byte "VIA-T1:  00", $00
+
+str_dbg_reset:
+    .byte $0D,$0A,"[RESET] 6502 SBC DEBUG",$0D,$0A
+    .byte "CPU=T65  MODE=6502  IRQ=OFF",$0D,$0A
+    .byte "CLK=50MHz  ROM=F800-FFFF",$0D,$0A,$00
+str_dbg_map:
+    .byte "MAP RAM=0000-7FFF VRAM=8000-87FF VIA=8800 UART=8810",$0D,$0A,$00
+str_dbg_uart:
+    .byte "UART ST=$",$00
+str_dbg_via:
+    .byte "VIA  ACR=$",$00
+str_dbg_ier:
+    .byte " IER=$",$00
+str_dbg_t1:
+    .byte " T1=$FFFF",$0D,$0A,$00
+str_dbg_zp:
+    .byte "ZP FAST TICK CUR COL = $",$00
+str_dbg_ready:
+    .byte "DEBUG DONE, CLI NEXT",$0D,$0A,$0D,$0A,$00
 
 hex_table:
     .byte "0123456789ABCDEF"

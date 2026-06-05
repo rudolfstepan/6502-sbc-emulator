@@ -38,6 +38,7 @@ entity sbc_minimal_top is
     uart_rx       : in  std_logic;
     uart_tx_data  : out data_t;
     uart_tx_valid : out std_logic;
+    uart_tx_busy  : in  std_logic := '0';  -- from uart_tx_ser.busy
 
     -- Debug bus
     dbg_cpu_addr : out addr_t;
@@ -200,6 +201,7 @@ begin
       rx_valid => uart_rx_valid,
       tx_data  => uart_tx_data,
       tx_valid => uart_tx_valid,
+      tx_busy  => uart_tx_busy,
       irq      => uart_irq
     );
 

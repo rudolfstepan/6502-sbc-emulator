@@ -19,6 +19,7 @@ entity uart6551 is
     rx_valid     : in  std_logic;      -- External RX valid signal
     tx_data      : out data_t;         -- TX data output
     tx_valid     : out std_logic;      -- TX request signal
+    tx_busy      : in  std_logic := '0';  -- '1' while serializer is transmitting
     irq          : out std_logic       -- Interrupt Request
   );
 end entity;
@@ -59,8 +60,8 @@ architecture rtl of uart6551 is
   signal status_reg   : data_t := x"10";
   signal cmd_reg      : data_t := (others => '0');
   signal ctrl_reg     : data_t := (others => '0');
-  signal dout_reg     : data_t := (others => '0');
   signal tx_valid_reg : std_logic := '0';
+  signal status_view  : data_t;
 
   -- Baud rate generator signals
   signal baud_div_count : natural range 0 to 65535 := 0;
@@ -105,10 +106,21 @@ architecture rtl of uart6551 is
 
 begin
   -- Output assignments
-  dout <= dout_reg;
   tx_data <= tx_reg;
   tx_valid <= tx_valid_reg;
   irq <= status_reg(ST_IRQ);
+
+  process(status_reg, tx_busy)
+  begin
+    status_view <= status_reg;
+    status_view(ST_TDRE) <= not tx_busy;
+  end process;
+
+  dout <= rx_reg      when cs = '1' and we = '0' and addr(1 downto 0) = REG_DATA else
+          status_view when cs = '1' and we = '0' and addr(1 downto 0) = REG_STATUS else
+          cmd_reg     when cs = '1' and we = '0' and addr(1 downto 0) = REG_CMD else
+          ctrl_reg    when cs = '1' and we = '0' and addr(1 downto 0) = REG_CTRL else
+          x"00";
 
   -- Baud rate generator process
   -- Generates baud clock at 16x the specified baud rate
@@ -159,10 +171,9 @@ begin
         status_reg <= x"10";
         cmd_reg <= (others => '0');
         ctrl_reg <= (others => '0');
-        dout_reg <= (others => '0');
       else
         next_status := status_reg;
-        next_status(ST_TDRE) := '1';  -- Always ready in simplified model
+        next_status(ST_TDRE) := not tx_busy;  -- Ready when serializer is idle
 
         -- Update configuration from CTRL register
         data_length <= get_data_length(ctrl_reg);
@@ -215,20 +226,11 @@ begin
           else
             case addr(1 downto 0) is
               when REG_DATA =>
-                dout_reg <= rx_reg;
                 next_status(ST_RDRF) := '0';
-              when REG_STATUS =>
-                dout_reg <= next_status;
-              when REG_CMD =>
-                dout_reg <= cmd_reg;
-              when REG_CTRL =>
-                dout_reg <= ctrl_reg;
               when others =>
-                dout_reg <= x"FF";
+                null;
             end case;
           end if;
-        else
-          dout_reg <= (others => '0');
         end if;
 
         -- Interrupt generation
