@@ -1,14 +1,15 @@
--- Minimales SBC Top-Level: T65 CPU + RAM + VRAM + ROM + VIC (Bus-Stealing)
+-- Minimales SBC Top-Level: T65 CPU + RAM + VRAM + ROM + VIC + VIA + UART
 --
 -- Speicherkarte:
---   $0000-$0FFF  4 KB CPU-SRAM  (Stack, Zero-Page, Variablen)
---   $8000-$87FF  2 KB VRAM      (Zeichenpuffer, single-port, geteilt CPU/VIC)
+--   $0000-$0FFF  4 KB CPU-SRAM
+--   $8000-$87FF  2 KB VRAM      (single-port, geteilt zwischen CPU und VIC)
+--   $8800-$880F  VIA 6522       (Timer 1 -> IRQ, Port B)
+--   $8810-$8813  UART 6551      (TX)
 --   $F800-$FFFF  2 KB ROM       (Kernel, Reset-Vektor)
 --
 -- Bus-Sharing (C64-Prinzip):
---   Waehrend H-Blank stiehlt der VIC 40 System-Takte vom CPU-Bus.
---   CPU wird via T65 RDY-Pin gehalten. Kein Dual-Port-RAM.
---   CPU-Overhead: 40 von 320 H-Blank-Takten = 12.5% pro Zeile.
+--   VIC stiehlt 40 System-Takte pro H-Blank vom CPU-Bus (RDY-Pin).
+--   CPU-Overhead: ~2.5% der Gesamttakte.
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -23,14 +24,21 @@ entity sbc_minimal_top is
     clk      : in  std_logic;
     reset_n  : in  std_logic;
 
-    -- VGA-Ausgang (direkt vom VIC)
+    -- VGA output (from VIC)
     vga_r    : out std_logic_vector(4 downto 0);
     vga_g    : out std_logic_vector(5 downto 0);
     vga_b    : out std_logic_vector(4 downto 0);
     vga_hs   : out std_logic;
     vga_vs   : out std_logic;
 
-    -- Debug: CPU-Bus fuer Simulation und Logikanalysator
+    -- VIA Port B output (exposed for board LEDs etc.)
+    via_portb : out data_t;
+
+    -- UART TX (serial byte stream; connect to board pin if available)
+    uart_tx_data  : out data_t;
+    uart_tx_valid : out std_logic;
+
+    -- Debug bus
     dbg_cpu_addr : out addr_t;
     dbg_cpu_data : out data_t;
     dbg_cpu_din  : out data_t;
@@ -40,42 +48,50 @@ entity sbc_minimal_top is
 end entity;
 
 architecture rtl of sbc_minimal_top is
-  -- CPU-Bus
+  -- CPU bus
   signal cpu_addr   : addr_t   := (others => '0');
   signal cpu_dout   : data_t   := (others => '0');
   signal cpu_din    : data_t   := (others => '0');
   signal cpu_we     : std_logic := '0';
   signal cpu_sync   : std_logic := '0';
-  signal cpu_enable : std_logic := '0';   -- T65 div-2 clock enable
-  signal cpu_bus_we : std_logic := '0';   -- gegatetes Write-Enable
-  signal cpu_rdy    : std_logic := '1';   -- '0' = CPU gehalten
+  signal cpu_enable : std_logic := '0';
+  signal cpu_bus_we : std_logic := '0';
+  signal cpu_rdy    : std_logic := '1';
+  signal cpu_irq_n  : std_logic := '1';
 
-  signal dev_sel    : device_sel_t;
+  signal dev_sel : device_sel_t;
 
-  -- Speicher-Ausgaenge
-  signal sram_dout  : data_t;
-  signal vram_dout  : data_t;
-  signal rom_dout   : data_t;
+  -- Memory outputs
+  signal sram_dout : data_t;
+  signal vram_dout : data_t;
+  signal rom_dout  : data_t;
+  signal via_dout  : data_t;
+  signal uart_dout : data_t;
 
-  -- Write-Enables
+  -- Write enables
   signal sram_we    : std_logic;
   signal vram_we    : std_logic;
   signal vram_we_mux : std_logic;
+  signal via_cs     : std_logic;
+  signal uart_cs    : std_logic;
 
-  -- VRAM-Adresse (Bus-Mux: CPU oder VIC)
-  signal vram_addr  : std_logic_vector(10 downto 0);
+  -- VRAM bus mux
+  signal vram_addr : std_logic_vector(10 downto 0);
 
-  -- VIC Bus-Steal-Signale
-  signal vic_addr      : addr_t;
-  signal vic_stealing  : std_logic;
+  -- VIC bus steal
+  signal vic_addr     : addr_t;
+  signal vic_stealing : std_logic;
 
-  -- Char-ROM-Interface
-  signal char_addr  : std_logic_vector(9 downto 0);
-  signal char_data  : data_t;
+  -- Char ROM
+  signal char_addr : std_logic_vector(9 downto 0);
+  signal char_data : data_t;
+
+  -- IRQs
+  signal via_irq  : std_logic;
+  signal uart_irq : std_logic;
 
 begin
-  -- T65 laeuft intern mit doppelter Frequenz: cpu_enable wechselt jeden Takt.
-  -- Schreibzugriffe werden nur auf cpu_enable='0' committed (stabiler Bus).
+  -- T65 div-2 clock enable
   process(clk)
   begin
     if rising_edge(clk) then
@@ -88,43 +104,40 @@ begin
   end process;
 
   cpu_bus_we <= cpu_we and not cpu_enable;
+  cpu_rdy    <= not vic_stealing;
+  cpu_irq_n  <= not (via_irq or uart_irq);
 
-  -- CPU wird gehalten wenn VIC den Bus benutzt
-  cpu_rdy  <= not vic_stealing;
-
-  -- Write-Enable je nach selektiertem Geraet
+  -- Write enables
   sram_we <= cpu_bus_we when dev_sel = DEV_SRAM     else '0';
   vram_we <= cpu_bus_we when dev_sel = DEV_VIC_TEXT else '0';
+  via_cs  <= '1'        when dev_sel = DEV_VIA      else '0';
+  uart_cs <= '1'        when dev_sel = DEV_UART     else '0';
 
-  -- Bus-Mux fuer VRAM: VIC-Adresse hat Vorrang (CPU ist dabei gehalten)
+  -- VRAM bus mux: VIC takes over during steal
   vram_addr   <= vic_addr(10 downto 0) when vic_stealing = '1'
                  else cpu_addr(10 downto 0);
-  -- Waehrend VIC stiehlt: kein CPU-Schreibzugriff auf VRAM
-  vram_we_mux <= '0'    when vic_stealing = '1' else vram_we;
+  vram_we_mux <= '0' when vic_stealing = '1' else vram_we;
 
-  -- CPU-Daten-Multiplexer
+  -- CPU data mux
   with dev_sel select cpu_din <=
     sram_dout when DEV_SRAM,
     rom_dout  when DEV_ROM,
     vram_dout when DEV_VIC_TEXT,
+    via_dout  when DEV_VIA,
+    uart_dout when DEV_UART,
     x"FF"     when others;
 
-  -- -------------------------------------------------------------------------
-  -- Bus-Decoder
   -- -------------------------------------------------------------------------
   decode_i : entity work.bus_decode
     port map (addr => cpu_addr, sel => dev_sel);
 
-  -- -------------------------------------------------------------------------
-  -- T65 CPU mit RDY-Pin fuer Bus-Steal
-  -- -------------------------------------------------------------------------
   cpu_i : entity work.t65_adapter
     port map (
       clk      => clk,
       reset_n  => reset_n,
       enable   => cpu_enable,
       rdy      => cpu_rdy,
-      irq_n    => '1',
+      irq_n    => cpu_irq_n,
       nmi_n    => '1',
       data_in  => cpu_din,
       addr     => cpu_addr,
@@ -133,58 +146,62 @@ begin
       sync     => cpu_sync
     );
 
-  -- -------------------------------------------------------------------------
-  -- 4 KB CPU-SRAM: Stack, Zero-Page, Variablen
-  -- -------------------------------------------------------------------------
   sram_i : entity work.sync_ram
     generic map (ADDR_WIDTH => 12, ASYNC_READ => true)
-    port map (
-      clk  => clk,
-      we   => sram_we,
-      addr => cpu_addr(11 downto 0),
-      din  => cpu_dout,
-      dout => sram_dout
-    );
+    port map (clk => clk, we => sram_we,
+              addr => cpu_addr(11 downto 0), din => cpu_dout, dout => sram_dout);
 
-  -- -------------------------------------------------------------------------
-  -- 2 KB VRAM: Zeichenpuffer, single-port, zwischen CPU und VIC geteilt
-  -- Adresse kommt vom Bus-Mux (CPU oder VIC)
-  -- -------------------------------------------------------------------------
   vram_i : entity work.sync_ram
     generic map (ADDR_WIDTH => 11, ASYNC_READ => true)
-    port map (
-      clk  => clk,
-      we   => vram_we_mux,
-      addr => vram_addr,
-      din  => cpu_dout,
-      dout => vram_dout
-    );
+    port map (clk => clk, we => vram_we_mux,
+              addr => vram_addr, din => cpu_dout, dout => vram_dout);
 
-  -- -------------------------------------------------------------------------
-  -- 2 KB ROM: Kernel, gemappt $F800-$FFFF via cpu_addr[10:0]
-  -- -------------------------------------------------------------------------
   rom_i : entity work.rom
-    generic map (
-      ADDR_WIDTH => 11,
-      INIT_FILE  => ROM_INIT_FILE,
-      ASYNC_READ => true
-    )
+    generic map (ADDR_WIDTH => 11, INIT_FILE => ROM_INIT_FILE, ASYNC_READ => true)
+    port map (clk => clk, addr => cpu_addr(10 downto 0), dout => rom_dout);
+
+  -- -------------------------------------------------------------------------
+  -- VIA 6522: Timer 1 generates IRQ; Port B goes to board LEDs
+  -- -------------------------------------------------------------------------
+  via_i : entity work.via6522
     port map (
-      clk  => clk,
-      addr => cpu_addr(10 downto 0),
-      dout => rom_dout
+      clk       => clk,
+      reset_n   => reset_n,
+      cs        => via_cs,
+      we        => cpu_bus_we,
+      addr      => cpu_addr,
+      din       => cpu_dout,
+      dout      => via_dout,
+      porta_in  => (others => '0'),
+      portb_in  => (others => '0'),
+      porta_out => open,
+      portb_out => via_portb,
+      irq       => via_irq
     );
 
   -- -------------------------------------------------------------------------
-  -- Char-ROM: 8x8 Pixel-Muster fuer ASCII 0x00-0x7F
+  -- UART 6551: TX only for this demo (RX not connected)
+  -- -------------------------------------------------------------------------
+  uart_i : entity work.uart6551
+    port map (
+      clk      => clk,
+      reset_n  => reset_n,
+      cs       => uart_cs,
+      we       => cpu_bus_we,
+      addr     => cpu_addr,
+      din      => cpu_dout,
+      dout     => uart_dout,
+      rx_data  => (others => '0'),
+      rx_valid => '0',
+      tx_data  => uart_tx_data,
+      tx_valid => uart_tx_valid,
+      irq      => uart_irq
+    );
+
   -- -------------------------------------------------------------------------
   char_i : entity work.char_rom
     port map (addr => char_addr, dout => char_data);
 
-  -- -------------------------------------------------------------------------
-  -- VIC VGA: Bus-Stealing + Zeilenpuffer + VGA-Ausgabe
-  -- Liest VRAM waehrend H-Blank, CPU dabei per RDY gehalten
-  -- -------------------------------------------------------------------------
   vic_i : entity work.vic_vga
     port map (
       clk          => clk,
@@ -201,7 +218,6 @@ begin
       vga_b        => vga_b
     );
 
-  -- Debug-Ausgaenge
   dbg_cpu_addr <= cpu_addr;
   dbg_cpu_data <= cpu_dout;
   dbg_cpu_din  <= cpu_din;
