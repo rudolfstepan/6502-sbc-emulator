@@ -34,7 +34,8 @@ entity sbc_minimal_top is
     -- VIA Port B output (exposed for board LEDs etc.)
     via_portb : out data_t;
 
-    -- UART TX (serial byte stream; connect to board pin if available)
+    -- UART (serial keyboard in / echo out)
+    uart_rx       : in  std_logic;
     uart_tx_data  : out data_t;
     uart_tx_valid : out std_logic;
 
@@ -89,6 +90,10 @@ architecture rtl of sbc_minimal_top is
   -- IRQs
   signal via_irq  : std_logic;
   signal uart_irq : std_logic;
+
+  -- UART RX
+  signal uart_rx_data  : data_t;
+  signal uart_rx_valid : std_logic;
 
 begin
   -- T65 div-2 clock enable
@@ -191,11 +196,20 @@ begin
       addr     => cpu_addr,
       din      => cpu_dout,
       dout     => uart_dout,
-      rx_data  => (others => '0'),
-      rx_valid => '0',
+      rx_data  => uart_rx_data,
+      rx_valid => uart_rx_valid,
       tx_data  => uart_tx_data,
       tx_valid => uart_tx_valid,
       irq      => uart_irq
+    );
+
+  uart_rx_i : entity work.uart_rx_ser
+    port map (
+      clk     => clk,
+      reset_n => reset_n,
+      rx      => uart_rx,
+      data    => uart_rx_data,
+      valid   => uart_rx_valid
     );
 
   -- -------------------------------------------------------------------------

@@ -43,3 +43,4 @@ NET "led<1>" LOC = N5 | IOSTANDARD = "LVCMOS33";
 
 ## USB-UART (CH340C) — verified against demo 04_uart_test
 NET "uart_tx" LOC = D12 | IOSTANDARD = "LVCMOS33";
+NET "uart_rx" LOC = C11 | IOSTANDARD = "LVCMOS33";

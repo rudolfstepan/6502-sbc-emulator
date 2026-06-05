@@ -44,7 +44,9 @@ NET "led<1>" LOC = N5 | IOSTANDARD = "LVCMOS33";
 
 ## USB-UART (CH340C)
 ## uart_tx = FPGA output → CH340C RXD (host sees data from FPGA)
+## uart_rx = FPGA input  ← CH340C TXD (host sends keyboard data to FPGA)
 NET "uart_tx" LOC = D12 | IOSTANDARD = "LVCMOS33";
+NET "uart_rx" LOC = C11 | IOSTANDARD = "LVCMOS33";
 
 ## SDRAM (HY57V2562GTR)
 NET "sdram_clk"    LOC = H4 | IOSTANDARD = "LVCMOS33";

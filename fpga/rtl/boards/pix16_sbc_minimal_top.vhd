@@ -1,6 +1,6 @@
 -- PIX16 Board Top — minimal 6502 SBC
 -- Matches fpga/constraints/pix16.ucf.
--- uart_tx (D12) drives the CH340C USB-UART converter for host diagnostics.
+-- uart_tx (D12) / uart_rx (C11) connect to the CH340C USB-UART converter.
 library ieee;
 use ieee.std_logic_1164.all;
 
@@ -20,7 +20,8 @@ entity pix16_sbc_minimal_top is
     vga_out_vs : out std_logic;
     key        : in  std_logic_vector(3 downto 0);
     led        : out std_logic_vector(1 downto 0);
-    uart_tx    : out std_logic    -- to CH340C RXD (pin D12)
+    uart_tx    : out std_logic;   -- to CH340C RXD (pin D12)
+    uart_rx    : in  std_logic    -- from CH340C TXD (pin C11)
   );
 end entity;
 
@@ -43,6 +44,7 @@ begin
       vga_b         => vga_out_b,
       vga_hs        => vga_out_hs,
       vga_vs        => vga_out_vs,
+      uart_rx       => uart_rx,
       via_portb     => via_portb,
       uart_tx_data  => uart_tx_data,
       uart_tx_valid => uart_tx_valid,

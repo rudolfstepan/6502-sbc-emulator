@@ -30,6 +30,7 @@ entity pix16_sbc_sdram_top is
     key         : in    std_logic_vector(3 downto 0);
     led         : out   std_logic_vector(1 downto 0);
     uart_tx     : out   std_logic;   -- to CH340C RXD (pin D12)
+    uart_rx     : in    std_logic;   -- from CH340C TXD (pin C11)
 
     -- SDRAM (HY57V2562GTR, 256 Mbit, 16-bit)
     sdram_clk   : out   std_logic;
@@ -91,6 +92,7 @@ begin
       sdram_dqm     => sdram_dqm,
       sdram_dq      => sdram_dq,
       via_portb     => via_portb,
+      uart_rx       => uart_rx,
       uart_tx_data  => uart_tx_data,
       uart_tx_valid => uart_tx_valid
     );

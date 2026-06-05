@@ -30,6 +30,9 @@ entity sbc_sdram_top is
     vga_hs   : out std_logic;
     vga_vs   : out std_logic;
 
+    -- UART serial keyboard input (from CH340C USB-UART, pin C11)
+    uart_rx  : in  std_logic;
+
     -- SDRAM hardware pins (no clock: the board wrapper drives sdram_clk via ODDR2)
     sdram_cke   : out   std_logic;
     sdram_cs_n  : out   std_logic;
@@ -108,6 +111,10 @@ architecture rtl of sbc_sdram_top is
   -- IRQs
   signal via_irq  : std_logic;
   signal uart_irq : std_logic;
+
+  -- UART RX (serial keyboard)
+  signal uart_rx_data  : data_t;
+  signal uart_rx_valid : std_logic;
 
 begin
 
@@ -273,11 +280,23 @@ begin
       addr     => cpu_addr,
       din      => cpu_dout,
       dout     => uart_dout,
-      rx_data  => (others => '0'),
-      rx_valid => '0',
+      rx_data  => uart_rx_data,
+      rx_valid => uart_rx_valid,
       tx_data  => uart_tx_data,
       tx_valid => uart_tx_valid,
       irq      => uart_irq
+    );
+
+  -- -------------------------------------------------------------------------
+  -- UART RX deserializer: CH340C TXD (pin C11) → 6502 keyboard input
+  -- -------------------------------------------------------------------------
+  uart_rx_i : entity work.uart_rx_ser
+    port map (
+      clk     => clk,
+      reset_n => reset_n,
+      rx      => uart_rx,
+      data    => uart_rx_data,
+      valid   => uart_rx_valid
     );
 
   -- -------------------------------------------------------------------------
