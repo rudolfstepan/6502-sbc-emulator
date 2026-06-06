@@ -2,7 +2,7 @@ Storage Target: SPI Flash Single FPGA
 16M
 Auto Select Storage Device
 FF
-uart-kb
+pix16_sbc_sd_boot_top
 Z:\6502-sbc-emulator\fpga\fpga\
 
 MCS

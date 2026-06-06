@@ -27,6 +27,8 @@ architecture rtl of sync_ram is
 
   -- RAM signal initialized to all zeros (0x00)
   signal ram : ram_t := (others => (others => '0'));
+  attribute ram_style : string;
+  attribute ram_style of ram : signal is "distributed";
 
 begin
   -- Synchronous memory write and synchronous read (when ASYNC_READ=false)

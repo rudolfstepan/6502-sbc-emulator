@@ -10,7 +10,7 @@
 ;   $C00C  JMP CLRSCR      Clear screen, home cursor
 ;   $C00F  JMP STROUT      Print null-terminated string (STRPTR_LO/HI ptr)
 ;   $C012  JMP NEWLINE     Print CR  ($0D)
-;   $C015  JMP BASIC       Start MS BASIC at $D000
+;   $C015  JMP BASIC       Start BASIC ROM at $D000
 ;   $C018  JMP SETCURS     Set cursor  (X=col, Y=row)
 ;   $C01B  JMP SCROLL      Scroll screen up one line
 ;
@@ -66,7 +66,7 @@ STRPTR_HI   = $F7
 CMD_BUF     = $0200     ; command line buffer in page 2 (64 bytes)
 CMD_MAX     = 38        ; max usable chars per command line
 
-BASIC_ENTRY = $D000     ; MS BASIC entry point
+BASIC_ENTRY = $D000     ; BASIC ROM entry point
 
 ; ============================================================
 ; JUMP TABLE  -- placed first so it lands exactly at $C000
@@ -108,7 +108,7 @@ IRQ_HANDLER:
     jsr CLRSCR
     jsr show_welcome
     ; Auto-start BASIC (like C64)
-    jmp BASIC               ; jump to MS BASIC - never return
+    jmp BASIC               ; jump to BASIC ROM - never return
 .endproc
 
 ; ------------------------------------------------------------
@@ -270,7 +270,7 @@ done:
 .endproc
 
 ; ------------------------------------------------------------
-; BASIC -- hand control to MS BASIC at $D000
+; BASIC -- hand control to BASIC ROM at $D000
 ; ------------------------------------------------------------
 .proc BASIC
     jsr BASIC_ENTRY         ; JSR so BYE can return to kernel
@@ -581,7 +581,7 @@ prompt_str:
 help_str:
     .byte $0D
     .byte " AVAILABLE COMMANDS:", $0D
-    .byte "   BASIC  -  START MS BASIC V2", $0D
+    .byte "   BASIC  -  START BASIC ROM", $0D
     .byte "   DIR    -  SHOW DISK FILES", $0D
     .byte "   CLS    -  CLEAR SCREEN", $0D
     .byte "   HELP   -  SHOW THIS HELP", $0D

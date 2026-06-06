@@ -68,6 +68,8 @@ architecture rtl of vic_vga is
   -- 40-Byte Zeilenpuffer (Zeichencodes der aktuellen Zeile)
   type linebuf_t is array (0 to 39) of data_t;
   signal linebuf  : linebuf_t := (others => (others => '0'));
+  attribute ram_style : string;
+  attribute ram_style of linebuf : signal is "distributed";
 
   -- Fetch-Zustandsautomat
   signal fetching  : std_logic := '0';

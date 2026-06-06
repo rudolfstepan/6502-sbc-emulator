@@ -86,7 +86,7 @@ OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
-.PHONY: all clean run check roms chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo
+.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo ehbasic
 
 all: $(TARGET)
 
@@ -150,7 +150,10 @@ roms:
 	$(BASH) tools/make_chess_rom.sh
 	$(BASH) tools/make_soundtest_rom.sh
 
-ehbasic-rom:
+kernel-rom:
+	$(BASH) tools/make_kernel_rom.sh
+
+ehbasic-rom: kernel-rom
 	$(BASH) tools/make_ehbasic_rom.sh
 
 chess-rom:
@@ -188,6 +191,10 @@ soundtest: all soundtest-rom
 
 run: all
 	$(call RUN_BIN,$(TARGET)) $(BINDIR)/sbc.ini
+
+ehbasic: all ehbasic-rom
+	$(BASH) tools/stage_runtime.sh "$(BINDIR)"
+	$(call RUN_BIN,$(TARGET)) $(BINDIR)/ehbasic.ini
 
 # Run with a ROM file directly
 rom: all

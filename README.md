@@ -113,7 +113,7 @@ $C000-$FFFF   ROM windows (configurable)
 Notes:
 
 - `sbc.ini` uses two ROM windows (`kernel.rom` + `msbasic.rom`).
-- `ehbasic.ini` uses one ROM window (`ehbasic.rom`) with EhBASIC instead of MS BASIC.
+- `ehbasic.ini` uses two ROM windows (`kernel.rom` + `ehbasic.rom`) for the same SBC kernel shell with EhBASIC at `$D000`.
 - `chess.ini` uses one 16 KB ROM at `$C000-$FFFF`.
 - `soundtest.ini` uses one 16 KB ROM at `$C000-$FFFF` that drives all four sound voices directly.
 

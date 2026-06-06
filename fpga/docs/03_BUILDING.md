@@ -121,6 +121,14 @@ python tools/bin_to_vhdl_hex.py --size 0x4000 \
   ../roms/msbasic.rom@0x1000
 ```
 
+**Kernel + EhBASIC system image**:
+```bash
+python tools/bin_to_vhdl_hex.py --size 0x4000 \
+  --output rom.hex \
+  ../roms/kernel.rom@0x0000 \
+  ../roms/ehbasic.rom@0x1000
+```
+
 **Output format** (text file, space-separated):
 ```
 0000 A9
@@ -199,6 +207,21 @@ The `--ieee=synopsys` flag is required for the T65 CPU core compatibility.
    - Ensure no critical timing paths
 
 ### Vendor-Specific Notes
+
+**PIX16 Spartan-6 / Xilinx ISE**:
+- Use the Xilinx ISE tools, not Vivado, for the Spartan-6 board.
+- Create the SD-boot project from an ISE Command Prompt if `xtclsh` is not in PATH:
+  ```bash
+  cd fpga
+  xtclsh scripts/create_sd_boot_ise_project.tcl
+  ```
+- Create the SD card image with:
+  ```bash
+  cd fpga
+  make sd-boot-image
+  ```
+- Program the FPGA bitstream once, then update ROM contents by rewriting
+  `sim/generated/sbc_ehbasic_sd.img` to the SD card.
 
 **Xilinx Vivado**:
 - Block RAM configured for:

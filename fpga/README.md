@@ -108,9 +108,33 @@ Multiple ROM windows can be composed with `file@offset`:
 python tools/bin_to_vhdl_hex.py --size 0x4000 --output sim/generated/sbc_rom.hex ../roms/kernel.rom@0x0000 ../roms/msbasic.rom@0x1000
 ```
 
+For the EhBASIC system image, keep the kernel at the same offset and replace only
+the BASIC window:
+
+```sh
+python tools/bin_to_vhdl_hex.py --size 0x4000 --output sim/generated/sbc_ehbasic_rom.hex ../roms/kernel.rom@0x0000 ../roms/ehbasic.rom@0x1000
+```
+
 `make test` currently generates `sim/generated/chess_rom.hex` and
-`sim/generated/sbc_rom.hex` automatically. The generated SBC image composes
-`kernel.rom` at offset `$0000` and `msbasic.rom` at offset `$1000`.
+`sim/generated/sbc_rom.hex` automatically. `make roms` also generates
+`sim/generated/sbc_ehbasic_rom.hex`. The generated SBC images compose
+`kernel.rom` at offset `$0000` and the selected BASIC ROM at offset `$1000`.
+
+## SD Boot Image
+
+The PIX16 SD boot path keeps the FPGA bitstream stable and loads the 16 KB SBC
+ROM window from the SD card into shadow RAM at reset:
+
+```sh
+cd fpga
+make sd-boot-image
+xtclsh scripts/create_sd_boot_ise_project.tcl
+```
+
+If `xtclsh` is not in your normal shell PATH, run the project command from the
+Xilinx ISE Command Prompt. The image file is
+`sim/generated/sbc_ehbasic_sd.img` and contains `kernel.rom + ehbasic.rom` for
+CPU addresses `$C000-$FFFF`.
 
 ## Memory Map
 

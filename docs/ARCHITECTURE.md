@@ -127,7 +127,7 @@ This provides broad opcode/flag behavior validation in addition to emulator inte
 | Config          | ROM(s)                       | Description                                |
 |-----------------|------------------------------|--------------------------------------------|
 | `sbc.ini`       | `kernel.rom` + `msbasic.rom` | MS BASIC with kernel shell                 |
-| `ehbasic.ini`   | `ehbasic.rom`                | EhBASIC (Enhanced 6502 BASIC)              |
+| `ehbasic.ini`   | `kernel.rom` + `ehbasic.rom` | EhBASIC with the same kernel shell         |
 | `chess.ini`     | `chess.rom`                  | Standalone 16 KB chess ROM                 |
 | `soundtest.ini` | `soundtest.rom`              | 4-voice sound demo, pure 6502 machine code |
 

@@ -79,6 +79,8 @@ architecture rtl of rom is
 
   -- Load ROM image from file at synthesis time
   signal image : rom_t := load_image(INIT_FILE);
+  attribute rom_style : string;
+  attribute rom_style of image : signal is "block";
 begin
   -- Synchronous read path (default): Output updates on clock edge
   -- Introduces one clock cycle latency but integrates with synchronous CPU timing

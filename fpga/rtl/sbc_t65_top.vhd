@@ -20,6 +20,7 @@
 -- controls when the T65 proceeds to the next bus phase.
 library ieee;
 use ieee.std_logic_1164.all;
+use ieee.numeric_std.all;
 
 use work.sbc_pkg.all;
 
