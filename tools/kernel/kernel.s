@@ -51,6 +51,11 @@ VIC_GFX_MODE = $9000
 VIC_CURSOR_X = $9001
 VIC_CURSOR_Y = $9002
 
+UART_DATA   = $8810         ; write = TX byte, read = RX byte
+UART_SR     = $8811         ; bit 4 = TDRE (TX ready), bit 3 = RDRF (RX data)
+UART_TDRE   = $10
+UART_RDRF   = $08
+
 DISK_CMD_DIR = $03
 DISK_ST_OK   = $02
 
@@ -122,18 +127,19 @@ IRQ_HANDLER:
     pha                     ; save X
     tya
     pha                     ; save Y
-    
+
     ; Get A back for comparison
     tsx
     lda $0103,x             ; peek at saved A (3 bytes down from SP)
-    
+    jsr uart_put            ; mirror to UART (preserves A, $0D -> CR+LF)
+
     cmp #$0D
     beq newline
     cmp #$0A
     beq done                ; ignore LF (0x0A) - only CR (0x0D) triggers newline
     cmp #$08
     beq backspace
-    
+
     ; --- normal printable character ---
     jsr calc_ptr
     tsx
@@ -156,7 +162,7 @@ newline:
     lda #(ROWS-1)
     sta CURSOR_Y
     jmp done
-    
+
 backspace:
     lda CURSOR_X
     beq done
@@ -166,7 +172,7 @@ backspace:
     ldy #0
     sta (SCRPTR_LO),y
     jmp done
-    
+
 done:
     ; Restore registers (reverse order)
     pla
@@ -203,6 +209,13 @@ done:
 ;             A = char, C = 1 if a key was available
 ; ------------------------------------------------------------
 .proc CHRIN_NB
+    lda UART_SR             ; check UART RX first
+    and #UART_RDRF
+    beq try_via
+    lda UART_DATA           ; read byte (clears RDRF)
+    sec
+    rts
+try_via:
     lda VIA_IFR
     and #CA1_BIT
     beq nothing
@@ -218,6 +231,15 @@ nothing:
 ; CLRSCR -- fill VIC RAM with spaces, reset cursor to (0,0)
 ; ------------------------------------------------------------
 .proc CLRSCR
+    ; Diagnostic: busy-wait for TDRE then send '*' to confirm kernel alive
+    pha
+clrscr_diag:
+    lda UART_SR
+    and #UART_TDRE
+    beq clrscr_diag
+    lda #'*'
+    sta UART_DATA
+    pla
     lda #<VIC_BASE
     sta SCRPTR_LO
     lda #>VIC_BASE
@@ -518,27 +540,27 @@ done:
     sta DISK_ADDR_LO
     lda #$04
     sta DISK_ADDR_HI
-    
+
     ; Max 1024 bytes for directory listing
     lda #$00
     sta DISK_LEN_LO
     lda #$04
     sta DISK_LEN_HI
-    
+
     ; Execute DIR command
     lda #DISK_CMD_DIR
     sta DISK_CMD
-    
+
     ; Check status
     lda DISK_STATUS
     and #DISK_ST_OK
     beq dir_error
-    
+
     ; Print directory listing from $0400
     lda #<dir_header
     ldy #>dir_header
     jsr STROUT
-    
+
     ; Print files from $0400
     lda #$00
     ldy #$04
@@ -549,6 +571,42 @@ dir_error:
     lda #<dir_err_str
     ldy #>dir_err_str
     jsr STROUT
+    rts
+.endproc
+
+; ------------------------------------------------------------
+; uart_put -- send char in A to hardware UART ($8810)
+;             $0D -> CR + LF;  $0A -> ignored (VIC handles it)
+;             Preserves: A, X, Y
+; ------------------------------------------------------------
+.proc uart_put
+    cmp #$0A                ; ignore LF
+    beq up_done
+    pha
+    cmp #$0D                ; CR -> send CR then LF
+    bne up_char
+up_cr_wait:
+    lda UART_SR
+    and #UART_TDRE
+    beq up_cr_wait
+    lda #$0D
+    sta UART_DATA
+up_lf_wait:
+    lda UART_SR
+    and #UART_TDRE
+    beq up_lf_wait
+    lda #$0A
+    sta UART_DATA
+    pla
+    rts
+up_char:
+up_char_wait:
+    lda UART_SR
+    and #UART_TDRE
+    beq up_char_wait
+    pla
+    sta UART_DATA
+up_done:
     rts
 .endproc
 

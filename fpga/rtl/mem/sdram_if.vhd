@@ -90,7 +90,10 @@ begin
             wr_burst_req <= '0';
             rd_burst_req <= '0';
             rdy          <= '1';
-            if ctrl_idle = '1' then
+            if cs = '1' and ctrl_idle = '0' then
+              -- A selected SDRAM access must wait through init/refresh.
+              rdy <= '0';
+            elsif ctrl_idle = '1' then
               if cs = '1' and cpu_bus_we = '1' then
                 -- Write: cpu_bus_we already gated to correct phase
                 addr_lat <= "000000000" & addr;
@@ -114,7 +117,12 @@ begin
           when S_WR_REQ =>
             wr_burst_req <= '1';
             rdy          <= '0';
-            state        <= S_WR_WAIT;
+            -- Keep the request asserted until the controller really accepts it.
+            -- A refresh can take priority in S_IDLE and would otherwise drop a
+            -- one-clock request.
+            if wr_burst_data_req = '1' then
+              state <= S_WR_WAIT;
+            end if;
 
           when S_WR_WAIT =>
             wr_burst_req <= '0';
@@ -129,7 +137,11 @@ begin
           when S_RD_REQ =>
             rd_burst_req <= '1';
             rdy          <= '0';
-            state        <= S_RD_WAIT;
+            -- Hold through possible refresh arbitration until read data appears.
+            if rd_burst_data_valid = '1' then
+              dout_reg <= rd_burst_data(7 downto 0);
+              state    <= S_RD_WAIT;
+            end if;
 
           when S_RD_WAIT =>
             rd_burst_req <= '0';

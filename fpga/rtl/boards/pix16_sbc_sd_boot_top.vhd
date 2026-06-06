@@ -116,12 +116,38 @@ architecture rtl of pix16_sbc_sd_boot_top is
   signal sd_ncs_i           : std_logic;
   signal sd_dclk_i          : std_logic;
   signal sd_mosi_i          : std_logic;
+  signal sbc_vga_r          : std_logic_vector(4 downto 0);
+  signal sbc_vga_g          : std_logic_vector(5 downto 0);
+  signal sbc_vga_b          : std_logic_vector(4 downto 0);
+  signal sbc_vga_hs         : std_logic;
+  signal sbc_vga_vs         : std_logic;
+  signal boot_vga_r         : std_logic_vector(4 downto 0);
+  signal boot_vga_g         : std_logic_vector(5 downto 0);
+  signal boot_vga_b         : std_logic_vector(4 downto 0);
+  signal boot_vga_hs        : std_logic;
+  signal boot_vga_vs        : std_logic;
+  signal boot_vga_active    : std_logic;
+  signal ram_test_active    : std_logic;
+  signal ram_test_done      : std_logic;
+  signal ram_test_error     : std_logic;
+  signal ram_test_phase     : std_logic_vector(3 downto 0);
+  signal ram_test_addr      : std_logic_vector(14 downto 0);
+  signal ram_test_fail_addr : std_logic_vector(14 downto 0);
+  signal ram_test_expected  : data_t;
+  signal ram_test_actual    : data_t;
 begin
   rst <= not reset_n;
   clk_n <= not clk;
   sd_ncs <= sd_ncs_i;
   sd_dclk <= sd_dclk_i;
   sd_mosi <= sd_mosi_i;
+  boot_vga_active <= not (boot_done and ram_test_done) or ram_test_error;
+
+  vga_out_r  <= boot_vga_r  when boot_vga_active = '1' else sbc_vga_r;
+  vga_out_g  <= boot_vga_g  when boot_vga_active = '1' else sbc_vga_g;
+  vga_out_b  <= boot_vga_b  when boot_vga_active = '1' else sbc_vga_b;
+  vga_out_hs <= boot_vga_hs when boot_vga_active = '1' else sbc_vga_hs;
+  vga_out_vs <= boot_vga_vs when boot_vga_active = '1' else sbc_vga_vs;
 
   led(0) <= boot_done or sd_init_done;
   led(1) <= boot_error or sd_seen_read_end when boot_done = '0' else via_portb(0);
@@ -143,7 +169,7 @@ begin
       Q  => sdram_clk,
       C0 => clk,  C1 => clk_n,
       CE => '1',
-      D0 => '1',  D1 => '0',
+      D0 => '0',  D1 => '1',
       R  => '0',  S  => '0'
     );
 
@@ -212,19 +238,59 @@ begin
       active          => boot_dbg_active
     );
 
+  boot_vga_i : entity work.boot_vga_debug
+    port map (
+      clk             => clk,
+      reset_n         => reset_n,
+      sd_init_done    => sd_init_done,
+      sd_sec_read     => sd_sec_read,
+      sd_sec_read_end => sd_sec_read_end,
+      boot_done       => boot_done,
+      boot_error      => boot_error,
+      sd_ncs          => sd_ncs_i,
+      sd_dclk         => sd_dclk_i,
+      sd_mosi_o       => sd_mosi_i,
+      sd_miso_i       => sd_miso,
+      loader_state    => loader_state,
+      sd_sec_state    => sd_sec_state,
+      sd_cmd_state    => sd_cmd_state,
+      sd_cmd_error    => sd_cmd_error,
+      ram_test_active => ram_test_active,
+      ram_test_done   => ram_test_done,
+      ram_test_error  => ram_test_error,
+      ram_test_phase  => ram_test_phase,
+      ram_test_addr   => ram_test_addr,
+      ram_test_fail_addr => ram_test_fail_addr,
+      ram_test_expected  => ram_test_expected,
+      ram_test_actual    => ram_test_actual,
+      vga_r           => boot_vga_r,
+      vga_g           => boot_vga_g,
+      vga_b           => boot_vga_b,
+      vga_hs          => boot_vga_hs,
+      vga_vs          => boot_vga_vs
+    );
+
   sbc_i : entity work.sbc_t65_sdram_boot_top
     port map (
       clk           => clk,
       reset_n       => reset_n,
       boot_done     => boot_done,
+      ram_test_active => ram_test_active,
+      ram_test_done   => ram_test_done,
+      ram_test_error  => ram_test_error,
+      ram_test_phase  => ram_test_phase,
+      ram_test_addr   => ram_test_addr,
+      ram_test_fail_addr => ram_test_fail_addr,
+      ram_test_expected  => ram_test_expected,
+      ram_test_actual    => ram_test_actual,
       rom_load_we   => rom_load_we,
       rom_load_addr => rom_load_addr,
       rom_load_data => rom_load_data,
-      vga_r         => vga_out_r,
-      vga_g         => vga_out_g,
-      vga_b         => vga_out_b,
-      vga_hs        => vga_out_hs,
-      vga_vs        => vga_out_vs,
+      vga_r         => sbc_vga_r,
+      vga_g         => sbc_vga_g,
+      vga_b         => sbc_vga_b,
+      vga_hs        => sbc_vga_hs,
+      vga_vs        => sbc_vga_vs,
       uart_rx       => uart_rx,
       uart_tx_data  => uart_tx_data,
       uart_tx_valid => uart_tx_valid,

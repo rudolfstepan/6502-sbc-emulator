@@ -1,6 +1,6 @@
 -- PIX16 Board Wrapper — SBC with SDRAM
 -- Matches fpga/constraints/pix16_sdram.ucf.
--- sdram_clk driven via ODDR2 (no PLL required at 50 MHz).
+-- sdram_clk driven via ODDR2, inverted relative to the controller clock.
 -- uart_tx (D12) drives the CH340C USB-UART for host diagnostics.
 library ieee;
 use ieee.std_logic_1164.all;
@@ -57,8 +57,8 @@ architecture rtl of pix16_sbc_sdram_top is
 begin
 
   -- -------------------------------------------------------------------------
-  -- SDRAM clock: ODDR2 outputs system clock to sdram_clk IOB pin.
-  -- D0='1'/D1='0' with complementary clocks reproduces 50 MHz at the pin.
+  -- SDRAM clock: ODDR2 outputs an inverted 50 MHz clock to the SDRAM.
+  -- This gives command/address/data about half a cycle of setup at the SDRAM.
   -- -------------------------------------------------------------------------
   clk_n <= not clk;
 
@@ -68,7 +68,7 @@ begin
       Q  => sdram_clk,
       C0 => clk,  C1 => clk_n,
       CE => '1',
-      D0 => '1',  D1 => '0',
+      D0 => '0',  D1 => '1',
       R  => '0',  S  => '0'
     );
 

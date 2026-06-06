@@ -10,6 +10,14 @@ entity sbc_t65_sdram_boot_top is
     clk          : in  std_logic;
     reset_n      : in  std_logic;
     boot_done    : in  std_logic;
+    ram_test_active : out std_logic;
+    ram_test_done   : out std_logic;
+    ram_test_error  : out std_logic;
+    ram_test_phase  : out std_logic_vector(3 downto 0);
+    ram_test_addr   : out std_logic_vector(14 downto 0);
+    ram_test_fail_addr : out std_logic_vector(14 downto 0);
+    ram_test_expected  : out data_t;
+    ram_test_actual    : out data_t;
 
     rom_load_we   : in  std_logic;
     rom_load_addr : in  std_logic_vector(13 downto 0);
@@ -96,6 +104,27 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal rd_burst_data_valid : std_logic;
   signal rd_burst_finish   : std_logic;
 
+  signal ctrl_wr_burst_req      : std_logic;
+  signal ctrl_wr_burst_data     : std_logic_vector(15 downto 0);
+  signal ctrl_wr_burst_len      : std_logic_vector(9 downto 0);
+  signal ctrl_wr_burst_addr     : std_logic_vector(23 downto 0);
+  signal ctrl_wr_dqm            : std_logic_vector(1 downto 0);
+  signal ctrl_rd_burst_req      : std_logic;
+  signal ctrl_rd_burst_len      : std_logic_vector(9 downto 0);
+  signal ctrl_rd_burst_addr     : std_logic_vector(23 downto 0);
+
+  signal test_wr_burst_req      : std_logic;
+  signal test_wr_burst_data     : std_logic_vector(15 downto 0);
+  signal test_wr_burst_len      : std_logic_vector(9 downto 0);
+  signal test_wr_burst_addr     : std_logic_vector(23 downto 0);
+  signal test_wr_dqm            : std_logic_vector(1 downto 0);
+  signal test_rd_burst_req      : std_logic;
+  signal test_rd_burst_len      : std_logic_vector(9 downto 0);
+  signal test_rd_burst_addr     : std_logic_vector(23 downto 0);
+  signal ram_test_active_i      : std_logic;
+  signal ram_test_done_i        : std_logic;
+  signal ram_test_error_i       : std_logic;
+
   signal char_addr   : std_logic_vector(9 downto 0);
   signal char_data   : data_t;
 
@@ -104,7 +133,7 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal uart_rx_data  : data_t;
   signal uart_rx_valid : std_logic;
 begin
-  cpu_reset_n <= reset_n and boot_done;
+  cpu_reset_n <= reset_n and boot_done and ram_test_done_i and not ram_test_error_i;
 
   process(clk)
   begin
@@ -132,6 +161,15 @@ begin
   vram_addr   <= vic_addr(10 downto 0) when vic_stealing = '1'
                  else cpu_addr(10 downto 0);
   vram_we_mux <= '0' when vic_stealing = '1' else vram_we;
+
+  ctrl_wr_burst_req  <= test_wr_burst_req  when ram_test_active_i = '1' else wr_burst_req;
+  ctrl_wr_burst_data <= test_wr_burst_data when ram_test_active_i = '1' else wr_burst_data;
+  ctrl_wr_burst_len  <= test_wr_burst_len  when ram_test_active_i = '1' else wr_burst_len;
+  ctrl_wr_burst_addr <= test_wr_burst_addr when ram_test_active_i = '1' else wr_burst_addr;
+  ctrl_wr_dqm        <= test_wr_dqm        when ram_test_active_i = '1' else wr_dqm;
+  ctrl_rd_burst_req  <= test_rd_burst_req  when ram_test_active_i = '1' else rd_burst_req;
+  ctrl_rd_burst_len  <= test_rd_burst_len  when ram_test_active_i = '1' else rd_burst_len;
+  ctrl_rd_burst_addr <= test_rd_burst_addr when ram_test_active_i = '1' else rd_burst_addr;
 
   process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, via_dout, uart_dout)
   begin
@@ -205,20 +243,53 @@ begin
       rd_burst_finish    => rd_burst_finish
     );
 
+  ram_test_i : entity work.boot_sdram_test
+    generic map (
+      START_ADDR => 16#0200#,
+      END_ADDR   => 16#7FFF#
+    )
+    port map (
+      clk                 => clk,
+      reset_n             => reset_n,
+      start               => boot_done,
+      ctrl_idle           => sdram_ctrl_idle,
+      wr_burst_req        => test_wr_burst_req,
+      wr_burst_data       => test_wr_burst_data,
+      wr_burst_len        => test_wr_burst_len,
+      wr_burst_addr       => test_wr_burst_addr,
+      wr_dqm              => test_wr_dqm,
+      wr_burst_data_req   => wr_burst_data_req,
+      wr_burst_finish     => wr_burst_finish,
+      rd_burst_req        => test_rd_burst_req,
+      rd_burst_len        => test_rd_burst_len,
+      rd_burst_addr       => test_rd_burst_addr,
+      rd_burst_data       => rd_burst_data,
+      rd_burst_data_valid => rd_burst_data_valid,
+      rd_burst_finish     => rd_burst_finish,
+      active              => ram_test_active_i,
+      done                => ram_test_done_i,
+      error               => ram_test_error_i,
+      phase               => ram_test_phase,
+      progress_addr       => ram_test_addr,
+      fail_addr           => ram_test_fail_addr,
+      expected            => ram_test_expected,
+      actual              => ram_test_actual
+    );
+
   sdram_ctrl_i : entity work.sdram_ctrl
     port map (
       clk               => clk,
       rst               => sdram_rst,
-      wr_burst_req      => wr_burst_req,
-      wr_burst_data     => wr_burst_data,
-      wr_burst_len      => wr_burst_len,
-      wr_burst_addr     => wr_burst_addr,
-      wr_dqm            => wr_dqm,
+      wr_burst_req      => ctrl_wr_burst_req,
+      wr_burst_data     => ctrl_wr_burst_data,
+      wr_burst_len      => ctrl_wr_burst_len,
+      wr_burst_addr     => ctrl_wr_burst_addr,
+      wr_dqm            => ctrl_wr_dqm,
       wr_burst_data_req => wr_burst_data_req,
       wr_burst_finish   => wr_burst_finish,
-      rd_burst_req      => rd_burst_req,
-      rd_burst_len      => rd_burst_len,
-      rd_burst_addr     => rd_burst_addr,
+      rd_burst_req      => ctrl_rd_burst_req,
+      rd_burst_len      => ctrl_rd_burst_len,
+      rd_burst_addr     => ctrl_rd_burst_addr,
       rd_burst_data     => rd_burst_data,
       rd_burst_data_valid => rd_burst_data_valid,
       rd_burst_finish   => rd_burst_finish,
@@ -316,4 +387,7 @@ begin
   dbg_cpu_din  <= cpu_din;
   dbg_cpu_we   <= cpu_bus_we;
   dbg_cpu_sync <= cpu_sync;
+  ram_test_active <= ram_test_active_i;
+  ram_test_done   <= ram_test_done_i;
+  ram_test_error  <= ram_test_error_i;
 end architecture;

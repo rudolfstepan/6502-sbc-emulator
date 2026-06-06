@@ -44,6 +44,8 @@ xfile add rtl/peripherals/uart_rx_ser.vhd
 xfile add rtl/peripherals/uart_tx_ser.vhd
 xfile add rtl/peripherals/vic_vga.vhd
 xfile add rtl/boot/boot_debug_uart.vhd
+xfile add rtl/boot/boot_vga_debug.vhd
+xfile add rtl/boot/boot_sdram_test.vhd
 xfile add rtl/cpu/t65_adapter.vhd
 xfile add rtl/sbc_t65_boot_top.vhd
 xfile add rtl/sbc_t65_sdram_boot_top.vhd
