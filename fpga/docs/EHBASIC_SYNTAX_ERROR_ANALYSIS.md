@@ -1,7 +1,7 @@
 # EhBASIC "Syntax Error" on All Commands — Root Cause Analysis
 
 **Date:** 2026-06-07  
-**Status:** SDRAM write latch implemented; follow-up test still failed; kernel ZP collision found and fixed in `tools/kernel/kernel.s`  
+**Status:** RESOLVED 2026-06-07 — all three symptoms fixed; EhBASIC boots and runs correctly on FPGA hardware  
 **Symptom:** Every BASIC command typed at the `Ready.` prompt returns `?SYNTAX ERROR` — `LIST`, `PRINT 1+1`, `10 REM` all fail equally.
 
 ---
@@ -439,3 +439,73 @@ placement avoids both problems.
 2. **If Syntax Error persists**: add an input-buffer/crunch diagnostic to dump `$0221+` before and after `LAB_13A6`, then confirm whether `PRINT` becomes `TK_PRINT`.
 
 3. **After Syntax Error is fixed**: Address the `□□□□□` glyph issue separately.
+
+---
+
+## 12. Final Resolution (2026-06-07)
+
+**User confirmed: "ok it works!"** — all three symptoms resolved after the fix below.
+
+### Three symptoms, one root cause
+
+| Symptom | What was actually happening |
+| --- | --- |
+| VGA: no new lines after ~18 rows | Each char triggered another scroll before VIC updated |
+| UART: missing LF in echo | Rapid scroll loop disrupted the CR+LF send sequence |
+| FOR loop prints 1,1,1,…,1099 | Scroll loop between PRINT calls corrupted float-to-decimal timing |
+
+All three were caused by a **single bug in `roms/kernel.rom`**: the pre-built binary was stale — it predated the SCROLL and STRPTR fixes that existed only in the `tools/kernel/kernel.s` working copy. The build script (`tools/build_fpga_ehbasic.py`) consumes `roms/kernel.rom` directly without checking whether `kernel.s` has changed.
+
+### The SCROLL infinite-loop mechanism
+
+The old SCROLL cleared the bottom row with:
+
+```asm
+clr:
+    sta VIC_BASE + (ROWS-1)*COLS,x
+    inx
+    cpx #COLS       ; exits when X = COLS = 40
+    bne clr
+```
+
+After the loop, **X = 40**. Back in CHROUT's newline path:
+
+```asm
+    jsr SCROLL
+    ldy #(ROWS-1)
+    jmp done
+done:
+    stx CURSOR_X    ; stores 40 into $EC !
+```
+
+Next CHROUT call:
+
+```asm
+    ldx CURSOR_X    ; X = 40
+    ...
+    inx             ; X = 41
+    cpx #COLS       ; cpx #40 → bcc NOT taken
+    ; fall through to newline → scroll again
+```
+
+Every single character after the first scroll immediately triggered another scroll, producing a continuous scroll loop with no visible output.
+
+### Fixes applied
+
+**`tools/kernel/kernel.s`**
+
+1. **SCROLL saves/restores A, X, Y** — prevents CURSOR_X from being set to 40 on exit.
+
+2. **STRPTR_LO moved $EE→$EB, STRPTR_HI moved $EF→$EE** — the old STRPTR_HI=$EF collided with EhBASIC's `Decss` buffer (`$EF–$F4`), which is written on every `PRINT` of a number. The new positions ($EB, $EE) are both marked unused by EhBASIC.
+
+**`roms/kernel.rom`** — rebuilt from source after the fixes above.
+
+**`fpga/asm/Makefile`** — added `kernel` target with proper dependency on `kernel.s` and `kernel.cfg`; `fpga-ehbasic` and `upload-ehbasic` targets now depend on `$(KERNEL_ROM)`, so `make fpga-ehbasic` auto-rebuilds the kernel when the source changes.
+
+### Rebuild procedure
+
+```sh
+make -C fpga/asm fpga-ehbasic       # rebuilds kernel.rom then 16KB combined ROM
+# or in one step with upload:
+make -C fpga/asm upload-ehbasic     # build + upload (press KEY0 on board first)
+```

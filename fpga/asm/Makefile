@@ -6,8 +6,12 @@ ROM_BIN = rom_demo.bin
 ROM_HEX = ../sim/rom_welcome.hex
 
 FPGA_EHBASIC_ROM = ../../tools/roms/fpga_ehbasic_16kb.rom
+KERNEL_S   = ../../tools/kernel/kernel.s
+KERNEL_CFG = ../../tools/kernel/kernel.cfg
+KERNEL_O   = ../../tools/kernel/kernel.o
+KERNEL_ROM = ../../roms/kernel.rom
 
-.PHONY: all clean fpga-ehbasic upload-ehbasic
+.PHONY: all clean fpga-ehbasic upload-ehbasic kernel
 
 all: $(ROM_HEX)
 
@@ -21,13 +25,23 @@ $(ROM_HEX): $(ROM_BIN) bin_to_fpga_hex.py
 	$(PYTHON) bin_to_fpga_hex.py $(ROM_BIN) 0xF800 0x0800 $(ROM_HEX)
 	@echo "Installed -> $(ROM_HEX)"
 
+# Build the 4 KB kernel ROM from source
+kernel: $(KERNEL_ROM)
+
+$(KERNEL_O): $(KERNEL_S)
+	$(CA65) --cpu 6502 -o $(KERNEL_O) $(KERNEL_S)
+
+$(KERNEL_ROM): $(KERNEL_O) $(KERNEL_CFG)
+	$(LD65) -C $(KERNEL_CFG) -o $(KERNEL_ROM) $(KERNEL_O)
+	@echo "Kernel ROM ready: $(KERNEL_ROM)"
+
 # Build the FPGA EhBASIC 16 KB ROM (kernel + EhBASIC, UART I/O)
-fpga-ehbasic:
+fpga-ehbasic: $(KERNEL_ROM)
 	$(PYTHON) ../../tools/build_fpga_ehbasic.py
 	@echo "ROM ready: $(FPGA_EHBASIC_ROM)"
 
 # Build and immediately upload via UART monitor (board must be in monitor mode)
-upload-ehbasic:
+upload-ehbasic: $(KERNEL_ROM)
 	$(PYTHON) ../../tools/build_fpga_ehbasic.py --upload --run --verbose
 
 clean:

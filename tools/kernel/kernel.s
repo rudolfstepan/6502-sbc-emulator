@@ -14,11 +14,12 @@
 ;   $C018  JMP SETCURS     Set cursor  (X=col, Y=row)
 ;   $C01B  JMP SCROLL      Scroll screen up one line
 ;
-; EhBASIC owns almost all of zero page up to $FF. It leaves $EC-$EE unused.
+; EhBASIC owns almost all of zero page up to $FF. It marks $EB-$EE as unused.
+;   $EB  STRPTR_LO  STROUT temporary pointer, low byte  (saved/restored)
 ;   $EC  CURSOR_X at rest; temporary screen pointer low byte inside CHROUT
 ;   $ED  CURSOR_Y at rest; temporary screen pointer high byte inside CHROUT
-;   $EE  STRPTR_LO  STROUT temporary pointer, low byte
-;   $EF  STRPTR_HI  STROUT temporary pointer, high byte; saved/restored
+;   $EE  STRPTR_HI  STROUT temporary pointer, high byte (saved/restored)
+;   $EF+ EhBASIC Decss (number-to-decimal buffer) — DO NOT USE in kernel
 ;
 ; Hardware:
 ;   VIC video RAM  $8000-$87FF  (40 x 25 = 1000 bytes)
@@ -64,8 +65,10 @@ CURSOR_X    = $EC
 CURSOR_Y    = $ED
 SCRPTR_LO   = $EC
 SCRPTR_HI   = $ED
-STRPTR_LO   = $EE
-STRPTR_HI   = $EF
+; $EE is free (EhBASIC marks unused); $EF = EhBASIC Decss (number-to-string
+; buffer) — DO NOT USE $EF or above for kernel vars: PRINT I writes $EF..$F4.
+STRPTR_LO   = $EB
+STRPTR_HI   = $EE
 
 CMD_BUF     = $0200     ; command line buffer in page 2 (64 bytes)
 CMD_MAX     = 38        ; max usable chars per command line
@@ -349,8 +352,19 @@ done:
 
 ; ------------------------------------------------------------
 ; SCROLL -- scroll the screen up one line, clear bottom row
+; Preserves: A, X, Y (required by CHROUT compatibility)
 ; ------------------------------------------------------------
 .proc SCROLL
+    ; Save registers: SCROLL is in the public jump table ($C01B) so callers
+    ; beyond CHROUT expect A/X/Y to be preserved. Without this, the clr loop
+    ; exits with X=COLS=40, which CHROUT then stores into CURSOR_X, causing
+    ; every subsequent character to immediately trigger another scroll.
+    pha                     ; save A
+    txa
+    pha                     ; save X
+    tya
+    pha                     ; save Y
+
     ; Copy 24 * 40 = 960 bytes from row 1 to row 0 without using a second
     ; zero-page pointer; EhBASIC leaves only one safe ZP pointer pair.
     ldx #0
@@ -387,6 +401,13 @@ clr:
     inx
     cpx #COLS
     bne clr
+
+    ; Restore registers in reverse order
+    pla
+    tay                     ; restore Y
+    pla
+    tax                     ; restore X
+    pla                     ; restore A
     rts
 .endproc
 

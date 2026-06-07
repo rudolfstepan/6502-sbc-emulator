@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### EhBASIC FPGA port — SCROLL infinite-loop fix
+
+- Fixed a SCROLL infinite-loop bug that caused all three observed symptoms (VGA stop updating after ~18 rows, UART missing linefeed, FOR loop printing corrupted values). Root cause: `roms/kernel.rom` was a stale pre-built binary predating the SCROLL and STRPTR fixes in `tools/kernel/kernel.s`.
+- `SCROLL` now saves and restores A/X/Y. The old code exited with X=COLS=40; CHROUT then stored 40 into CURSOR_X, so every subsequent character immediately re-triggered a scroll.
+- Moved kernel `STRPTR_LO` from $EE→$EB and `STRPTR_HI` from $EF→$EE to avoid the collision with EhBASIC's `Decss` buffer ($EF–$F4), written on every `PRINT` of a number.
+- Rebuilt `roms/kernel.rom` from source.
+- Added `kernel` make target to `fpga/asm/Makefile`; `fpga-ehbasic` and `upload-ehbasic` now depend on `$(KERNEL_ROM)` so the kernel is auto-rebuilt when `kernel.s` changes.
+- Updated `fpga/docs/EHBASIC_SYNTAX_ERROR_ANALYSIS.md` with final root-cause analysis (Section 12).
+
 ### Sound chip — waveform selection
 
 - Extended the CONTROL register (offset +5 in each voice block): bits [6:4] now select the waveform played when bit 0 triggers the note. Encoding: 0 = sine (default, fully backward-compatible), 1 = square, 2 = sawtooth, 3 = triangle, 4 = noise (xorshift32 LFSR).
