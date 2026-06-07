@@ -1,30 +1,47 @@
 # VHDL Modules Reference
 
-This document covers all VHDL modules in the project. The **active synthesis target** is
-`pix16_sbc_minimal_top` → `sbc_minimal_top`. Modules marked *(inactive)* are present in the
-project for reference or simulation but are not included in the current build.
+This document covers all VHDL modules in the project. The current board bring-up
+target is `pix16_sbc_sd_boot_top` -> `sbc_t65_sdram_boot_top`. The smaller
+`pix16_sbc_minimal_top` -> `sbc_minimal_top` path remains a useful smoke test.
+Modules marked *(inactive)* are present for reference or simulation but are not
+included in the current SD boot build.
 
 ---
 
 ## Module Hierarchy
 
-### Active (synthesized for PIX16 board)
+### Active SD Boot Build (synthesized for PIX16 board)
 
 ```text
 rtl/
 ├── sbc_pkg.vhd                    — shared types, memory map, constants
 ├── bus_decode.vhd                 — address → device selection
-├── sbc_minimal_top.vhd            — minimal SBC core with VGA output
+├── boards/pix16_sbc_sd_boot_top.vhd — PIX16 SD/SDRAM/VGA/UART board wrapper
+│   ├── boot/boot_debug_uart.vhd   — serial boot-status output
+│   ├── boot/boot_vga_debug.vhd    — VGA boot/status/RAM-test screen
+│   ├── boot/boot_sdram_test.vhd   — SDRAM self-test before CPU release
+│   ├── boot/sd_rom_loader.v       — SD-sector loader into shadow ROM
+│   ├── boot/uart_debug_monitor.vhd — UART machine monitor and hex loader
+│   ├── third_party/alinx_sd/      — vendor SD-card SPI sector core
+│   └── sbc_t65_sdram_boot_top.vhd — SBC core with SDRAM + shadow ROM
 │   ├── cpu/t65_adapter.vhd        — T65 CPU wrapper (+ RDY bus-steal port)
 │   │   └── third_party/t65/       — external T65 6502 core
-│   ├── mem/sync_ram.vhd           — ZP/stack RAM, CPU SRAM, and VRAM
-│   ├── mem/rom.vhd                — kernel ROM
+│   ├── mem/sync_ram.vhd           — ZP/stack RAM and text VRAM
+│   ├── mem/boot_shadow_rom.vhd    — writable 16 KB ROM window at $C000-$FFFF
+│   ├── mem/sdram_if.vhd           — byte interface to board SDRAM controller
+│   ├── mem/sdram_ctrl.vhd         — board SDRAM command/data controller
 │   ├── mem/char_rom.vhd           — 8×8 character patterns
 │   ├── peripherals/via6522.vhd   — VIA 6522: Timer 1 IRQ + Port B
-│   ├── peripherals/uart6551.vhd  — UART 6551: TX byte stream
+│   ├── peripherals/uart6551.vhd  — UART 6551: CPU TX/RX registers
 │   └── peripherals/vic_vga.vhd   — VIC: bus stealing + VGA output
-│
-└── boards/pix16_sbc_minimal_top.vhd  — PIX16 board wrapper (UCF ports)
+```
+
+### Minimal VGA Smoke Test
+
+```text
+rtl/
+├── sbc_minimal_top.vhd            — compact T65/VGA core
+└── boards/pix16_sbc_minimal_top.vhd — PIX16 wrapper for the minimal top
 ```
 
 ### Assembly toolchain
@@ -107,7 +124,7 @@ end entity;
 | `cpu_enable` | Toggles every clock — T65 effective half-speed |
 | `cpu_bus_we` | `cpu_we AND NOT cpu_enable` — write on stable half-cycle |
 | `cpu_rdy` | `NOT vic_stealing` — CPU halted during VIC bus steal |
-| `vic_stealing` | High for 40 cycles during each H-blank |
+| `vic_stealing` | High for 41 cycles during each H-blank |
 | `vram_addr` | Mux: `vic_addr[10:0]` during steal, else `cpu_addr[10:0]` |
 | `vram_we_mux` | Zero during steal (VIC only reads), else `vram_we` |
 | `zp_cs` | Selects internal FPGA RAM for `$0000-$01FF` |
@@ -206,7 +223,20 @@ end entity;
 ```
 
 With `ASYNC_READ = true` the read path is combinational (write-through on `we = '1'`).
-This is required for the VIC's single-cycle bus steal reads.
+The current SD boot top uses synchronous VRAM (`ASYNC_READ = false`) so XST can
+infer a compact RAM structure. `vic_vga` therefore includes a one-cycle read
+latency pipeline during bus stealing.
+
+### `mem/boot_shadow_rom.vhd` — SD/Monitor-Loaded ROM RAM
+
+16 KB RAM for the CPU ROM window `$C000-$FFFF`.
+
+Two write sources share the load port in `sbc_t65_sdram_boot_top`:
+
+- SD boot loader during reset,
+- UART monitor when the CPU is held.
+
+The CPU sees it as ROM, but the monitor can patch it live for development.
 
 ### `mem/rom.vhd` — Kernel ROM
 
@@ -242,7 +272,7 @@ entity vic_vga is
     clk, reset_n : in  std_logic;
     -- Bus steal interface
     vic_addr     : out addr_t;          -- VRAM address to read
-    vram_data    : in  data_t;          -- async VRAM output
+    vram_data    : in  data_t;          -- synchronous VRAM output, 1-cycle latency
     vic_stealing : out std_logic;       -- '1' = CPU halted, VIC has bus
     -- Character ROM
     char_addr    : out std_logic_vector(9 downto 0);
@@ -263,20 +293,22 @@ end entity;
 | `pce` | Pixel clock enable — toggles every system clock (25 MHz effective) |
 | `hc`, `vc` | Horizontal / vertical scan counters (pixel clock units) |
 | `linebuf` | 40-byte register array — one char code per column |
-| `fetching` | High during the 40-cycle bus steal window |
-| `fetch_col` | Current column being fetched (0–39) |
+| `fetching` | High during the 41-cycle bus steal window |
+| `fetch_col` | Current VRAM address column being presented (0–39) |
+| `fetch_store_col` | Current line-buffer column being filled from the previous cycle's VRAM data |
+| `fetch_valid` | Low for the first setup cycle, high while returned VRAM data is valid |
 | `fetch_row` | Character row being prefetched for the next scan line |
 
 **Bus steal timing:**
 
 The steal begins on the pixel clock edge where `hc = H_VISIBLE - 1 = 639` (last visible pixel).
-For each of the 40 steal cycles:
+The first stolen cycle presents the address for column 0. Each following cycle
+stores the previous cycle's synchronous VRAM data and presents the next address.
 
 1. `vic_stealing` asserted → CPU halted via `RDY`.
 2. `vic_addr` driven to `$8000 + fetch_row × 40 + fetch_col`.
-3. VRAM (async read) immediately outputs the character code.
-4. `linebuf(fetch_col)` latched on the rising clock edge.
-5. `fetch_col` incremented; steal ends after column 39.
+3. On the next clock, `vram_data` is stored into `linebuf(fetch_store_col)`.
+4. The steal ends after column 39 has been stored.
 
 **Display pipeline (combinational from scan counters):**
 
@@ -286,6 +318,25 @@ hc, vc → col, char_row, char_line, char_px → linebuf(col) → char_addr
 ```
 
 All combinational — no additional pipeline latency on top of the line-buffer prefetch.
+
+### `boot/uart_debug_monitor.vhd` — Hardware Monitor
+
+UART monitor entered by the board button. It stops the CPU, accepts machine
+monitor commands, and issues single-byte memory transactions through
+`monitor_mem_*`.
+
+Core command set:
+
+| Command | Purpose |
+| --- | --- |
+| `M addr [end]` | Hex dump with ASCII column |
+| `D addr [end]`, `U addr [end]` | Disassemble |
+| `E addr byte`, `W addr byte`, `: addr byte` | Write one byte |
+| `L addr` | Hex loader for sequential bytes |
+| `G [addr]` | Resume or restart at address |
+| `H`, `?` | Help |
+
+See [UART Monitor](./UART_MONITOR.md) for the operator workflow and upload tool.
 
 **VGA timing constants (640×480 @ ~60 Hz, 50 MHz clock):**
 

@@ -106,6 +106,20 @@ architecture rtl of pix16_sbc_sd_boot_top is
   signal uart_tx_data       : data_t;
   signal uart_tx_valid      : std_logic;
   signal uart_tx_busy       : std_logic;
+  signal monitor_rx_data    : data_t;
+  signal monitor_rx_valid   : std_logic;
+  signal monitor_tx_data    : data_t;
+  signal monitor_tx_valid   : std_logic;
+  signal monitor_active     : std_logic;
+  signal monitor_button     : std_logic;
+  signal monitor_mem_req    : std_logic;
+  signal monitor_mem_we     : std_logic;
+  signal monitor_mem_addr   : addr_t;
+  signal monitor_mem_wdata  : data_t;
+  signal monitor_mem_rdata  : data_t;
+  signal monitor_mem_ready  : std_logic;
+  signal monitor_jump_req   : std_logic;
+  signal monitor_jump_addr  : addr_t;
   signal boot_dbg_data      : data_t;
   signal boot_dbg_valid     : std_logic;
   signal boot_dbg_active    : std_logic;
@@ -141,14 +155,19 @@ begin
   sd_ncs <= sd_ncs_i;
   sd_dclk <= sd_dclk_i;
   sd_mosi <= sd_mosi_i;
+  monitor_button <= not key(0);
   boot_vga_active <= not (boot_done and ram_test_done) or ram_test_error;
 
+  -- Show the boot/status screen until both SD loading and the SDRAM self-test
+  -- have completed. After that, pass through the SBC text-mode VGA output.
   vga_out_r  <= boot_vga_r  when boot_vga_active = '1' else sbc_vga_r;
   vga_out_g  <= boot_vga_g  when boot_vga_active = '1' else sbc_vga_g;
   vga_out_b  <= boot_vga_b  when boot_vga_active = '1' else sbc_vga_b;
   vga_out_hs <= boot_vga_hs when boot_vga_active = '1' else sbc_vga_hs;
   vga_out_vs <= boot_vga_vs when boot_vga_active = '1' else sbc_vga_vs;
 
+  -- LED 0 is board/boot status. LED 1 becomes VIA Port B bit 0 after boot,
+  -- which lets uploaded ROMs provide an immediate "CPU is running" heartbeat.
   led(0) <= boot_done or sd_init_done;
   led(1) <= boot_error or sd_seen_read_end when boot_done = '0' else via_portb(0);
 
@@ -238,6 +257,36 @@ begin
       active          => boot_dbg_active
     );
 
+  monitor_rx_i : entity work.uart_rx_ser
+    port map (
+      clk     => clk,
+      reset_n => reset_n,
+      rx      => uart_rx,
+      data    => monitor_rx_data,
+      valid   => monitor_rx_valid
+    );
+
+  monitor_i : entity work.uart_debug_monitor
+    port map (
+      clk       => clk,
+      reset_n   => reset_n,
+      enter_btn => monitor_button,
+      rx_data   => monitor_rx_data,
+      rx_valid  => monitor_rx_valid,
+      tx_busy   => uart_tx_busy,
+      tx_data   => monitor_tx_data,
+      tx_valid  => monitor_tx_valid,
+      active    => monitor_active,
+      mem_req   => monitor_mem_req,
+      mem_we    => monitor_mem_we,
+      mem_addr  => monitor_mem_addr,
+      mem_wdata => monitor_mem_wdata,
+      mem_rdata => monitor_mem_rdata,
+      mem_ready => monitor_mem_ready,
+      jump_req  => monitor_jump_req,
+      jump_addr => monitor_jump_addr
+    );
+
   boot_vga_i : entity work.boot_vga_debug
     port map (
       clk             => clk,
@@ -275,6 +324,15 @@ begin
       clk           => clk,
       reset_n       => reset_n,
       boot_done     => boot_done,
+      monitor_hold  => monitor_active,
+      monitor_mem_req   => monitor_mem_req,
+      monitor_mem_we    => monitor_mem_we,
+      monitor_mem_addr  => monitor_mem_addr,
+      monitor_mem_wdata => monitor_mem_wdata,
+      monitor_mem_rdata => monitor_mem_rdata,
+      monitor_mem_ready => monitor_mem_ready,
+      monitor_jump_req  => monitor_jump_req,
+      monitor_jump_addr => monitor_jump_addr,
       ram_test_active => ram_test_active,
       ram_test_done   => ram_test_done,
       ram_test_error  => ram_test_error,
@@ -322,6 +380,12 @@ begin
       busy    => uart_tx_busy
     );
 
-  uart_mux_data  <= boot_dbg_data when boot_dbg_active = '1' else uart_tx_data;
-  uart_mux_valid <= boot_dbg_valid when boot_dbg_active = '1' else uart_tx_valid;
+  -- UART ownership priority: monitor first, boot debug second, 6502 UART last.
+  -- This avoids interleaving prompt text with firmware output while the CPU is held.
+  uart_mux_data  <= monitor_tx_data when monitor_active = '1' else
+                    boot_dbg_data   when boot_dbg_active = '1' else
+                    uart_tx_data;
+  uart_mux_valid <= monitor_tx_valid when monitor_active = '1' else
+                    boot_dbg_valid   when boot_dbg_active = '1' else
+                    uart_tx_valid;
 end architecture;

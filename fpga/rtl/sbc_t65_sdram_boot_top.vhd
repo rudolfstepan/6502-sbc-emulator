@@ -10,6 +10,15 @@ entity sbc_t65_sdram_boot_top is
     clk          : in  std_logic;
     reset_n      : in  std_logic;
     boot_done    : in  std_logic;
+    monitor_hold : in  std_logic := '0';
+    monitor_mem_req   : in  std_logic := '0';
+    monitor_mem_we    : in  std_logic := '0';
+    monitor_mem_addr  : in  addr_t := (others => '0');
+    monitor_mem_wdata : in  data_t := (others => '0');
+    monitor_mem_rdata : out data_t;
+    monitor_mem_ready : out std_logic;
+    monitor_jump_req  : in  std_logic := '0';
+    monitor_jump_addr : in  addr_t := (others => '0');
     ram_test_active : out std_logic;
     ram_test_done   : out std_logic;
     ram_test_error  : out std_logic;
@@ -56,6 +65,7 @@ end entity;
 
 architecture rtl of sbc_t65_sdram_boot_top is
   signal cpu_reset_n : std_logic;
+  signal cpu_reset_base_n : std_logic;
   signal cpu_addr    : addr_t := (others => '0');
   signal cpu_dout    : data_t := (others => '0');
   signal cpu_din     : data_t := (others => '0');
@@ -76,13 +86,30 @@ architecture rtl of sbc_t65_sdram_boot_top is
 
   signal zp_cs       : std_logic;
   signal zp_we       : std_logic;
+  signal zp_we_mux   : std_logic;
+  signal zp_addr_mux : std_logic_vector(8 downto 0);
+  signal zp_din_mux  : data_t;
+  signal rom_addr_mux : std_logic_vector(13 downto 0);
+  signal rom_load_we_mux   : std_logic;
+  signal rom_load_addr_mux : std_logic_vector(13 downto 0);
+  signal rom_load_data_mux : data_t;
   signal sdram_cs    : std_logic;
   signal vram_we     : std_logic;
   signal vram_we_mux : std_logic;
   signal via_cs      : std_logic;
+  signal via_cs_mux  : std_logic;
+  signal via_we_mux  : std_logic;
+  signal via_addr_mux : addr_t;
+  signal via_din_mux : data_t;
   signal uart_cs     : std_logic;
+  signal uart_cs_mux : std_logic;
+  signal uart_we_mux : std_logic;
+  signal uart_addr_mux : addr_t;
+  signal uart_din_mux : data_t;
 
   signal vram_addr    : std_logic_vector(10 downto 0);
+  signal vram_addr_mux : std_logic_vector(10 downto 0);
+  signal vram_din_mux  : data_t;
   signal vic_addr     : addr_t;
   signal vic_stealing : std_logic;
 
@@ -125,6 +152,29 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal ram_test_done_i        : std_logic;
   signal ram_test_error_i       : std_logic;
 
+  type mon_mem_state_t is (
+    M_IDLE, M_ZP_WAIT, M_ZP_READY,
+    M_ROM_RD_WAIT, M_ROM_RD_READY, M_ROM_WR_WAIT,
+    M_VRAM_RD_WAIT, M_VRAM_RD_READY, M_VRAM_WR_WAIT,
+    M_VIA_WAIT, M_VIA_READY,
+    M_UART_WAIT, M_UART_READY,
+    M_SDR_WR_REQ, M_SDR_WR_WAIT,
+    M_SDR_RD_REQ, M_SDR_RD_WAIT,
+    M_READY
+  );
+  signal mon_mem_state       : mon_mem_state_t := M_IDLE;
+  signal mon_addr_lat        : addr_t := (others => '0');
+  signal mon_wdata_lat       : data_t := (others => '0');
+  signal mon_we_lat          : std_logic := '0';
+  signal mon_rdata_reg       : data_t := (others => '0');
+  signal mon_ready_reg       : std_logic := '0';
+  signal mon_ctrl_active     : std_logic := '0';
+  signal mon_wr_burst_req    : std_logic := '0';
+  signal mon_wr_burst_data   : std_logic_vector(15 downto 0) := (others => '0');
+  signal mon_wr_burst_addr   : std_logic_vector(23 downto 0) := (others => '0');
+  signal mon_rd_burst_req    : std_logic := '0';
+  signal mon_rd_burst_addr   : std_logic_vector(23 downto 0) := (others => '0');
+
   signal char_addr   : std_logic_vector(9 downto 0);
   signal char_data   : data_t;
 
@@ -132,13 +182,18 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal uart_irq    : std_logic;
   signal uart_rx_data  : data_t;
   signal uart_rx_valid : std_logic;
+  signal uart_rx_valid_cpu : std_logic;
+  signal mon_jump_vector        : addr_t := (others => '0');
+  signal mon_jump_reset_cnt     : natural range 0 to 31 := 0;
+  signal mon_jump_vector_active : std_logic := '0';
 begin
-  cpu_reset_n <= reset_n and boot_done and ram_test_done_i and not ram_test_error_i;
+  cpu_reset_base_n <= reset_n and boot_done and ram_test_done_i and not ram_test_error_i;
+  cpu_reset_n <= cpu_reset_base_n when mon_jump_reset_cnt = 0 else '0';
 
   process(clk)
   begin
     if rising_edge(clk) then
-      if cpu_reset_n = '0' then
+      if cpu_reset_n = '0' or monitor_hold = '1' then
         cpu_enable <= '0';
       else
         cpu_enable <= not cpu_enable;
@@ -147,31 +202,92 @@ begin
   end process;
 
   cpu_bus_we <= cpu_we and not cpu_enable;
-  cpu_rdy    <= sdram_rdy and not vic_stealing;
+  cpu_rdy    <= sdram_rdy and not vic_stealing and not monitor_hold;
   cpu_irq_n  <= not (via_irq or uart_irq);
   sdram_rst  <= not reset_n;
 
   zp_cs    <= '1' when dev_sel = DEV_SRAM and cpu_addr(15 downto 9) = "0000000" else '0';
   zp_we    <= cpu_bus_we when zp_cs = '1' else '0';
-  sdram_cs <= '1'        when dev_sel = DEV_SRAM and zp_cs = '0' else '0';
-  vram_we  <= cpu_bus_we when dev_sel = DEV_VIC_TEXT else '0';
-  via_cs   <= '1'        when dev_sel = DEV_VIA      else '0';
-  uart_cs  <= '1'        when dev_sel = DEV_UART     else '0';
+  -- Monitor muxes: while monitor_hold is asserted the CPU is stopped and the
+  -- UART monitor becomes a one-byte bus master. Each target keeps the minimum
+  -- latency it needs: BRAM-like blocks wait one cycle, VIA/UART get a selected
+  -- register cycle, and SDRAM goes through the byte bridge below.
+  zp_we_mux   <= '1' when monitor_hold = '1' and mon_mem_state = M_ZP_WAIT and mon_we_lat = '1' else
+                 zp_we when monitor_hold = '0' else '0';
+  zp_addr_mux <= mon_addr_lat(8 downto 0) when monitor_hold = '1' else cpu_addr(8 downto 0);
+  zp_din_mux  <= mon_wdata_lat when monitor_hold = '1' else cpu_dout;
+  rom_addr_mux <= mon_addr_lat(13 downto 0) when monitor_hold = '1' and
+                  (mon_mem_state = M_ROM_RD_WAIT or mon_mem_state = M_ROM_RD_READY) else
+                  cpu_addr(13 downto 0);
+  rom_load_we_mux <= '1' when monitor_hold = '1' and mon_mem_state = M_ROM_WR_WAIT and mon_we_lat = '1' else
+                     rom_load_we;
+  rom_load_addr_mux <= mon_addr_lat(13 downto 0) when monitor_hold = '1' and mon_mem_state = M_ROM_WR_WAIT else
+                       rom_load_addr;
+  rom_load_data_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_ROM_WR_WAIT else
+                       rom_load_data;
+  sdram_cs <= '1'        when monitor_hold = '0' and dev_sel = DEV_SRAM and zp_cs = '0' else '0';
+  vram_we  <= cpu_bus_we when monitor_hold = '0' and dev_sel = DEV_VIC_TEXT else '0';
+  via_cs   <= '1'        when monitor_hold = '0' and dev_sel = DEV_VIA      else '0';
+  uart_cs  <= '1'        when monitor_hold = '0' and dev_sel = DEV_UART     else '0';
 
   vram_addr   <= vic_addr(10 downto 0) when vic_stealing = '1'
                  else cpu_addr(10 downto 0);
-  vram_we_mux <= '0' when vic_stealing = '1' else vram_we;
+  vram_addr_mux <= mon_addr_lat(10 downto 0) when monitor_hold = '1' and
+                   (mon_mem_state = M_VRAM_RD_WAIT or mon_mem_state = M_VRAM_RD_READY or
+                    mon_mem_state = M_VRAM_WR_WAIT) else
+                   vram_addr;
+  vram_we_mux <= '1' when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT and mon_we_lat = '1' else
+                 '0' when vic_stealing = '1' else vram_we;
+  vram_din_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT else
+                  cpu_dout;
 
-  ctrl_wr_burst_req  <= test_wr_burst_req  when ram_test_active_i = '1' else wr_burst_req;
-  ctrl_wr_burst_data <= test_wr_burst_data when ram_test_active_i = '1' else wr_burst_data;
-  ctrl_wr_burst_len  <= test_wr_burst_len  when ram_test_active_i = '1' else wr_burst_len;
-  ctrl_wr_burst_addr <= test_wr_burst_addr when ram_test_active_i = '1' else wr_burst_addr;
-  ctrl_wr_dqm        <= test_wr_dqm        when ram_test_active_i = '1' else wr_dqm;
-  ctrl_rd_burst_req  <= test_rd_burst_req  when ram_test_active_i = '1' else rd_burst_req;
-  ctrl_rd_burst_len  <= test_rd_burst_len  when ram_test_active_i = '1' else rd_burst_len;
-  ctrl_rd_burst_addr <= test_rd_burst_addr when ram_test_active_i = '1' else rd_burst_addr;
+  via_cs_mux <= '1' when monitor_hold = '1' and
+                (mon_mem_state = M_VIA_WAIT or
+                 (mon_mem_state = M_VIA_READY and mon_we_lat = '0')) else
+                via_cs;
+  via_we_mux <= '1' when monitor_hold = '1' and mon_mem_state = M_VIA_WAIT and mon_we_lat = '1' else
+                cpu_bus_we;
+  via_addr_mux <= mon_addr_lat when monitor_hold = '1' and
+                  (mon_mem_state = M_VIA_WAIT or mon_mem_state = M_VIA_READY) else
+                  cpu_addr;
+  via_din_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_VIA_WAIT else
+                 cpu_dout;
 
-  process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, via_dout, uart_dout)
+  uart_cs_mux <= '1' when monitor_hold = '1' and
+                 (mon_mem_state = M_UART_WAIT or
+                  (mon_mem_state = M_UART_READY and mon_we_lat = '0')) else
+                 uart_cs;
+  uart_we_mux <= '1' when monitor_hold = '1' and mon_mem_state = M_UART_WAIT and mon_we_lat = '1' else
+                 cpu_bus_we;
+  uart_addr_mux <= mon_addr_lat when monitor_hold = '1' and
+                   (mon_mem_state = M_UART_WAIT or mon_mem_state = M_UART_READY) else
+                   cpu_addr;
+  uart_din_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_UART_WAIT else
+                  cpu_dout;
+
+  ctrl_wr_burst_req  <= test_wr_burst_req  when ram_test_active_i = '1' else
+                        mon_wr_burst_req   when mon_ctrl_active = '1' else wr_burst_req;
+  ctrl_wr_burst_data <= test_wr_burst_data when ram_test_active_i = '1' else
+                        mon_wr_burst_data  when mon_ctrl_active = '1' else wr_burst_data;
+  ctrl_wr_burst_len  <= test_wr_burst_len  when ram_test_active_i = '1' else
+                        std_logic_vector(to_unsigned(1, 10)) when mon_ctrl_active = '1' else wr_burst_len;
+  ctrl_wr_burst_addr <= test_wr_burst_addr when ram_test_active_i = '1' else
+                        mon_wr_burst_addr  when mon_ctrl_active = '1' else wr_burst_addr;
+  ctrl_wr_dqm        <= test_wr_dqm        when ram_test_active_i = '1' else
+                        "10"              when mon_ctrl_active = '1' else wr_dqm;
+  ctrl_rd_burst_req  <= test_rd_burst_req  when ram_test_active_i = '1' else
+                        mon_rd_burst_req   when mon_ctrl_active = '1' else rd_burst_req;
+  ctrl_rd_burst_len  <= test_rd_burst_len  when ram_test_active_i = '1' else
+                        std_logic_vector(to_unsigned(1, 10)) when mon_ctrl_active = '1' else rd_burst_len;
+  ctrl_rd_burst_addr <= test_rd_burst_addr when ram_test_active_i = '1' else
+                        mon_rd_burst_addr  when mon_ctrl_active = '1' else rd_burst_addr;
+
+  monitor_mem_rdata <= mon_rdata_reg;
+  monitor_mem_ready <= mon_ready_reg;
+  uart_rx_valid_cpu <= uart_rx_valid when monitor_hold = '0' else '0';
+
+  process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, via_dout,
+          uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr)
   begin
     case dev_sel is
       when DEV_SRAM =>
@@ -181,7 +297,13 @@ begin
           cpu_din <= sdram_dout;
         end if;
       when DEV_ROM =>
-        cpu_din <= rom_dout;
+        if mon_jump_vector_active = '1' and cpu_addr = x"FFFC" then
+          cpu_din <= mon_jump_vector(7 downto 0);
+        elsif mon_jump_vector_active = '1' and cpu_addr = x"FFFD" then
+          cpu_din <= mon_jump_vector(15 downto 8);
+        else
+          cpu_din <= rom_dout;
+        end if;
       when DEV_VIC_TEXT =>
         cpu_din <= vram_dout;
       when DEV_VIA =>
@@ -191,6 +313,27 @@ begin
       when others =>
         cpu_din <= x"FF";
     end case;
+  end process;
+
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset_n = '0' then
+        mon_jump_vector <= (others => '0');
+        mon_jump_reset_cnt <= 0;
+        mon_jump_vector_active <= '0';
+      else
+        if monitor_jump_req = '1' then
+          mon_jump_vector <= monitor_jump_addr;
+          mon_jump_reset_cnt <= 16;
+          mon_jump_vector_active <= '1';
+        elsif mon_jump_reset_cnt > 0 then
+          mon_jump_reset_cnt <= mon_jump_reset_cnt - 1;
+        elsif mon_jump_vector_active = '1' and cpu_addr = x"FFFD" and cpu_sync = '0' then
+          mon_jump_vector_active <= '0';
+        end if;
+      end if;
+    end if;
   end process;
 
   decode_i : entity work.bus_decode
@@ -213,8 +356,8 @@ begin
 
   zp_ram_i : entity work.sync_ram
     generic map (ADDR_WIDTH => 9, ASYNC_READ => false)
-    port map (clk => clk, we => zp_we,
-              addr => cpu_addr(8 downto 0), din => cpu_dout, dout => zp_dout);
+    port map (clk => clk, we => zp_we_mux,
+              addr => zp_addr_mux, din => zp_din_mux, dout => zp_dout);
 
   sdram_if_i : entity work.sdram_if
     port map (
@@ -305,30 +448,180 @@ begin
       ctrl_idle         => sdram_ctrl_idle
     );
 
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset_n = '0' then
+        mon_mem_state     <= M_IDLE;
+        mon_addr_lat      <= (others => '0');
+        mon_wdata_lat     <= (others => '0');
+        mon_we_lat        <= '0';
+        mon_rdata_reg     <= (others => '0');
+        mon_ready_reg     <= '0';
+        mon_ctrl_active   <= '0';
+        mon_wr_burst_req  <= '0';
+        mon_wr_burst_data <= (others => '0');
+        mon_wr_burst_addr <= (others => '0');
+        mon_rd_burst_req  <= '0';
+        mon_rd_burst_addr <= (others => '0');
+      else
+        mon_ready_reg    <= '0';
+        mon_wr_burst_req <= '0';
+        mon_rd_burst_req <= '0';
+
+        -- Decode one monitor memory transaction into the same physical targets
+        -- the CPU uses. This keeps the monitor view honest: VRAM edits update
+        -- VGA immediately, VIA writes drive LEDs, and ROM writes patch the
+        -- loaded shadow-ROM image.
+        case mon_mem_state is
+          when M_IDLE =>
+            mon_ctrl_active <= '0';
+            if monitor_hold = '1' and monitor_mem_req = '1' then
+              mon_addr_lat  <= monitor_mem_addr;
+              mon_wdata_lat <= monitor_mem_wdata;
+              mon_we_lat    <= monitor_mem_we;
+              if unsigned(monitor_mem_addr) >= ADDR_ROM_BASE then
+                if monitor_mem_we = '1' then
+                  mon_mem_state <= M_ROM_WR_WAIT;
+                else
+                  mon_mem_state <= M_ROM_RD_WAIT;
+                end if;
+              elsif unsigned(monitor_mem_addr) >= ADDR_VIC_TEXT_BASE and
+                    unsigned(monitor_mem_addr) <= ADDR_VIC_TEXT_LAST then
+                if monitor_mem_we = '1' then
+                  mon_mem_state <= M_VRAM_WR_WAIT;
+                else
+                  mon_mem_state <= M_VRAM_RD_WAIT;
+                end if;
+              elsif unsigned(monitor_mem_addr) >= ADDR_VIA_BASE and
+                    unsigned(monitor_mem_addr) <= ADDR_VIA_LAST then
+                mon_mem_state <= M_VIA_WAIT;
+              elsif unsigned(monitor_mem_addr) >= ADDR_UART_BASE and
+                    unsigned(monitor_mem_addr) <= ADDR_UART_LAST then
+                mon_mem_state <= M_UART_WAIT;
+              elsif monitor_mem_addr(15) = '1' then
+                mon_rdata_reg <= x"FF";
+                mon_mem_state <= M_READY;
+              elsif monitor_mem_addr(15 downto 9) = "0000000" then
+                mon_mem_state <= M_ZP_WAIT;
+              elsif monitor_mem_we = '1' then
+                mon_wr_burst_data <= x"00" & monitor_mem_wdata;
+                mon_wr_burst_addr <= "000000000" & monitor_mem_addr(14 downto 0);
+                mon_mem_state     <= M_SDR_WR_REQ;
+              else
+                mon_rd_burst_addr <= "000000000" & monitor_mem_addr(14 downto 0);
+                mon_mem_state    <= M_SDR_RD_REQ;
+              end if;
+            end if;
+
+          when M_ZP_WAIT =>
+            mon_mem_state <= M_ZP_READY;
+
+          when M_ZP_READY =>
+            mon_rdata_reg <= zp_dout;
+            mon_mem_state <= M_READY;
+
+          when M_ROM_RD_WAIT =>
+            mon_mem_state <= M_ROM_RD_READY;
+
+          when M_ROM_RD_READY =>
+            mon_rdata_reg <= rom_dout;
+            mon_mem_state <= M_READY;
+
+          when M_ROM_WR_WAIT =>
+            mon_mem_state <= M_READY;
+
+          when M_VRAM_RD_WAIT =>
+            mon_mem_state <= M_VRAM_RD_READY;
+
+          when M_VRAM_RD_READY =>
+            mon_rdata_reg <= vram_dout;
+            mon_mem_state <= M_READY;
+
+          when M_VRAM_WR_WAIT =>
+            mon_mem_state <= M_READY;
+
+          when M_VIA_WAIT =>
+            mon_mem_state <= M_VIA_READY;
+
+          when M_VIA_READY =>
+            mon_rdata_reg <= via_dout;
+            mon_mem_state <= M_READY;
+
+          when M_UART_WAIT =>
+            mon_mem_state <= M_UART_READY;
+
+          when M_UART_READY =>
+            mon_rdata_reg <= uart_dout;
+            mon_mem_state <= M_READY;
+
+          when M_SDR_WR_REQ =>
+            if sdram_ctrl_idle = '1' and sdram_rdy = '1' then
+              mon_ctrl_active  <= '1';
+              mon_wr_burst_req <= '1';
+              if wr_burst_data_req = '1' then
+                mon_mem_state <= M_SDR_WR_WAIT;
+              end if;
+            end if;
+
+          when M_SDR_WR_WAIT =>
+            mon_ctrl_active <= '1';
+            if sdram_ctrl_idle = '1' then
+              mon_mem_state <= M_READY;
+            end if;
+
+          when M_SDR_RD_REQ =>
+            if sdram_ctrl_idle = '1' and sdram_rdy = '1' then
+              mon_ctrl_active <= '1';
+              mon_rd_burst_req <= '1';
+              if rd_burst_data_valid = '1' then
+                mon_rdata_reg <= rd_burst_data(7 downto 0);
+                mon_mem_state <= M_SDR_RD_WAIT;
+              end if;
+            end if;
+
+          when M_SDR_RD_WAIT =>
+            mon_ctrl_active <= '1';
+            if sdram_ctrl_idle = '1' then
+              mon_mem_state <= M_READY;
+            end if;
+
+          when M_READY =>
+            mon_ready_reg <= '1';
+            mon_ctrl_active <= '0';
+            mon_mem_state <= M_IDLE;
+
+          when others =>
+            mon_mem_state <= M_IDLE;
+        end case;
+      end if;
+    end if;
+  end process;
+
   rom_i : entity work.boot_shadow_rom
     generic map (ADDR_WIDTH => 14)
     port map (
       clk       => clk,
-      cpu_addr  => cpu_addr(13 downto 0),
+      cpu_addr  => rom_addr_mux,
       cpu_dout  => rom_dout,
-      load_we   => rom_load_we,
-      load_addr => rom_load_addr,
-      load_data => rom_load_data
+      load_we   => rom_load_we_mux,
+      load_addr => rom_load_addr_mux,
+      load_data => rom_load_data_mux
     );
 
   vram_i : entity work.sync_ram
     generic map (ADDR_WIDTH => 11, ASYNC_READ => false)
     port map (clk => clk, we => vram_we_mux,
-              addr => vram_addr, din => cpu_dout, dout => vram_dout);
+              addr => vram_addr_mux, din => vram_din_mux, dout => vram_dout);
 
   via_i : entity work.via6522
     port map (
       clk       => clk,
       reset_n   => cpu_reset_n,
-      cs        => via_cs,
-      we        => cpu_bus_we,
-      addr      => cpu_addr,
-      din       => cpu_dout,
+      cs        => via_cs_mux,
+      we        => via_we_mux,
+      addr      => via_addr_mux,
+      din       => via_din_mux,
       dout      => via_dout,
       porta_in  => (others => '0'),
       portb_in  => (others => '0'),
@@ -341,13 +634,13 @@ begin
     port map (
       clk      => clk,
       reset_n  => cpu_reset_n,
-      cs       => uart_cs,
-      we       => cpu_bus_we,
-      addr     => cpu_addr,
-      din      => cpu_dout,
+      cs       => uart_cs_mux,
+      we       => uart_we_mux,
+      addr     => uart_addr_mux,
+      din      => uart_din_mux,
       dout     => uart_dout,
       rx_data  => uart_rx_data,
-      rx_valid => uart_rx_valid,
+      rx_valid => uart_rx_valid_cpu,
       tx_data  => uart_tx_data,
       tx_valid => uart_tx_valid,
       tx_busy  => uart_tx_busy,

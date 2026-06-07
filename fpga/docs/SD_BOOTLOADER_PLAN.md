@@ -80,8 +80,13 @@ reset_n low/high
 | `rtl/mem/boot_shadow_rom.vhd` | 16 KB RAM, loader-write port, CPU-read port |
 | `rtl/boot/sd_rom_loader.v` | Requests sectors and writes valid bytes to shadow ROM |
 | `rtl/sbc_t65_boot_top.vhd` | T65 SBC core with boot-loaded ROM at `$C000-$FFFF` |
-| `rtl/boards/pix16_sbc_sd_boot_top.vhd` | PIX16 board top with SD pins and CPU gated by `boot_done` |
+| `rtl/sbc_t65_sdram_boot_top.vhd` | Current SBC core with SDRAM main RAM, shadow ROM, VGA, and monitor bus master |
+| `rtl/boards/pix16_sbc_sd_boot_top.vhd` | PIX16 board top with SD pins, boot VGA, UART monitor, and CPU gated by boot/RAM-test status |
+| `rtl/boot/boot_vga_debug.vhd` | VGA boot/status screen for SD, loader, and RAM-test state |
+| `rtl/boot/boot_sdram_test.vhd` | SDRAM self-test before CPU release |
+| `rtl/boot/uart_debug_monitor.vhd` | Hardware monitor that can patch the loaded shadow ROM after boot |
 | `tools/make_sd_boot_image.py` | Creates raw SD boot image from `kernel.rom + ehbasic.rom` |
+| `tools/upload_monitor_hex.py` | Streams a binary into shadow ROM through the UART monitor |
 
 ## Integration Notes
 
@@ -111,6 +116,16 @@ xtclsh scripts/create_sd_boot_ise_project.tcl
 
 After synthesis, program the FPGA bitstream once. For ROM updates, regenerate
 `sim/generated/sbc_ehbasic_sd.img` and write that raw image to the SD card.
+
+For fast development, the same shadow-ROM RAM can be rewritten after boot through
+the UART monitor:
+
+```sh
+python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+```
+
+This upload path is volatile: reset or reprogramming reloads the SD-card image.
+See `UART_MONITOR.md` for the command set and loader protocol.
 
 ## Current Verification
 

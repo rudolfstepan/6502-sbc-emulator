@@ -2,7 +2,8 @@
 --
 -- Funktionsprinzip (aehnlich C64):
 --   Waehrend H-Blank (160 Pixel-Takte = 320 System-Takte) stiehlt der VIC
---   exakt 40 System-Takte vom CPU-Bus (einen pro Zeichen der Zeile).
+--   41 System-Takte vom CPU-Bus: einen Vorlauf-Takt fuer synchrones VRAM
+--   und danach einen pro Zeichen der Zeile.
 --   Die CPU wird dabei via RDY gehalten. Kein Dual-Port-RAM noetig.
 --
 --   Waehrend der sichtbaren Zeile laeuft die CPU ungehindert; der VIC
@@ -26,7 +27,7 @@ entity vic_vga is
     -- Bus-Steal-Interface
     -- Wenn vic_stealing='1': VIC treibt vic_addr, liest vram_data, CPU gehalten
     vic_addr     : out addr_t;
-    vram_data    : in  data_t;      -- async VRAM-Ausgabe
+    vram_data    : in  data_t;      -- synchrones VRAM, Daten kommen 1 Takt nach vic_addr
     vic_stealing : out std_logic;
 
     -- Char-ROM (kombinatorisch)
@@ -72,9 +73,11 @@ architecture rtl of vic_vga is
   attribute ram_style of linebuf : signal is "distributed";
 
   -- Fetch-Zustandsautomat
-  signal fetching  : std_logic := '0';
-  signal fetch_col : natural range 0 to 39 := 0;
-  signal fetch_row : natural range 0 to 24 := 0;
+  signal fetching       : std_logic := '0';
+  signal fetch_col      : natural range 0 to 39 := 0;
+  signal fetch_store_col : natural range 0 to 39 := 0;
+  signal fetch_row      : natural range 0 to 24 := 0;
+  signal fetch_valid    : std_logic := '0';
 
   -- Anzeige-Geometrie (kombinatorisch aus Scanzaehlern)
   -- Breiter Wertebereich um Out-of-Bounds bei Blanking zu vermeiden
@@ -124,17 +127,22 @@ begin
   end process;
 
   -- Zeilenpuffer-Lade-Automat
-  -- Laeuft genau 40 System-Takte am Anfang jedes H-Blank
+  -- Laeuft 41 System-Takte am Anfang jedes H-Blank
   -- pre-fetcht fuer die NAECHSTE Scan-Zeile
+  -- Das VRAM ist synchron: vic_addr wird einen Takt vor dem Speichern
+  -- ausgegeben. Ohne diesen Vorlauf landet besonders Spalte 0 mit altem
+  -- RAM-Datenwert im Zeilenpuffer.
   process(clk)
     variable nv : natural range 0 to V_TOT - 1;
     variable nr : natural range 0 to 24;
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
-        fetching  <= '0';
-        fetch_col <= 0;
-        fetch_row <= 0;
+        fetching        <= '0';
+        fetch_col       <= 0;
+        fetch_store_col <= 0;
+        fetch_row       <= 0;
+        fetch_valid     <= '0';
       else
         if fetching = '0' then
           -- Trigger beim letzten sichtbaren Pixel
@@ -149,17 +157,30 @@ begin
             else
               nr := 0;
             end if;
-            fetch_row <= nr;
-            fetch_col <= 0;
-            fetching  <= '1';
+            fetch_row       <= nr;
+            fetch_col       <= 0;
+            fetch_store_col <= 0;
+            fetch_valid     <= '0';
+            fetching        <= '1';
           end if;
         else
-          -- Ein gestohlener Takt pro Zeichen: async VRAM-Ausgabe erfassen
-          linebuf(fetch_col) <= vram_data;
-          if fetch_col = 39 then
-            fetching  <= '0';
+          -- Einen Takt nach Ausgabe der Adresse liegt das synchrone VRAM-Datum an.
+          if fetch_valid = '1' then
+            linebuf(fetch_store_col) <= vram_data;
+            if fetch_store_col = 39 then
+              fetching    <= '0';
+              fetch_valid <= '0';
+            else
+              fetch_store_col <= fetch_store_col + 1;
+            end if;
           else
+            fetch_valid <= '1';
+          end if;
+
+          if fetch_col < 39 then
             fetch_col <= fetch_col + 1;
+          else
+            fetch_col <= 39;
           end if;
         end if;
       end if;

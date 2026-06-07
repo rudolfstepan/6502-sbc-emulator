@@ -2,6 +2,11 @@
 
 Build and program the 6502 SBC minimal system onto the PIX16 Spartan-6 FPGA board.
 
+The current firmware-development target is the SD boot build
+`pix16_sbc_sd_boot_top`. The older `pix16_sbc_minimal_top` build remains a small
+VGA smoke test and is still documented below because it is useful when isolating
+video or T65 basics.
+
 ## Hardware
 
 - PIX16 development board — Xilinx XC6SLX16-2FTG256
@@ -16,6 +21,68 @@ Xilinx ISE Design Suite 14.7 (last version supporting Spartan-6).
 ---
 
 ## Build with ISE 14.7
+
+## Current SD Boot Build
+
+Use this path for the board setup that supports SD-card ROM loading, SDRAM main
+RAM, the boot VGA screen, RAM self-test, and the UART hardware monitor.
+
+### Step 0 — Create or refresh the project
+
+```bash
+cd fpga
+xtclsh scripts/create_sd_boot_ise_project.tcl
+```
+
+If `xtclsh` is not in the normal shell PATH, run the command from the Xilinx ISE
+Command Prompt.
+
+Expected active settings:
+
+| Setting | Value |
+| --- | --- |
+| Top module | `pix16_sbc_sd_boot_top` |
+| Constraint file | `../constraints/pix16_sd_boot.ucf` |
+| Board top | `rtl/boards/pix16_sbc_sd_boot_top.vhd` |
+| Core top | `rtl/sbc_t65_sdram_boot_top.vhd` |
+| Shadow ROM | `rtl/mem/boot_shadow_rom.vhd`, 16 KB at `$C000-$FFFF` |
+
+### Step 1 — Build the SD image
+
+```bash
+cd fpga
+make sd-boot-image
+```
+
+Write `sim/generated/sbc_ehbasic_sd.img` as a raw image to the SD card. The FPGA
+loads this image into shadow ROM after reset.
+
+### Step 2 — Build and program the bitstream
+
+Open `fpga/fpga/fpga.xise` in ISE, select `pix16_sbc_sd_boot_top` as top if it
+is not already selected, then run implementation and bitgen. Program the
+generated `pix16_sbc_sd_boot_top.bit` with iMPACT.
+
+### Step 3 — Verify SD boot and monitor
+
+- VGA first shows the boot status screen.
+- The screen switches to the SBC VGA output after SD load and SDRAM test pass.
+- LED 0 indicates SD/boot-done status.
+- LED 1 is driven by VIA Port B bit 0 after boot.
+- Press `KEY0` to enter the UART monitor.
+
+Live ROM upload over the monitor:
+
+```bash
+python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+```
+
+See [UART Monitor](./docs/UART_MONITOR.md) for commands such as memory dump,
+byte edit, disassembly, `L` hex load, and `G` execute.
+
+---
+
+## Minimal VGA Smoke-Test Build
 
 ### Step 0 — Build the ROM (optional, pre-built hex is checked in)
 
@@ -120,9 +187,10 @@ BEREIT.
 ## Architecture Summary
 
 The minimal SBC uses **C64-style bus stealing**: the VIC and CPU share a single-port
-video RAM. During each horizontal blanking interval the VIC takes the bus for 40 clock
-cycles, prefetches 40 character codes into an internal line buffer, and then releases
-the bus. The CPU is halted during this window via the T65 `RDY` pin.
+video RAM. During each horizontal blanking interval the VIC takes the bus for 41 clock
+cycles: one setup cycle for synchronous VRAM read latency, then 40 cycles to prefetch
+the character row into an internal line buffer. The CPU is halted during this window
+via the T65 `RDY` pin.
 
 Zero page and stack (`$0000-$01FF`) are implemented as internal FPGA RAM. This
 keeps IRQ entry/return, `JSR/RTS`, stack pushes/pulls, and zero-page
@@ -131,14 +199,14 @@ at `$0200` from the firmware's point of view.
 
 ```text
 H-blank (320 system clocks per line)
-├── VIC steals 40 clocks → loads line buffer from VRAM
-└── CPU free for remaining 280 clocks
+├── VIC steals 41 clocks -> loads line buffer from synchronous VRAM
+└── CPU free for remaining 279 clocks
 
 H-visible (1280 system clocks per line)
 └── CPU runs freely; VIC renders from line buffer (no bus access)
 ```
 
-CPU overhead: 2.5 % of total system clocks.
+CPU overhead: about 2.6 % of total system clocks.
 
 ---
 

@@ -1,0 +1,17 @@
+PROMGEN: Xilinx Prom Generator P.20131013
+Copyright (c) 1995-2013 Xilinx, Inc.  All rights reserved.
+
+promgen -w -p mcs -c FF -o Z:\6502-sbc-emulator\fpga\fpga\//rom-upload-prom -s 4096 -u 0000 Z:/6502-sbc-emulator/fpga/fpga/pix16_sbc_sd_boot_top.bit -spi 
+
+PROM \\vmware-host\shared folders\6502-sbc-emulator\fpga\fpga\rom-upload-prom.prm map: Sun Jun 07 10:52:05 2026
+
+Calculating PROM checksum with fill value ff
+
+Format        Mcs86 (32-bit)
+Size          4096K
+PROM start    0000:0000
+PROM end      003f:ffff
+PROM checksum 3962e154
+
+        Addr1        Addr2                     Date File(s)
+    0000:0000    0007:1543     Jun 07 10:47:45 2026 Z:/6502-sbc-emulator/fpga/fpga/pix16_sbc_sd_boot_top.bit

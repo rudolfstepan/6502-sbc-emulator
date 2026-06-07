@@ -12,6 +12,8 @@ Welcome to the 6502 SBC FPGA documentation. This directory contains comprehensiv
 - **[Component Reference](./05_COMPONENTS.md)** - Detailed specs for major components
 - **[Simulation](./06_SIMULATION.md)** - Running and analyzing simulations
 - **[Development Guide](./07_DEVELOPMENT.md)** - Contributing and development workflow
+- **[UART Monitor](./UART_MONITOR.md)** - Hardware monitor commands and live ROM upload over UART
+- **[SD Bootloader](./SD_BOOTLOADER_PLAN.md)** - SD-card shadow-ROM boot flow
 - **[Roadmap](./roadmap.md)** - Project roadmap and milestones
 - **[PIX16 Build Guide](../BUILD_PIX16.md)** - Xilinx ISE build and programming guide for the PIX16 Spartan-6 board
 - **[Hardware Support](../HARDWARE_SUPPORT.md)** - PIX16 board pinout, target device, and VGA smoke-test notes
@@ -29,6 +31,8 @@ fpga/
 │   ├── 05_COMPONENTS.md    Component reference
 │   ├── 06_SIMULATION.md    Simulation guide
 │   ├── 07_DEVELOPMENT.md   Development guide
+│   ├── UART_MONITOR.md     UART hardware monitor and ROM upload
+│   ├── SD_BOOTLOADER_PLAN.md SD-card shadow-ROM boot flow
 │   └── roadmap.md          Project roadmap
 ├── rtl/                     VHDL source code
 │   ├── cpu/                CPU adapters
@@ -48,6 +52,8 @@ The FPGA maintains 100% software compatibility with the C emulator:
 - 8-bit data bus
 - Same memory map with peripherals at identical addresses
 - IRQ logic combining VIA, UART, and VIC interrupts
+- SD boot top loads the 16 KB `$C000-$FFFF` ROM window into shadow RAM
+- UART hardware monitor can inspect/patch RAM, VRAM, I/O, and shadow ROM
 
 ### Design Approach
 - **Modular components**: Each peripheral is independently testable
@@ -93,13 +99,15 @@ The FPGA maintains 100% software compatibility with the C emulator:
 - ✅ UART 6551 partial implementation
 - ✅ PIX16 ISE project targeting `xc6slx16-ftg256-2`
 - ✅ Board-level VGA smoke test with ROM-scripted welcome text
+- ✅ PIX16 SD boot top with boot VGA status, SDRAM RAM test, and UART monitor
+- ✅ Live 16 KB ROM upload into shadow ROM over UART
 - ✅ Comprehensive documentation
 
 **In Progress**
 - VIC video controller expansion
 - Complete UART implementation
 - Full VIA functionality
-- Real T65-driven board boot flow
+- Larger ROM and BASIC bring-up on the SD boot top
 
 ## Key Files
 
@@ -109,7 +117,10 @@ The FPGA maintains 100% software compatibility with the C emulator:
 | `rtl/bus_decode.vhd` | Address decoder |
 | `rtl/sbc_top.vhd` | Main system integration (test mode) |
 | `rtl/sbc_t65_top.vhd` | System with T65 CPU |
-| `rtl/pix16_top.vhd` | PIX16 board top for the ISE project |
+| `rtl/boards/pix16_sbc_sd_boot_top.vhd` | Active PIX16 SD-card/SDRAM/monitor board top |
+| `rtl/sbc_t65_sdram_boot_top.vhd` | T65 SBC core with SDRAM, shadow ROM, VGA, and monitor bus access |
+| `rtl/boot/uart_debug_monitor.vhd` | UART machine-language monitor |
+| `rtl/boards/pix16_sbc_minimal_top.vhd` | Minimal PIX16 VGA smoke-test board top |
 | `../fpga/fpga.xise` | Xilinx ISE project for `xc6slx16-ftg256-2` |
 | `rtl/peripherals/*.vhd` | Peripheral controllers |
 | `rtl/mem/*.vhd` | Memory components |

@@ -17,7 +17,7 @@ RTL = rtl/sbc_pkg.vhd rtl/bus_decode.vhd rtl/mem/sync_ram.vhd rtl/mem/rom.vhd \
       rtl/peripherals/uart_rx_ser.vhd rtl/peripherals/uart_tx_ser.vhd \
       rtl/peripherals/vic_pixel_gen.vhd rtl/peripherals/vic_vga.vhd \
       rtl/boot/boot_debug_uart.vhd rtl/boot/boot_vga_debug.vhd \
-      rtl/boot/boot_sdram_test.vhd \
+      rtl/boot/boot_sdram_test.vhd rtl/boot/uart_debug_monitor.vhd \
       rtl/cpu/t65_adapter.vhd rtl/cpu6502_slot.vhd rtl/sbc_top.vhd \
       rtl/sbc_t65_top.vhd rtl/sbc_t65_boot_top.vhd rtl/sbc_t65_sdram_boot_top.vhd
 SIM = sim/tb_bus_decode.vhd sim/tb_sbc_reset.vhd sim/tb_sbc_bus_write.vhd \

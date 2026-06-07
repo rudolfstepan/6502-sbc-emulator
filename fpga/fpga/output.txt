@@ -2,7 +2,10 @@ Storage Target: SPI Flash Single FPGA
 16M
 Auto Select Storage Device
 FF
-pix16_sbc_sd_boot_top
+rom-upload-prom
 Z:\6502-sbc-emulator\fpga\fpga\
 
 MCS
+
+MCS
+

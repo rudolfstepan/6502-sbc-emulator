@@ -2,7 +2,48 @@
 
 ## System Design
 
-The 6502 SBC FPGA is a synthesizable hardware implementation of a 6502-based single-board computer targeting the PIX16 Spartan-6 development board. The active implementation is `sbc_minimal_top` — a minimal but complete system with CPU, memory, ROM, and a VGA-capable VIC that uses bus stealing to share a single-port video RAM with the CPU.
+The 6502 SBC FPGA is a synthesizable hardware implementation of a 6502-based single-board computer targeting the PIX16 Spartan-6 development board. The active board bring-up path is `pix16_sbc_sd_boot_top`: T65 CPU, SDRAM-backed RAM, SD-loaded 16 KB shadow ROM, VGA text output, VIA, UART, boot status screen, RAM self-test, and a UART hardware monitor. The older `sbc_minimal_top` remains useful as a compact VGA/T65 smoke-test design.
+
+---
+
+## SD Boot SBC — Active Board Bring-Up Path
+
+`pix16_sbc_sd_boot_top` wraps the current hardware workflow:
+
+```text
+PIX16 board
+  -> SD card SPI core reads raw boot image
+  -> sd_rom_loader validates sector 0 and streams sectors 1..32
+  -> boot_shadow_rom stores the 16 KB ROM window for $C000-$FFFF
+  -> boot_sdram_test verifies the SDRAM-backed main RAM path
+  -> T65 is released and fetches reset vector from loaded shadow ROM
+```
+
+The board top also multiplexes the VGA output:
+
+- during SD load and RAM test: `boot_vga_debug` shows status and errors,
+- after successful boot: the SBC's `vic_vga` output is shown.
+
+The UART output is priority-multiplexed:
+
+1. hardware monitor while active,
+2. boot debug text while boot debug is active,
+3. 6502 UART output.
+
+Pressing `KEY0` enters `uart_debug_monitor`, holds the CPU, and grants the
+monitor direct read/write access to RAM, VRAM, VIA, UART, and shadow ROM. See
+[UART Monitor](./UART_MONITOR.md) for commands and the live ROM upload workflow.
+
+### Active Memory Map
+
+| Address Range | Size | Device | Notes |
+| --- | --- | --- | --- |
+| $0000-$01FF | 512 B | Internal FPGA RAM | Zero page and stack, no external wait states |
+| $0200-$7FFF | ~31.5 KB | SDRAM-backed RAM | Byte accesses through the SDRAM interface |
+| $8000-$87FF | 2 KB | VIC text VRAM | Shared by CPU/monitor/VIC |
+| $8800-$880F | 16 B | VIA 6522 | Port B bit 0 -> board LED 1 after boot |
+| $8810-$8813 | 4 B | UART 6551 | CPU UART registers |
+| $C000-$FFFF | 16 KB | Shadow ROM RAM | Loaded from SD or patched by UART monitor |
 
 ---
 
@@ -56,7 +97,7 @@ The 6502 SBC FPGA is a synthesizable hardware implementation of a 6502-based sin
 
 ### Bus Stealing — C64-Style Shared Bus
 
-The VIC and CPU share a single-port VRAM via a bus multiplexer. During each horizontal blanking interval the VIC takes control of the bus for exactly 40 clock cycles to prefetch one complete character row into its internal line buffer. The CPU is halted during this time via the T65 `RDY` pin.
+The VIC and CPU share a single-port VRAM via a bus multiplexer. During each horizontal blanking interval the VIC takes control of the bus for 41 clock cycles to prefetch one complete character row into its internal line buffer. The first cycle presents the address to synchronous VRAM; the following 40 cycles latch the returned character bytes. The CPU is halted during this time via the T65 `RDY` pin.
 
 ```
 One scan line = 1600 system clock cycles (800 pixel clocks × 2)
@@ -66,14 +107,14 @@ One scan line = 1600 system clock cycles (800 pixel clocks × 2)
 │   VIC displays from line buffer (no bus access)                 │
 │                                                                 │
 ├── H-Blank (320 cycles) ──────────────────────────────────────┤
-│   ├── 40 stolen cycles ──────────────────────────────────────┤ │
-│   │   VIC drives VRAM address, reads char code, stores in    │ │
-│   │   line buffer. CPU held (RDY=0). One char per cycle.     │ │
-│   ├── 280 remaining cycles ──────────────────────────────────┤ │
+│   ├── 41 stolen cycles ──────────────────────────────────────┤ │
+│   │   1 setup cycle + 40 synchronous VRAM reads into linebuf │ │
+│   │   CPU held (RDY=0) while the VIC owns the VRAM bus.      │ │
+│   ├── 279 remaining cycles ──────────────────────────────────┤ │
 │   │   CPU runs freely                                         │ │
 ```
 
-**CPU overhead:** 40 stolen out of 1600 = 2.5% per scan line.
+**CPU overhead:** 41 stolen out of 1600 = about 2.6% per scan line.
 
 ### Memory Map (Minimal SBC)
 
@@ -200,5 +241,6 @@ The VGA pixel clock is 25 MHz, derived from a `pixel_ce` toggle inside `vic_vga`
 **See Also:**
 
 - [Modules Reference](./02_MODULES.md)
+- [UART Monitor](./UART_MONITOR.md)
 - [Build Instructions](../BUILD_PIX16.md)
 - [Simulation Guide](./06_SIMULATION.md)

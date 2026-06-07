@@ -30,11 +30,25 @@ The checked-in Xilinx ISE project for the PIX16 board lives at:
 fpga/fpga/fpga.xise
 ```
 
-It targets `xc6slx16-ftg256-2` with `rtl/pix16_top.vhd` as the implementation top
-and `constraints/pix16.ucf` for the board pinout. The current bitstream flow is a
-VGA smoke test: `cpu6502_slot.vhd` executes the ROM script in
-`rtl/mem/pix16_welcome_test.hex`, writes the welcome text into VIC text RAM, and
-`vic_pixel_gen.vhd` renders it as 640x480 VGA output.
+It targets `xc6slx16-ftg256-2`. The current hardware bring-up target is
+`rtl/boards/pix16_sbc_sd_boot_top.vhd` with `constraints/pix16_sd_boot.ucf`.
+This top integrates the T65 CPU, SDRAM-backed main RAM, 2 KB text VRAM, VIA,
+UART, VGA, SD-card ROM loading, a boot status screen, an SDRAM self-test, and a
+UART hardware monitor.
+
+The older `pix16_sbc_minimal_top` flow remains useful as a small VGA/T65 smoke
+test. The SD boot top is the active path for firmware work because it loads the
+16 KB ROM window `$C000-$FFFF` into writable shadow RAM.
+
+For fast iteration, press the monitor button and upload a ROM over UART without
+rewriting the SD card:
+
+```sh
+python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+```
+
+See `docs/UART_MONITOR.md` for monitor commands, memory ranges, and ROM upload
+details.
 
 ISE build products are intentionally ignored by `.gitignore`; `fpga.xise` is the
 project file that should be kept under version control.
@@ -135,6 +149,10 @@ If `xtclsh` is not in your normal shell PATH, run the project command from the
 Xilinx ISE Command Prompt. The image file is
 `sim/generated/sbc_ehbasic_sd.img` and contains `kernel.rom + ehbasic.rom` for
 CPU addresses `$C000-$FFFF`.
+
+The SD image is persistent across FPGA resets. The UART monitor upload is a
+development shortcut that writes the same shadow-ROM RAM after boot and is lost
+on reset/reprogramming.
 
 ## Memory Map
 
