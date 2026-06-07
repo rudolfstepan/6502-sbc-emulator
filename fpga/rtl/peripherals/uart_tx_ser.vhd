@@ -1,6 +1,6 @@
 -- UART 8N1 Serializer
 -- Converts parallel byte + valid-pulse to a physical RS-232 bit stream.
--- Default: 115200 baud @ 50 MHz.  Change generics as needed.
+-- Default: 230400 baud @ 50 MHz.  Change generics as needed.
 --
 -- Protocol: 1 start bit (low), 8 data bits LSB-first, 1 stop bit (high).
 -- 'busy' is high from the start bit until the stop bit completes.
@@ -12,7 +12,7 @@ use ieee.numeric_std.all;
 entity uart_tx_ser is
   generic (
     CLK_HZ : positive := 50_000_000;
-    BAUD   : positive := 115_200
+    BAUD   : positive := 230_400
   );
   port (
     clk     : in  std_logic;
@@ -30,7 +30,7 @@ architecture rtl of uart_tx_ser is
 
   -- 10 bits total: [0]=start, [1..8]=data LSB-first, [9]=stop
   signal sr       : std_logic_vector(9 downto 0);
-  signal baud_cnt : unsigned(8 downto 0);          -- 0 .. BAUD_DIV-1 (max ~434)
+  signal baud_cnt : unsigned(8 downto 0);          -- 0 .. BAUD_DIV-1
   signal bit_cnt  : unsigned(3 downto 0);          -- 0 .. 9
   signal active   : std_logic;
 

@@ -74,7 +74,7 @@ generated `pix16_sbc_sd_boot_top.bit` with iMPACT.
 Live ROM upload over the monitor:
 
 ```bash
-python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+python tools/upload_monitor_hex.py --build-demo --port COM15 --baud 230400 --run --verbose
 ```
 
 See [UART Monitor](./docs/UART_MONITOR.md) for commands such as memory dump,

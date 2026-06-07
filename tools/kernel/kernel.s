@@ -14,13 +14,11 @@
 ;   $C018  JMP SETCURS     Set cursor  (X=col, Y=row)
 ;   $C01B  JMP SCROLL      Scroll screen up one line
 ;
-; Zero page (kernel uses $F2-$F7 -- MS BASIC uses only $00-$8B):
-;   $F2  SCRPTR_LO  screen pointer, low byte
-;   $F3  SCRPTR_HI  screen pointer, high byte
-;   $F4  TMPPTR_LO  temp/scroll pointer, low byte
-;   $F5  TMPPTR_HI  temp/scroll pointer, high byte
-;   $F6  STRPTR_LO  string output pointer, low byte
-;   $F7  STRPTR_HI  string output pointer, high byte
+; EhBASIC owns almost all of zero page up to $FF. It leaves $EC-$EE unused.
+;   $EC  CURSOR_X at rest; temporary screen pointer low byte inside CHROUT
+;   $ED  CURSOR_Y at rest; temporary screen pointer high byte inside CHROUT
+;   $EE  STRPTR_LO  STROUT temporary pointer, low byte
+;   $EF  STRPTR_HI  STROUT temporary pointer, high byte; saved/restored
 ;
 ; Hardware:
 ;   VIC video RAM  $8000-$87FF  (40 x 25 = 1000 bytes)
@@ -59,14 +57,15 @@ UART_RDRF   = $08
 DISK_CMD_DIR = $03
 DISK_ST_OK   = $02
 
-CURSOR_X    = VIC_CURSOR_X
-CURSOR_Y    = VIC_CURSOR_Y
-SCRPTR_LO   = $F2
-SCRPTR_HI   = $F3
-TMPPTR_LO   = $F4
-TMPPTR_HI   = $F5
-STRPTR_LO   = $F6
-STRPTR_HI   = $F7
+; Cursor position is tracked in ZP BRAM (not VIC hardware registers).
+; VIC_CURSOR_X/Y ($9001/$9002) are write-only in this FPGA build —
+; the VIC reads VRAM directly and has no hardware cursor state.
+CURSOR_X    = $EC
+CURSOR_Y    = $ED
+SCRPTR_LO   = $EC
+SCRPTR_HI   = $ED
+STRPTR_LO   = $EE
+STRPTR_HI   = $EF
 
 CMD_BUF     = $0200     ; command line buffer in page 2 (64 bytes)
 CMD_MAX     = 38        ; max usable chars per command line
@@ -134,46 +133,69 @@ IRQ_HANDLER:
     jsr uart_put            ; mirror to UART (preserves A, $0D -> CR+LF)
 
     cmp #$0D
-    beq newline
+    beq newline_cr
     cmp #$0A
-    beq done                ; ignore LF (0x0A) - only CR (0x0D) triggers newline
+    beq restore             ; ignore LF (0x0A) - only CR (0x0D) triggers newline
     cmp #$08
     beq backspace
 
     ; --- normal printable character ---
-    jsr calc_ptr
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    tya
+    pha
+    txa
+    pha
+    jsr calc_ptr_xy
     tsx
-    lda $0103,x             ; get saved A
+    lda $0105,x             ; get saved A below cursor scratch bytes
     ldy #0
     sta (SCRPTR_LO),y      ; write character
-    inc CURSOR_X
-    lda CURSOR_X
-    cmp #COLS
+    pla
+    tax
+    pla
+    tay
+    inx
+    cpx #COLS
     bcc done
     ; fall through to newline
 newline:
-    lda #0
-    sta CURSOR_X
-    inc CURSOR_Y
-    lda CURSOR_Y
-    cmp #ROWS
+    ldx #0
+    iny
+    jmp newline_check
+newline_cr:
+    ldx #0
+    ldy CURSOR_Y
+    iny
+newline_check:
+    cpy #ROWS
     bcc done
     jsr SCROLL
-    lda #(ROWS-1)
-    sta CURSOR_Y
+    ldy #(ROWS-1)
     jmp done
 
 backspace:
-    lda CURSOR_X
-    beq done
-    dec CURSOR_X
-    jsr calc_ptr
+    ldx CURSOR_X
+    beq restore
+    dex
+    ldy CURSOR_Y
+    tya
+    pha
+    txa
+    pha
+    jsr calc_ptr_xy
     lda #$20
     ldy #0
     sta (SCRPTR_LO),y
-    jmp done
+    pla
+    tax
+    pla
+    tay
 
 done:
+    stx CURSOR_X
+    sty CURSOR_Y
+restore:
     ; Restore registers (reverse order)
     pla
     tay
@@ -268,6 +290,13 @@ loop:
 ; Note: Compatible with MS BASIC calling convention
 ; ------------------------------------------------------------
 .proc STROUT
+    pha                     ; save argument low byte while preserving temp ptr
+    lda STRPTR_LO
+    pha
+    lda STRPTR_HI
+    pha
+    tsx
+    lda $0103,x             ; original A argument
     sta STRPTR_LO           ; store pointer
     sty STRPTR_HI
 loop:
@@ -280,6 +309,11 @@ loop:
     inc STRPTR_HI
     jmp loop
 done:
+    pla
+    sta STRPTR_HI
+    pla
+    sta STRPTR_LO
+    pla                     ; discard saved argument low byte
     rts
 .endproc
 
@@ -317,57 +351,55 @@ done:
 ; SCROLL -- scroll the screen up one line, clear bottom row
 ; ------------------------------------------------------------
 .proc SCROLL
-    ; source: row 1  = VIC_BASE + COLS  = $8028
-    lda #<(VIC_BASE + COLS)
-    sta TMPPTR_LO
-    lda #>(VIC_BASE + COLS)
-    sta TMPPTR_HI
-    ; dest:   row 0  = VIC_BASE         = $8000
-    lda #<VIC_BASE
-    sta SCRPTR_LO
-    lda #>VIC_BASE
-    sta SCRPTR_HI
-    ; copy 24 * 40 = 960 ($03C0) bytes
-    ldy #0
+    ; Copy 24 * 40 = 960 bytes from row 1 to row 0 without using a second
+    ; zero-page pointer; EhBASIC leaves only one safe ZP pointer pair.
     ldx #0
-loop:
-    lda (TMPPTR_LO),y
-    sta (SCRPTR_LO),y
-    iny
-    bne no_carry
-    inc TMPPTR_HI
-    inc SCRPTR_HI
+copy0:
+    lda VIC_BASE + COLS,x
+    sta VIC_BASE,x
     inx
-no_carry:
-    cpx #3
-    bne loop
-    cpy #192                ; $C0 = 960 - 3*256
-    bne loop
+    bne copy0
+
+copy1:
+    lda VIC_BASE + COLS + $100,x
+    sta VIC_BASE + $100,x
+    inx
+    bne copy1
+
+copy2:
+    lda VIC_BASE + COLS + $200,x
+    sta VIC_BASE + $200,x
+    inx
+    bne copy2
+
+copy3:
+    lda VIC_BASE + COLS + $300,x
+    sta VIC_BASE + $300,x
+    inx
+    cpx #192                ; $C0 = remaining bytes in the fourth page
+    bne copy3
+
     ; clear last row: VIC_BASE + 24*40 = $83C0
-    lda #<(VIC_BASE + (ROWS-1)*COLS)
-    sta SCRPTR_LO
-    lda #>(VIC_BASE + (ROWS-1)*COLS)
-    sta SCRPTR_HI
     lda #$20
-    ldy #0
+    ldx #0
 clr:
-    sta (SCRPTR_LO),y
-    iny
-    cpy #COLS
+    sta VIC_BASE + (ROWS-1)*COLS,x
+    inx
+    cpx #COLS
     bne clr
     rts
 .endproc
 
 ; ------------------------------------------------------------
-; calc_ptr -- set SCRPTR = VIC_BASE + CURSOR_Y*COLS + CURSOR_X
+; calc_ptr_xy -- set SCRPTR = VIC_BASE + Y*COLS + X
 ;             (internal helper, not in jump table)
 ; ------------------------------------------------------------
-.proc calc_ptr
+.proc calc_ptr_xy
     lda #<VIC_BASE
     sta SCRPTR_LO
     lda #>VIC_BASE
     sta SCRPTR_HI
-    ldy CURSOR_Y
+    cpy #0
     beq add_x
 mul_loop:
     clc
@@ -382,7 +414,8 @@ no_carry:
 add_x:
     clc
     lda SCRPTR_LO
-    adc CURSOR_X
+    txa
+    adc SCRPTR_LO
     sta SCRPTR_LO
     bcc done
     inc SCRPTR_HI

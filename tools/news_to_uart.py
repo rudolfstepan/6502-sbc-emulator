@@ -2,7 +2,7 @@
 """Send RSS/Atom headlines to the FPGA UART console.
 
 Default serial settings match the FPGA UART serializer/deserializer:
-COM15, 115200 baud, 8N1.
+COM15, 230400 baud, 8N1.
 
 Requires pyserial:
     python -m pip install pyserial
@@ -158,7 +158,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
         description="Fetch RSS/Atom headlines and send them to the FPGA UART."
     )
     parser.add_argument("--port", default="COM15", help="serial port, default: COM15")
-    parser.add_argument("--baud", type=int, default=115200, help="baud rate, default: 115200")
+    parser.add_argument("--baud", type=int, default=230400, help="baud rate, default: 230400")
     parser.add_argument(
         "--interval",
         type=float,

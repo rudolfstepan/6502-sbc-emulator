@@ -21,7 +21,7 @@ import time
 from pathlib import Path
 
 DEFAULT_PORT = "COM15"
-DEFAULT_BAUD = 115200
+DEFAULT_BAUD = 230400
 DEFAULT_ADDR = 0xC000
 DEFAULT_IMAGE = Path(__file__).resolve().parent / "roms" / "upload_demo.rom"
 
@@ -42,8 +42,8 @@ def build_demo() -> None:
 
 
 def hex_lines(data: bytes, bytes_per_line: int) -> list[str]:
-    # The FPGA monitor accepts plain two-digit hex bytes. Keeping lines short
-    # gives the UART receiver and command parser plenty of slack at 115200 baud.
+    # The FPGA monitor accepts plain two-digit hex bytes. Keeping lines modest
+    # gives the UART receiver and command parser slack while keeping uploads quick.
     lines = []
     for offset in range(0, len(data), bytes_per_line):
         chunk = data[offset : offset + bytes_per_line]
@@ -125,12 +125,12 @@ def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("image", nargs="?", default=DEFAULT_IMAGE, help="binary image to upload")
     parser.add_argument("--port", default=DEFAULT_PORT, help="serial port, default COM15")
-    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD, help="baud rate, default 115200")
+    parser.add_argument("--baud", type=int, default=DEFAULT_BAUD, help="baud rate, default 230400")
     parser.add_argument("--address", type=lambda s: int(s, 0), default=DEFAULT_ADDR, help="load address")
     parser.add_argument("--length", type=lambda s: int(s, 0), help="limit upload length")
-    parser.add_argument("--bytes-per-line", type=int, default=16, help="hex bytes per monitor line")
-    parser.add_argument("--line-delay", type=float, default=0.03, help="delay after each data line")
-    parser.add_argument("--command-delay", type=float, default=0.08, help="delay after monitor commands")
+    parser.add_argument("--bytes-per-line", type=int, default=32, help="hex bytes per monitor line")
+    parser.add_argument("--line-delay", type=float, default=0.005, help="delay after each data line")
+    parser.add_argument("--command-delay", type=float, default=0.05, help="delay after monitor commands")
     parser.add_argument("--settle", type=float, default=0.2, help="delay after opening the port")
     parser.add_argument("--wait-load", type=float, default=0.4, help="seconds to read after L command")
     parser.add_argument("--wait-done", type=float, default=0.8, help="seconds to read after . or G")

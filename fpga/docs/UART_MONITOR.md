@@ -10,7 +10,7 @@ new 16 KB ROM image into the shadow-ROM RAM without rewriting the SD card.
 The monitor is instantiated in `rtl/boards/pix16_sbc_sd_boot_top.vhd`.
 
 1. Program the PIX16 with the `pix16_sbc_sd_boot_top` bitstream.
-2. Open the board UART at `115200 8N1`.
+2. Open the board UART at `230400 8N1`.
 3. Press hardware button `KEY0`.
 4. The monitor holds the T65 through `monitor_hold`, prints:
 
@@ -101,26 +101,26 @@ Default settings:
 | Setting | Value |
 | --- | --- |
 | Port | `COM15` |
-| Baud | `115200` |
+| Baud | `230400` |
 | Load address | `$C000` |
 | Image | `tools/roms/upload_demo.rom` |
 
 Common workflow:
 
 ```sh
-python tools/upload_monitor_hex.py --port COM15 --run --verbose
+python tools/upload_monitor_hex.py --port COM15 --baud 230400 --run --verbose
 ```
 
 Regenerate the bundled demo ROM first:
 
 ```sh
-python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+python tools/upload_monitor_hex.py --build-demo --port COM15 --baud 230400 --run --verbose
 ```
 
 Upload a custom binary:
 
 ```sh
-python tools/upload_monitor_hex.py path/to/my.rom --port COM15 --address 0xC000 --run
+python tools/upload_monitor_hex.py path/to/my.rom --port COM15 --baud 230400 --address 0xC000 --run
 ```
 
 If the upload fails with an access error, another serial terminal still has the

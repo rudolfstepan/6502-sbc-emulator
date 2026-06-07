@@ -1,7 +1,7 @@
 -- UART 8N1 Deserializer
 -- Receives serial bytes from an RS-232 / USB-UART input pin and outputs
 -- the byte as a parallel word with a one-clock valid pulse.
--- Default: 115200 baud @ 50 MHz.  Includes a 2-stage input synchroniser.
+-- Default: 230400 baud @ 50 MHz.  Includes a 2-stage input synchroniser.
 library ieee;
 use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
@@ -9,7 +9,7 @@ use ieee.numeric_std.all;
 entity uart_rx_ser is
   generic (
     CLK_HZ : positive := 50_000_000;
-    BAUD   : positive := 115_200
+    BAUD   : positive := 230_400
   );
   port (
     clk     : in  std_logic;
@@ -22,12 +22,12 @@ end entity;
 
 architecture rtl of uart_rx_ser is
 
-  constant BAUD_DIV : positive := CLK_HZ / BAUD;   -- clocks per bit: 434
-  constant HALF_DIV : positive := BAUD_DIV / 2;    -- mid-bit sample offset: 217
+  constant BAUD_DIV : positive := CLK_HZ / BAUD;   -- clocks per bit
+  constant HALF_DIV : positive := BAUD_DIV / 2;    -- mid-bit sample offset
 
   type state_t is (S_IDLE, S_START, S_DATA, S_STOP);
   signal state    : state_t;
-  signal baud_cnt : unsigned(8 downto 0);           -- 0 .. 433
+  signal baud_cnt : unsigned(8 downto 0);           -- 0 .. BAUD_DIV-1
   signal bit_cnt  : unsigned(2 downto 0);           -- 0 .. 7
   signal sr       : std_logic_vector(7 downto 0);
   signal rx_sync  : std_logic_vector(1 downto 0);   -- 2-stage synchroniser
