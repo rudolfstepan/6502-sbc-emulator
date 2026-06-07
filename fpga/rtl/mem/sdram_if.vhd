@@ -73,7 +73,7 @@ architecture rtl of sdram_if is
   -- the real write; that write pulse can arrive while this interface is still
   -- servicing the dummy read.  A FIFO is safer than a single pending latch,
   -- because refresh or long SDRAM service can overlap more than one CPU write.
-  constant WR_FIFO_DEPTH : natural := 8;
+  constant WR_FIFO_DEPTH : natural := 32;
   type wr_addr_fifo_t is array (0 to WR_FIFO_DEPTH-1) of std_logic_vector(23 downto 0);
   type wr_data_fifo_t is array (0 to WR_FIFO_DEPTH-1) of data_t;
 
