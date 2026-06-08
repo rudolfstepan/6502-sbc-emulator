@@ -49,9 +49,14 @@ UART_RDRF   = $08
 UART_TDRE   = $10
 
 ; ---- Screen row addresses ----
+ROW0        = VIC_BASE + 0 * 40     ; $8000
+ROW1        = VIC_BASE + 1 * 40     ; $8028
 ROW2        = VIC_BASE + 2 * 40     ; $8050
+ROW3        = VIC_BASE + 3 * 40     ; $8078
 ROW4        = VIC_BASE + 4 * 40     ; $80A0
+ROW5        = VIC_BASE + 5 * 40     ; $80C8
 ROW6        = VIC_BASE + 6 * 40     ; $80F0
+ROW7        = VIC_BASE + 7 * 40     ; $8118
 ROW8        = VIC_BASE + 8 * 40     ; $8140
 
 ; Input area: rows 9-24
@@ -554,9 +559,39 @@ ci_no_carry:
     rts
 
 ; ============================================================
-;  draw_screen — write welcome rows 2/4/6/8 to VRAM
+;  draw_screen — write welcome rows to VRAM
+;  Row 0, 3, 5, 7: cleared to spaces (no stray '@' from uninit VRAM)
+;  Row 1: PETSCII block-graphics demo, codes $60-$7F at cols 4-35
+;  Row 2, 4, 6, 8: text strings
 ; ============================================================
 draw_screen:
+    ; --- clear all header rows 0-8 with spaces so no 0x00/@-artefacts remain ---
+    ldx     #39
+    lda     #$20
+ds_clr:
+    sta     ROW0,x
+    sta     ROW1,x
+    sta     ROW2,x
+    sta     ROW3,x
+    sta     ROW4,x
+    sta     ROW5,x
+    sta     ROW6,x
+    sta     ROW7,x
+    sta     ROW8,x
+    dex
+    bpl     ds_clr
+
+    ; --- PETSCII graphics: codes $60-$7F at row 1, cols 4-35 ---
+    lda     #$60
+    ldx     #4
+ds_gfx:
+    sta     ROW1,x
+    inx
+    clc
+    adc     #1
+    cmp     #$80
+    bne     ds_gfx
+
     ldx     #$00
 ds_l2:
     lda     str_line2,x

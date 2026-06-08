@@ -139,13 +139,13 @@ begin
   text_ram_addr <= char_row * 40 + char_col when in_text_area = '1' else 0;
   color_ram_addr <= (char_row * 40 + char_col) mod 256 when in_text_area = '1' else 0;
 
-  -- Character ROM addressing: char_code & char_line
+  -- Character ROM addressing: low 7 bits select glyph, high bit is reverse video
   char_rom_addr <= char_code(6 downto 0) & std_logic_vector(to_unsigned(char_line, 3));
   rom_pattern <= char_rom_data;
 
   -- Extract pixel from character pattern
   -- Pattern bits are [7:0] = [leftmost:rightmost]
-  pixel_bit <= rom_pattern(7 - char_pixel);
+  pixel_bit <= rom_pattern(7 - char_pixel) xor char_code(7);
 
   -- Output assignments
   h_sync <= h_sync_sig;

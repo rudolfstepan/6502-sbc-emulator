@@ -337,6 +337,13 @@ begin
         put_str(ch, col, 6, "UART DEBUG STILL ACTIVE");
       when 20 =>
         put_str(ch, col, 4, "SCREEN SWITCHES AFTER SD AND RAM OK");
+      when 22 =>
+        -- Display all 32 PETSCII block-graphics glyphs (ROM codes 0x60-0x7F).
+        -- "GFX:" label at cols 1-4, then one glyph per column at cols 6-37.
+        put_str(ch, col, 1, "GFX:");
+        if col >= 6 and col <= 37 then
+          ch := std_logic_vector(to_unsigned(16#60# + (col - 6), 8));
+        end if;
       when others =>
         null;
     end case;
@@ -348,7 +355,7 @@ begin
   char_i : entity work.char_rom
     port map (addr => char_addr, dout => char_data);
 
-  pbit <= char_data(7 - cpix) when in_text = '1' else '0';
+  pbit <= (char_data(7 - cpix) xor char_code(7)) when in_text = '1' else '0';
 
   vga_hs <= '0' when hc >= H_SS and hc < H_SE else '1';
   vga_vs <= '0' when vc >= V_SS and vc < V_SE else '1';

@@ -210,8 +210,8 @@ begin
   char_addr <= char_code(6 downto 0) &
                std_logic_vector(to_unsigned(cline, 3));
 
-  -- Pixel-Bit aus ROM-Muster
-  pbit <= char_data(7 - cpix) when in_text = '1' else '0';
+  -- Pixel-Bit aus ROM-Muster; bit 7 im Zeichencode ist Reverse-Video.
+  pbit <= (char_data(7 - cpix) xor char_code(7)) when in_text = '1' else '0';
 
   -- VGA-Sync (aktiv-low)
   vga_hs <= '0' when hc >= H_SS and hc < H_SE else '1';

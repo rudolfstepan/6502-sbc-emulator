@@ -2,7 +2,10 @@ Storage Target: SPI Flash Single FPGA
 16M
 Auto Select Storage Device
 FF
-its working baby with basic and no errors
+petscii-support
 Z:\6502-sbc-emulator\fpga\fpga\
+
+MCS
+-emulator\fpga\fpga\
 
 MCS

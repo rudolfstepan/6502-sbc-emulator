@@ -152,6 +152,7 @@ IRQ_HANDLER:
     jsr calc_ptr_xy
     tsx
     lda $0105,x             ; get saved A below cursor scratch bytes
+    jsr to_upper            ; char_rom $60-$7F = PETSCII, not lowercase
     ldy #0
     sta (SCRPTR_LO),y      ; write character
     pla
@@ -238,6 +239,7 @@ done:
     and #UART_RDRF
     beq try_via
     lda UART_DATA           ; read byte (clears RDRF)
+    jsr to_upper
     sec
     rts
 try_via:
@@ -245,10 +247,22 @@ try_via:
     and #CA1_BIT
     beq nothing
     lda VIA_ORA
+    jsr to_upper
     sec
     rts
 nothing:
     clc
+    rts
+.endproc
+
+; to_upper -- convert a-z to A-Z in A, leave everything else unchanged
+.proc to_upper
+    cmp #'a'
+    bcc done
+    cmp #'z'+1
+    bcs done
+    and #$DF
+done:
     rts
 .endproc
 

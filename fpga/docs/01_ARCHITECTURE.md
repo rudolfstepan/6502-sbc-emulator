@@ -140,7 +140,13 @@ IRQ sources are OR-combined: `cpu_irq_n = NOT (via_irq OR uart_irq)`.
 
 640×480 @ ~60 Hz, pixel clock 25 MHz (50 MHz ÷ 2 via clock enable).  
 Text mode: 40×25 characters, each rendered 2× scaled (16×16 screen pixels).  
-Border: 40 px top and bottom. Character patterns from `char_rom.vhd` (8×8, ASCII 0–127).
+Border: 40 px top and bottom. Character patterns from `char_rom.vhd` (8×8 pixels,
+bit 7 = reverse video).
+
+`char_rom` layout: `$00–$1F` PETSCII screen codes, `$20–$5F` ASCII uppercase/digits/punctuation,
+`$60–$7F` PETSCII block/line graphics. Lowercase ASCII `$61–$7A` falls in the PETSCII
+range — the kernel maps all a–z input to A–Z in `CHRIN_NB` and `CHROUT` before
+anything reaches VRAM or EhBASIC's tokenizer.
 
 ### Kernel ROM
 
@@ -162,14 +168,24 @@ The ISR fires ~750 Hz; every 256th call (~330 ms) it:
 - toggles VIA Port B bit 0 (LED blink, visible on board).
 
 ```text
+Row 1:  ←↑→↓ (PETSCII block/line graphics $60–$7F, cols 4–35)
 Row 2:  **** 6502 SINGLE BOARD COMPUTER ****
 Row 4:  4096 BYTES RAM     2048 BYTES ROM
-Row 6: BEREIT.
-Row 8: VIA-T1:  XX    (live counter, ~3 Hz)
+Row 6:  BEREIT.
+Row 8:  VIA-T1:  XX    (live counter, ~3 Hz)
+```
+
+Build and upload:
+
+```bash
+cd fpga/asm
+make all                                    # assemble + install sim hex
+python upload_rom_demo.py --run --verbose   # upload via UART monitor
+# or: make upload-demo
 ```
 
 ROM hex format: `XXXX YY` (4-digit ROM offset, 2-digit byte, no comments —
-`rom.vhd` uses raw `hread`, comments cause synthesis errors).
+the hex loader uses raw `hread`; comments cause read errors).
 
 ---
 

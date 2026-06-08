@@ -52,32 +52,44 @@ This document describes the hardware support infrastructure created for deployin
 
 ### RTL Modules
 
-#### 1. Top-Level Module
-- **File**: `rtl/pix16_top.vhd`
-- **Purpose**: Top-level design hierarchy for ISE implementation
-- **Ports**: All board I/O (VGA, SDRAM, buttons, LEDs)
-- **ISE target**: `fpga/fpga/fpga.xise`, top `pix16_top`, device `xc6slx16-ftg256-2`
+#### 1. Top-Level Module (SD Boot — Active)
+- **File**: `rtl/boards/pix16_sbc_sd_boot_top.vhd`
+- **Purpose**: PIX16 board wrapper for the full SD boot design
+- **Ports**: All board I/O (VGA, SDRAM, SD card, buttons, LEDs, UART)
+- **ISE target**: `fpga/fpga/fpga.xise`, top `pix16_sbc_sd_boot_top`, device `xc6slx16-ftg256-2`
 
-#### 2. Board Integration Layer
-- **File**: `rtl/boards/pix16_board.vhd`
-- **Purpose**: Integrates VIC core with hardware interfaces
-- **Features**:
-  - VIC core instantiation
-  - Character ROM integration
-  - Pixel generator with VGA sync signal generation
-  - ROM-scripted welcome text written into VIC text RAM
-  - Clock management placeholder
-  - SDRAM interface stub (for future controller)
+#### 2. SBC Core
+- **File**: `rtl/sbc_t65_sdram_boot_top.vhd`
+- **Purpose**: Integrates the T65 CPU, SDRAM RAM, 16 KB shadow ROM, bus decoder, VIA 6522, UART 6551, and VIC display
+- **Memory map**: ZP/stack → internal RAM; $0200–$7FFF → SDRAM; $8000–$87FF → VRAM; $8800 → VIA; $8810 → UART; $C000–$FFFF → shadow ROM
 
-#### 3. Existing VIC Components (Reused)
-- **vic_core.vhd**: 40×25 character display controller with raster interrupt and synchronous pixel read port. The text RAM uses XST RAM inference hints to avoid synthesizing the display RAM as thousands of registers.
-- **vic_pixel_gen.vhd**: VGA 640×480@60Hz timing and pixel generation. It divides the 50MHz board clock by using a 25MHz pixel clock-enable.
-- **char_rom.vhd**: 128-character ASCII ROM (8×8 pixels per char)
-- **mem/pix16_welcome_test.hex**: ROM script used by `cpu6502_slot.vhd` to write the welcome text to VIC text RAM.
+#### 3. Boot Subsystem
+- **boot_vga_debug.vhd**: VGA status screen displayed during SD load and RAM self-test.
+  Shows load progress, RAM test results, and a PETSCII block-graphics character set demo on row 22.
+- **boot_sdram_test.vhd**: Marching-pattern SDRAM self-test; passes/fails result shown on VGA.
+- **sd_rom_loader.v**: Reads 16 KB ROM image from raw SD sectors into the shadow ROM.
+- **uart_debug_monitor.vhd**: Machine-level UART monitor activated by KEY0.
+  Stops the CPU; supports hex load (`L`), memory dump (`M`), single-byte write (`E`/`W`), and `G` to resume.
 
-### Package Updates
+#### 4. VIC Display
+- **vic_vga.vhd**: Combined bus-stealing VIC and VGA signal generator. 40×25 chars, 640×480 @ 60 Hz.
+- **char_rom.vhd**: 128-character 8×8 pixel ROM.
+  - `$00–$1F`: PETSCII screen-code letters
+  - `$20–$5F`: ASCII punctuation, digits, uppercase
+  - `$60–$7F`: PETSCII block/line graphics (horizontal/vertical bars, corners, T-pieces, diagonals, quadrants, diamond, arrows, full block)
+  - Bit 7 of the character code selects reverse-video rendering.
+  - Regenerated from `fpga/tools/gen_petscii_char_rom.py`.
+
+### ISE Project
+
+The ISE project (`fpga/fpga/fpga.xise`) contains only the files required by the
+`pix16_sbc_sd_boot_top` hierarchy. Legacy top-level designs (`pix16_top`,
+`pix16_board`, `vic_core`, `vic_pixel_gen`) are excluded from the project to
+keep the hierarchy view unambiguous.
+
+### Package
 - **File**: `rtl/sbc_pkg.vhd`
-- **Changes**: Added `text_ram_t` and `color_ram_t` type definitions for hardware integration
+- **Purpose**: Shared types (`addr_t`, `data_t`, `device_sel_t`), memory-map constants, `in_range` helper
 
 ## Build Instructions
 
@@ -95,9 +107,9 @@ This document describes the hardware support infrastructure created for deployin
 1. ISE Design Suite > File > Open Project
 2. Open fpga/fpga/fpga.xise
 3. Verify device: xc6slx16-ftg256-2
-4. Verify top module: pix16_top
+4. Verify top module: pix16_sbc_sd_boot_top
 5. Implement > Run All (or Process > Run All)
-6. Generate bitstream: fpga/fpga/pix16_top.bit
+6. Generate bitstream: fpga/fpga/pix16_sbc_sd_boot_top.bit
 ```
 
 ### Building with Command-Line ISE
@@ -117,59 +129,45 @@ make hardware_analyze  # Verify VHDL compilation
 1. Connect USB programming cable to board
 2. Tools > iMPACT
 3. Create New Project > Parallel Cable IV (or appropriate cable)
-4. Select bitstream: `fpga/fpga/pix16_top.bit`
+4. Select bitstream: `fpga/fpga/pix16_sbc_sd_boot_top.bit`
 5. Right-click device > Program
 6. Wait for "Programming succeeded"
 
 ### Using Open-Source Tools
 ```bash
 # With openFPGALoader (if JTAG cable supported)
-openFPGALoader -b pix16 pix16_top.bit
+openFPGALoader -b pix16 pix16_sbc_sd_boot_top.bit
 
 # Or with xc3sprog
-xc3sprog -c ftdi pix16_top.bit
+xc3sprog -c ftdi pix16_sbc_sd_boot_top.bit
 ```
 
 ## Verification
 
 ### Expected Behavior After Programming
-1. Board powers on, LEDs illuminate
-2. Pushing RESET button cycles the design
-3. VGA monitor locks to 640x480 @ 60Hz
-4. VGA output shows the welcome text written by the test ROM
-5. H_SYNC and V_SYNC outputs generate proper VGA timing
+1. Board powers on, LED0 illuminates (power indicator)
+2. VGA monitor locks to 640×480 @ 60 Hz
+3. Boot status screen appears: SD load progress and SDRAM self-test results
+4. Row 22 of the boot screen shows all 32 PETSCII block/line graphics glyphs (`$60–$7F`)
+5. After successful SD load and RAM test: T65 CPU starts from the loaded ROM; `vic_vga` takes over VGA output
+6. Pressing KEY0 at any time enters the UART machine monitor (CPU halted, VGA stays active)
+
+### Uploading the Demo ROM via UART Monitor
+```bash
+# 1. Program the FPGA bitstream via iMPACT
+# 2. Press KEY0 on the board to enter monitor mode
+# 3. From fpga/asm/:
+cd fpga/asm
+make all                       # build rom_demo.bin
+python upload_rom_demo.py --run --verbose   # upload and start
+```
 
 ### Troubleshooting
-- **No VGA signal**: Check resistor ladder DAC soldering on board
+- **No VGA signal**: Check resistor-ladder DAC soldering on board
 - **Garbled display**: Verify sync polarity in VGA cable
-- **Monitor reports out of range**: Verify the current `vic_pixel_gen.vhd` uses a 25MHz pixel clock-enable from the 50MHz board clock
-- **Blank display with valid sync**: Verify `pix16_welcome_test.hex` is present and included through `TEST_ROM_INIT_FILE`
-- **Very slow synthesis**: Check that XST infers the VIC text RAM as RAM; repeated `text_ram<N>` register messages indicate broken RAM inference
+- **Boot stuck at SD**: Verify SD card is FAT32 with the boot image at sector 0
+- **UART monitor not responding**: Check baud rate (230400) and that KEY0 was pressed after FPGA config
 - **FPGA won't program**: Check USB cable, driver installation, JTAG mode jumper
-- **GHDL compile errors**: Ensure all RTL files use consistent VHDL-08 syntax
-
-## Future Enhancements
-
-### Phase 2: Real CPU Display Content
-- Replace the ROM-scripted `cpu6502_slot` test path with the real T65 CPU path
-- Load character data from a real 6502 boot ROM into VIC text RAM at startup
-- Keep the current welcome text path as the board-level VGA smoke test
-
-### Phase 3: SDRAM Controller
-- Implement 256Mbit SDRAM interface
-- Add graphics framebuffer support
-- Enable bitmap mode for higher resolution graphics
-
-### Phase 4: Camera Integration
-- OV5640 camera module via expansion header
-- Real-time video capture to SDRAM
-- Live video display on VGA output
-
-### Phase 5: Full 6502 System Integration
-- CPU + RAM + ROM + I/O + Display
-- PS/2 keyboard input via USB adapter
-- Serial console (UART) via USB
-- Complete retro computer system
 
 ## Pin Assignment Verification
 
@@ -199,7 +197,8 @@ Use Xilinx CoreGen to create PLL in ISE project if needed.
 
 | Date | Version | Changes |
 |------|---------|---------|
-| 2026-06-04 | 1.1 | Updated for checked-in ISE project, XC6SLX16 target, working VGA timing, and ROM-scripted welcome text |
+| 2026-06-08 | 1.3 | Reflect SD boot design as active top; ISE project cleanup (single-top); PETSCII char ROM ($60–$7F); upload_rom_demo.py; remove completed Future Enhancements |
+| 2026-06-04 | 1.2 | Updated for checked-in ISE project, XC6SLX16 target, working VGA timing |
 | 2026-06-04 | 1.0 | Initial hardware support infrastructure created |
 
 ## Related Documentation

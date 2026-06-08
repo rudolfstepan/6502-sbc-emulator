@@ -48,6 +48,8 @@ WRAPPER_S   = ROOT / "fpga" / "asm" / "ehbasic_fpga.s"
 LINKER_CFG  = ROOT / "fpga" / "asm" / "ehbasic_fpga.cfg"
 OUT_DIR     = ROOT / "tools" / "roms"
 OUT_ROM     = OUT_DIR / "fpga_ehbasic_16kb.rom"
+OUT_IMG     = OUT_DIR / "fpga_ehbasic_16kb.img"
+SD_IMG_TOOL = ROOT / "fpga" / "tools" / "make_sd_boot_image.py"
 
 KERNEL_SIZE  = 0x1000   # 4 KB
 EHBASIC_SIZE = 0x3000   # 12 KB
@@ -232,11 +234,12 @@ def build_ehbasic_rom(work: Path, ca65: str, ld65: str) -> bytes:
 # ---------------------------------------------------------------------------
 def parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(description=__doc__)
-    p.add_argument("--upload",  action="store_true", help="upload ROM via UART monitor")
-    p.add_argument("--port",    default="COM15",     help="serial port (default COM15)")
-    p.add_argument("--baud",    type=int,            help="serial baud rate (default: uploader default)")
-    p.add_argument("--run",     action="store_true", help="send G C000 after upload")
-    p.add_argument("--verbose", action="store_true", help="verbose upload output")
+    p.add_argument("--upload",   action="store_true", help="upload ROM via UART monitor")
+    p.add_argument("--port",     default="COM15",     help="serial port (default COM15)")
+    p.add_argument("--baud",     type=int,            help="serial baud rate (default: uploader default)")
+    p.add_argument("--run",      action="store_true", help="send G C000 after upload")
+    p.add_argument("--verbose",  action="store_true", help="verbose upload output")
+    p.add_argument("--sd-image", action="store_true", help="also build SD card boot image (.img)")
     return p.parse_args()
 
 
@@ -299,7 +302,20 @@ def main() -> None:
     print(f"  Ram_top : $8000 (~31.5 KB BASIC RAM at $0200-$7FFF)")
     print(f"  Vectors : VEC_CC=$EA VEC_IN=$E2 VEC_OUT=$E4 VEC_LD=$E6 VEC_SV=$E8 (ZP BRAM)")
 
-    print("\nUpload command:")
+    if args.sd_image:
+        print("\nBuilding SD boot image ...")
+        sys.stdout.flush()
+        subprocess.run(
+            [sys.executable, str(SD_IMG_TOOL), "-o", str(OUT_IMG), str(OUT_ROM)],
+            check=True,
+        )
+        print(f"SD image: {OUT_IMG}")
+        print("  Write to SD card (Linux/macOS):")
+        print(f"    dd if={OUT_IMG.name} of=/dev/sdX bs=512")
+        print("  Write to SD card (Windows):")
+        print(f"    tools\\write_sd.bat {OUT_IMG.name}")
+
+    print("\nUpload command (UART monitor):")
     print(
         f"  python tools/upload_monitor_hex.py {OUT_ROM.name} "
         f"--port COM15 --baud 230400 --address 0xC000 --run --verbose"
