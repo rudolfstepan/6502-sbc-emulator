@@ -74,3 +74,8 @@ fpga/asm/*.bin
 fpga/asm/*.lst
 fpga/asm/*.map
 fpga/asm/*.o
+
+*.prm
+*.mcs
+*.cfi
+
