@@ -27,6 +27,13 @@ entity tang20k_sbc_top is
     sd_ncs     : out std_logic;
     sd_mosi    : out std_logic;
     sd_miso    : in  std_logic;
+    -- USB3317 ULPI PHY on the USB-OTG connector
+    ulpi_rst   : out std_logic;
+    ulpi_clk   : in  std_logic;
+    ulpi_dir   : in  std_logic;
+    ulpi_nxt   : in  std_logic;
+    ulpi_stp   : out std_logic;
+    ulpi_data  : inout std_logic_vector(7 downto 0);
     -- HDMI TMDS differential outputs
     tmds_clk_p : out std_logic;
     tmds_clk_n : out std_logic;
@@ -149,6 +156,13 @@ architecture rtl of tang20k_sbc_top is
   signal monitor_jump_req   : std_logic;
   signal monitor_jump_addr  : addr_t;
   signal sd_seen_read_end   : std_logic := '0';
+  signal ulpi_data_i        : std_logic_vector(7 downto 0);
+  signal ulpi_data_o        : std_logic_vector(7 downto 0);
+  signal ulpi_data_oe       : std_logic;
+  signal ulpi_stp_i         : std_logic;
+  signal ulpi_rst_i         : std_logic;
+  signal usb_status         : std_logic_vector(7 downto 0);
+  signal usb_phy_id         : std_logic_vector(31 downto 0);
 begin
   -- Hold reset until PLL has locked
   reset_n <= key(0) and pll_lock;
@@ -157,6 +171,10 @@ begin
   sd_ncs <= sd_ncs_i;
   sd_dclk <= sd_dclk_i;
   sd_mosi <= sd_mosi_i;
+  ulpi_rst <= ulpi_rst_i;
+  ulpi_stp <= ulpi_stp_i;
+  ulpi_data <= ulpi_data_o when ulpi_data_oe = '1' else (others => 'Z');
+  ulpi_data_i <= ulpi_data;
   boot_vga_active <= (not boot_done) or boot_error or monitor_active;
 
   vga_r  <= boot_vga_r  when boot_vga_active = '1' else sbc_vga_r;
@@ -237,10 +255,28 @@ begin
       sd_sec_state    => sd_sec_state,
       sd_cmd_state    => sd_cmd_state,
       sd_cmd_error    => sd_cmd_error,
+      usb_status      => usb_status,
+      usb_phy_id      => usb_phy_id,
       uart_busy       => uart_tx_busy,
       uart_data       => boot_dbg_data,
       uart_valid      => boot_dbg_valid,
       active          => boot_dbg_active
+    );
+
+  usb_diag_i : entity work.usb_ulpi_diag
+    port map (
+      clk       => clk_sys,
+      reset_n   => reset_n,
+      ulpi_clk  => ulpi_clk,
+      ulpi_dir  => ulpi_dir,
+      ulpi_nxt  => ulpi_nxt,
+      ulpi_data_i => ulpi_data_i,
+      ulpi_data_o => ulpi_data_o,
+      ulpi_data_oe => ulpi_data_oe,
+      ulpi_stp  => ulpi_stp_i,
+      ulpi_rst  => ulpi_rst_i,
+      status    => usb_status,
+      phy_id    => usb_phy_id
     );
 
   monitor_rx_i : entity work.uart_rx_ser
@@ -328,6 +364,8 @@ begin
       sd_sec_state    => sd_sec_state,
       sd_cmd_state    => sd_cmd_state,
       sd_cmd_error    => sd_cmd_error,
+      usb_status      => usb_status,
+      usb_phy_id      => usb_phy_id,
       ram_test_active => '0',
       ram_test_done   => boot_done,
       ram_test_error  => '0',

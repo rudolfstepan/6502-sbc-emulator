@@ -25,6 +25,8 @@ entity boot_vga_debug is
     sd_sec_state    : in  std_logic_vector(4 downto 0);
     sd_cmd_state    : in  std_logic_vector(3 downto 0);
     sd_cmd_error    : in  std_logic;
+    usb_status      : in  std_logic_vector(7 downto 0) := (others => '0');
+    usb_phy_id      : in  std_logic_vector(31 downto 0) := (others => '0');
     ram_test_active : in  std_logic;
     ram_test_done   : in  std_logic;
     ram_test_error  : in  std_logic;
@@ -193,6 +195,7 @@ begin
           seen_read_end, boot_done, boot_error, sd_cmd_error,
           loader_state, sd_sec_state, sd_cmd_state,
           sd_ncs, sd_dclk, sd_mosi_o, sd_miso_i,
+          usb_status, usb_phy_id,
           ram_test_active, ram_test_done, ram_test_error,
           ram_test_phase, ram_test_addr, ram_test_fail_addr,
           ram_test_expected, ram_test_actual)
@@ -339,7 +342,42 @@ begin
         elsif col = 37 then
           ch := bit_char(sd_cmd_error);
         end if;
+      when 17 =>
+        put_str(ch, col, 4, "USB ULPI: $");
+        put_str(ch, col, 18, "CLK=");
+        put_str(ch, col, 25, "DIR=");
+        put_str(ch, col, 32, "NXT=");
+        if col = 15 then
+          ch := hex_char(usb_status(7 downto 4));
+        elsif col = 16 then
+          ch := hex_char(usb_status(3 downto 0));
+        elsif col = 22 then
+          ch := bit_char(usb_status(7));
+        elsif col = 29 then
+          ch := bit_char(usb_status(5));
+        elsif col = 36 then
+          ch := bit_char(usb_status(4));
+        end if;
       when 18 =>
+        put_str(ch, col, 4, "USB PHY ID: $");
+        if col = 17 then
+          ch := hex_char(usb_phy_id(31 downto 28));
+        elsif col = 18 then
+          ch := hex_char(usb_phy_id(27 downto 24));
+        elsif col = 19 then
+          ch := hex_char(usb_phy_id(23 downto 20));
+        elsif col = 20 then
+          ch := hex_char(usb_phy_id(19 downto 16));
+        elsif col = 21 then
+          ch := hex_char(usb_phy_id(15 downto 12));
+        elsif col = 22 then
+          ch := hex_char(usb_phy_id(11 downto 8));
+        elsif col = 23 then
+          ch := hex_char(usb_phy_id(7 downto 4));
+        elsif col = 24 then
+          ch := hex_char(usb_phy_id(3 downto 0));
+        end if;
+      when 19 =>
         put_str(ch, col, 6, "UART DEBUG STILL ACTIVE");
       when 20 =>
         put_str(ch, col, 4, "SCREEN SWITCHES AFTER SD AND RAM OK");

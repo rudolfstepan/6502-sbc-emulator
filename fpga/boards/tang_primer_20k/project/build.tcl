@@ -14,6 +14,7 @@ add_file -type vhdl {../../../rtl/core/mem/sync_ram.vhd}
 add_file -type vhdl {../../../rtl/core/mem/char_rom.vhd}
 add_file -type vhdl {../../../rtl/core/mem/boot_shadow_rom.vhd}
 add_file -type verilog {../../../rtl/core/boot/sd_rom_loader.v}
+add_file -type vhdl {../../../rtl/core/boot/usb_ulpi_diag.vhd}
 add_file -type vhdl {../../../rtl/core/boot/boot_debug_uart.vhd}
 add_file -type vhdl {../../../rtl/core/boot/boot_vga_debug.vhd}
 add_file -type vhdl {../../../rtl/core/boot/uart_debug_monitor.vhd}
@@ -28,6 +29,7 @@ add_file -type vhdl {../../../rtl/core/hdmi/tmds_encoder.vhd}
 add_file -type vhdl {../rtl/tang20k_hdmi_tx.vhd}
 add_file -type vhdl {../rtl/tang20k_sbc_top.vhd}
 add_file -type cst {../constraints/tang20k_sbc.cst}
+add_file -type sdc {../constraints/tang20k_sbc.sdc}
 
 set_option -use_sspi_as_gpio 1
 set_option -use_mspi_as_gpio 1
