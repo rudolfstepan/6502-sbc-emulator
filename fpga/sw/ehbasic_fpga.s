@@ -122,7 +122,27 @@ RESET_ENTRY:
     lda #'U'
     jsr EHB_UART_CHROUT
 
+    jsr print_boot_banner
+
     jmp LAB_COLD                ; EhBASIC cold start (never returns)
+
+print_boot_banner:
+    ldx #0
+boot_banner_loop:
+    lda boot_banner,x
+    beq boot_banner_done
+    jsr KERNAL_CHROUT
+    inx
+    bne boot_banner_loop
+boot_banner_done:
+    rts
+
+boot_banner:
+    .byte $0D
+    .byte " **** 6502 SBC BASIC V2 ****", $0D
+    .byte " TANG PRIMER 20K FPGA SYSTEM", $0D
+    .byte " 6502 CPU  HDMI  UART  SD", $0D
+    .byte 0
 
 ; ============================================================
 ; IRQ / NMI handlers — live in ROM (shadow BRAM), not SDRAM.
