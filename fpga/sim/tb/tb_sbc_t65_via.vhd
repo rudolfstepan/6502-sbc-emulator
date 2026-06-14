@@ -5,10 +5,10 @@ use std.env.all;
 
 use work.sbc_pkg.all;
 
-entity tb_sbc_t65_indirect_vic is
+entity tb_sbc_t65_via is
 end entity;
 
-architecture sim of tb_sbc_t65_indirect_vic is
+architecture sim of tb_sbc_t65_via is
   signal clk          : std_logic := '0';
   signal reset_n      : std_logic := '0';
   signal uart_rx      : std_logic := '1';
@@ -16,18 +16,19 @@ architecture sim of tb_sbc_t65_indirect_vic is
   signal irq_out      : std_logic;
   signal dbg_cpu_addr : addr_t;
   signal dbg_cpu_data : data_t;
-  signal dbg_cpu_din  : data_t;
   signal dbg_cpu_we   : std_logic;
   signal dbg_cpu_sync : std_logic;
   signal dbg_uart_tx_data  : data_t;
   signal dbg_uart_tx_valid : std_logic;
   signal dbg_via_portb_out : data_t;
+  signal saw_ddrb_write : boolean := false;
+  signal saw_orb_write  : boolean := false;
 begin
   clk <= not clk after 5 ns;
 
   dut : entity work.sbc_t65_top
     generic map (
-      ROM_INIT_FILE => "sim/rom_t65_indirect_vic.hex"
+      ROM_INIT_FILE => "sim/hex/rom_t65_via.hex"
     )
     port map (
       clk          => clk,
@@ -37,7 +38,6 @@ begin
       irq_out      => irq_out,
       dbg_cpu_addr => dbg_cpu_addr,
       dbg_cpu_data => dbg_cpu_data,
-      dbg_cpu_din  => dbg_cpu_din,
       dbg_cpu_we   => dbg_cpu_we,
       dbg_cpu_sync => dbg_cpu_sync,
       dbg_uart_tx_data  => dbg_uart_tx_data,
@@ -53,18 +53,31 @@ begin
     for i in 0 to 768 loop
       wait until rising_edge(clk);
 
-      if dbg_cpu_we = '1' and dbg_cpu_addr = x"8000" then
-        assert dbg_cpu_data = x"20"
-          report "T65 indirect VIC write data mismatch"
+      if dbg_cpu_we = '1' and dbg_cpu_addr = x"8802" then
+        assert dbg_cpu_data = x"FF"
+          report "T65 VIA DDRB write byte mismatch"
           severity failure;
 
-        report "tb_sbc_t65_indirect_vic passed";
+        saw_ddrb_write <= true;
+      end if;
+
+      if dbg_cpu_we = '1' and dbg_cpu_addr = x"8800" then
+        assert dbg_cpu_data = x"A5"
+          report "T65 VIA ORB write byte mismatch"
+          severity failure;
+
+        saw_orb_write <= true;
+      end if;
+
+      if saw_ddrb_write and saw_orb_write and dbg_via_portb_out = x"A5" then
+        report "tb_sbc_t65_via passed";
         stop;
       end if;
     end loop;
 
     assert false
-      report "T65 indirect VIC write did not occur"
+      report "T65 system did not drive VIA port B"
       severity failure;
   end process;
 end architecture;
+

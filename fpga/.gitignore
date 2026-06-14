@@ -1,3 +1,42 @@
+# GHDL simulation work files
 work-*.cf
+e~*.cf
+
+# Generated simulation artifacts (built by make roms / make sd-boot-image)
 sim/generated/
 
+# ── PIX16 / Xilinx ISE ────────────────────────────────────────────────────────
+# Keep: .xise project file, bitstreams/
+# Ignore: everything ISE generates during synthesis & implementation
+boards/pix16/project/xst/
+boards/pix16/project/_ngo/
+boards/pix16/project/_xmsgs/
+boards/pix16/project/iseconfig/
+boards/pix16/project/xlnx_auto_*
+boards/pix16/project/*.ngd
+boards/pix16/project/*.ngc
+boards/pix16/project/*.ncd
+boards/pix16/project/*.pcf
+boards/pix16/project/*.bld
+boards/pix16/project/*.mrp
+boards/pix16/project/*.map
+boards/pix16/project/*.par
+boards/pix16/project/*.twr
+boards/pix16/project/*.twx
+boards/pix16/project/*.unroutes
+boards/pix16/project/*.bit
+boards/pix16/project/*.drc
+boards/pix16/project/*.srp
+boards/pix16/project/*.lso
+boards/pix16/project/*.xrpt
+
+# ── Tang Primer 20K / GowinEDA ────────────────────────────────────────────────
+boards/tang_primer_20k/project/impl/
+boards/tang_primer_20k/project/tmp/
+boards/tang_primer_20k/project/*.gprj.user
+
+# ── Assembly build artifacts ───────────────────────────────────────────────────
+sw/*.bin
+sw/*.lst
+sw/*.map
+sw/*.o

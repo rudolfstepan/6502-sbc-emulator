@@ -34,7 +34,7 @@ begin
 
   dut : entity work.sbc_t65_top
     generic map (
-      ROM_INIT_FILE => "sim/rom_t65_indirect_vic.hex"
+      ROM_INIT_FILE => "sim/hex/rom_t65_indirect_vic.hex"
     )
     port map (
       clk          => clk,

@@ -5,10 +5,10 @@ use std.env.all;
 
 use work.sbc_pkg.all;
 
-entity tb_sbc_reset is
+entity tb_sbc_sram_readback is
 end entity;
 
-architecture sim of tb_sbc_reset is
+architecture sim of tb_sbc_sram_readback is
   signal clk          : std_logic := '0';
   signal reset_n      : std_logic := '0';
   signal uart_rx      : std_logic := '1';
@@ -24,7 +24,7 @@ begin
 
   dut : entity work.sbc_top
     generic map (
-      ROM_INIT_FILE => "sim/rom_reset.hex"
+      ROM_INIT_FILE => "sim/hex/rom_sram_readback.hex"
     )
     port map (
       clk          => clk,
@@ -43,17 +43,25 @@ begin
   begin
     wait for 25 ns;
     reset_n <= '1';
-    wait for 80 ns;
 
-    assert dbg_cpu_addr = x"8000"
-      report "CPU slot did not jump to reset vector $8000"
+    for i in 0 to 64 loop
+      wait until rising_edge(clk);
+
+      if dbg_read_valid = '1' then
+        report "readback data=$" & to_hstring(dbg_read_data);
+
+        assert dbg_read_data = x"42"
+          report "SRAM readback mismatch"
+          severity failure;
+
+        report "tb_sbc_sram_readback passed";
+        stop;
+      end if;
+    end loop;
+
+    assert false
+      report "SRAM readback did not occur"
       severity failure;
-
-    assert dbg_cpu_we = '0'
-      report "CPU slot unexpectedly writes during reset-vector smoke test"
-      severity failure;
-
-    report "tb_sbc_reset passed";
-    stop;
   end process;
 end architecture;
+

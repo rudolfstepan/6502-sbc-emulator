@@ -1,5 +1,7 @@
 #!/usr/bin/tclsh
 # ISE Project Creation Script for PIX16 Board
+# Run from fpga/boards/pix16/:
+#   xtclsh scripts/create_ise_project.tcl
 
 # Configuration
 set project_name "pix16_display"
@@ -35,11 +37,11 @@ xfile add constraints/pix16.ucf
 
 # Add RTL source files
 xfile add rtl/pix16_top.vhd
-xfile add rtl/boards/pix16_board.vhd
-xfile add rtl/peripherals/vic_core.vhd
-xfile add rtl/peripherals/vic_pixel_gen.vhd
-xfile add rtl/mem/char_rom.vhd
-xfile add rtl/sbc_pkg.vhd
+xfile add rtl/pix16_board.vhd
+xfile add ../../rtl/core/peripherals/vic_core.vhd
+xfile add ../../rtl/core/peripherals/vic_pixel_gen.vhd
+xfile add ../../rtl/core/mem/char_rom.vhd
+xfile add ../../rtl/core/sbc_pkg.vhd
 
 # Set top module
 project set top_module_instance_name pix16_top

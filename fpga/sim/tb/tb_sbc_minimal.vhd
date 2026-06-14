@@ -41,7 +41,7 @@ begin
   clk <= not clk after 5 ns;  -- 100 MHz
 
   dut : entity work.sbc_minimal_top
-    generic map (ROM_INIT_FILE => "sim/rom_welcome.hex")
+    generic map (ROM_INIT_FILE => "sim/hex/rom_welcome.hex")
     port map (
       clk          => clk,
       reset_n      => reset_n,

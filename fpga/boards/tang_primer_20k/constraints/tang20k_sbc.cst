@@ -1,0 +1,33 @@
+// Tang Primer 20K — 6502 SBC pin constraints
+// Gowin CST format
+//
+// Board: Sipeed Tang Primer 20K (GW2A-LV18PG256C8/I7)
+// Status: PLACEHOLDER — pin assignments not yet verified
+//
+// Reference: Tang Primer 20K schematic v1.1
+
+// ---- Clock ----------------------------------------------------------------
+IO_LOC "clk_27mhz" 4;
+IO_PORT "clk_27mhz" IO_TYPE=LVCMOS33;
+
+// ---- UART (USB-C CH340) ---------------------------------------------------
+IO_LOC "uart_tx" 17;
+IO_LOC "uart_rx" 18;
+IO_PORT "uart_tx" IO_TYPE=LVCMOS33;
+IO_PORT "uart_rx" IO_TYPE=LVCMOS33;
+
+// ---- User LEDs ------------------------------------------------------------
+IO_LOC "led[0]" 10;
+IO_LOC "led[1]" 11;
+IO_LOC "led[2]" 13;
+IO_LOC "led[3]" 14;
+IO_PORT "led[0]" IO_TYPE=LVCMOS33;
+IO_PORT "led[1]" IO_TYPE=LVCMOS33;
+IO_PORT "led[2]" IO_TYPE=LVCMOS33;
+IO_PORT "led[3]" IO_TYPE=LVCMOS33;
+
+// ---- SDRAM (onboard) — TODO: add full SDRAM pin mapping ------------------
+// IO_LOC "sdram_clk" ...;
+
+// ---- HDMI — TODO: add HDMI pin mapping -----------------------------------
+// IO_LOC "hdmi_clk_p" ...;

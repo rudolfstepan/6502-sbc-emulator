@@ -3,7 +3,7 @@ LD65   = C:/tools/cc65/bin/ld65
 PYTHON = python
 
 ROM_BIN = rom_demo.bin
-ROM_HEX = ../sim/rom_welcome.hex
+ROM_HEX = ../sim/hex/rom_welcome.hex
 
 FPGA_EHBASIC_ROM = ../../tools/roms/fpga_ehbasic_16kb.rom
 FPGA_EHBASIC_IMG = ../../tools/roms/fpga_ehbasic_16kb.img
