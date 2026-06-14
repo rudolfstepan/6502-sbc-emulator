@@ -36,7 +36,7 @@ entity tang20k_hdmi_tx is
   port (
     clk_in    : in  std_logic;   -- 27 MHz board oscillator
     reset_n   : in  std_logic;
-    -- VGA pixel data (from sbc_minimal_top / vic_vga)
+    -- VGA pixel data (from SBC VIC or boot/status renderer)
     vga_de    : in  std_logic;
     vga_hs    : in  std_logic;
     vga_vs    : in  std_logic;

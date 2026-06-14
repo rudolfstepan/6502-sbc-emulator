@@ -5,7 +5,7 @@
 //Device: GW2A-18
 //
 // Pin assignments confirmed from manufacturer example CSTs:
-//   UART_HELLO — UART (M11/T13), clock (H11)
+//   UART_HELLO — CH340 UART pins (M11/T13), clock (H11)
 //   HDMI       — TMDS pairs, LEDs, reset T10 / clock H11
 //   Litex      — buttons, LED array
 //   PT8211     — confirmed safe GPIO: R16, P15, P16, N15, T3, T5
@@ -21,7 +21,8 @@ IO_LOC "clk_27mhz" H11;
 IO_PORT "clk_27mhz" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
 // -------------------------------------------------------------------------
-// UART (USB-C CH340)
+// CH340 USB-UART pins. These are separate from the USB OTG connector used for
+// peripheral/device experiments.
 // -------------------------------------------------------------------------
 IO_LOC "uart_tx" M11;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
@@ -29,9 +30,21 @@ IO_LOC "uart_rx" T13;
 IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
+// External microSD module on free GPIO pins (SPI mode)
+// -------------------------------------------------------------------------
+IO_LOC "sd_dclk" R16;
+IO_PORT "sd_dclk" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "sd_ncs" P15;
+IO_PORT "sd_ncs" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "sd_mosi" P16;
+IO_PORT "sd_mosi" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "sd_miso" N15;
+IO_PORT "sd_miso" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+
+// -------------------------------------------------------------------------
 // Buttons (active-low)
 // key[0] = T5  LVCMOS33 reset (UART_HELLO: rst_n = T5)
-// key[1] = T3  LVCMOS15 spare
+// key[1] = T3  LVCMOS15 UART monitor enter / CPU hold
 // -------------------------------------------------------------------------
 IO_LOC "key[0]" T5;
 IO_PORT "key[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP;

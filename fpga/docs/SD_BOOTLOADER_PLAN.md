@@ -1,9 +1,11 @@
 # SD Bootloader Plan
 
-Goal: keep the FPGA bitstream stable and load the SBC firmware image from the
-PIX16 SD card socket into a writable 16 KB shadow-ROM RAM at power-up.
+Goal: keep the FPGA bitstream stable and load the SBC firmware image from an
+SD card into a writable 16 KB shadow-ROM RAM at power-up.
 
 ## Board Pins
+
+### PIX16
 
 The vendor demo `pix16/demo/20_2_sd_sdram_an430_lcd` confirms the SD socket pins:
 
@@ -16,6 +18,20 @@ The vendor demo `pix16/demo/20_2_sd_sdram_an430_lcd` confirms the SD socket pins
 
 The existing names follow the vendor demo. Note that `sd_miso`/`sd_mosi` are named
 from the demo controller's perspective, not the SD card label.
+
+### Tang Primer 20K
+
+The Tang Primer 20K board has no integrated microSD socket in this design, so an
+external 3.3 V SPI microSD module is connected to free GPIO pins:
+
+| Signal | FPGA Pin | SD module pin | SPI Role |
+|--------|----------|---------------|----------|
+| `sd_dclk` | `R16` | SCK | SCK |
+| `sd_ncs`  | `P15` | CS  | CS, active low |
+| `sd_mosi` | `P16` | MOSI / DI | controller output to card |
+| `sd_miso` | `N15` | MISO / DO | controller input from card |
+
+Use a 3.3 V module or level shifting; the FPGA pins are not 5 V tolerant.
 
 ## Vendor SD Core
 
@@ -81,7 +97,9 @@ reset_n low/high
 | `rtl/boot/sd_rom_loader.v` | Requests sectors and writes valid bytes to shadow ROM |
 | `rtl/sbc_t65_boot_top.vhd` | T65 SBC core with boot-loaded ROM at `$C000-$FFFF` |
 | `rtl/sbc_t65_sdram_boot_top.vhd` | Current SBC core with SDRAM main RAM, shadow ROM, VGA, and monitor bus master |
+| `rtl/sbc_t65_boot_monitor_top.vhd` | Tang bring-up core with internal BSRAM main RAM, shadow ROM, VGA, and monitor bus master |
 | `rtl/boards/pix16_sbc_sd_boot_top.vhd` | PIX16 board top with SD pins, boot VGA, UART monitor, and CPU gated by boot/RAM-test status |
+| `boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd` | Tang board top with HDMI, CH340 UART, external SD pins, boot VGA, and KEY1 monitor |
 | `rtl/boot/boot_vga_debug.vhd` | VGA boot/status screen for SD, loader, and RAM-test state |
 | `rtl/boot/boot_sdram_test.vhd` | SDRAM self-test before CPU release |
 | `rtl/boot/uart_debug_monitor.vhd` | Hardware monitor that can patch the loaded shadow ROM after boot |
@@ -140,4 +158,8 @@ This test writes a tiny ROM image through the loader port, sets `boot_done`, and
 checks that the T65 executes from the loaded `$C000` reset vector path.
 
 The full SD card path uses the copied vendor Verilog SD core and is intended for
-mixed-language synthesis in Xilinx ISE.
+mixed-language synthesis in Xilinx ISE and GowinEDA.
+
+Tang bring-up has verified the boot/status screen, CH340 UART, and KEY1 monitor.
+With no external SD module attached, the expected boot debug behavior is a
+repeating SD init/read failure status on UART and HDMI while the CPU remains held.

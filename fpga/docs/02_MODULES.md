@@ -1,7 +1,8 @@
 # VHDL Modules Reference
 
 This document covers all VHDL modules in the project. The current board bring-up
-target is `pix16_sbc_sd_boot_top` -> `sbc_t65_sdram_boot_top`. The smaller
+targets are `pix16_sbc_sd_boot_top` -> `sbc_t65_sdram_boot_top` and
+`tang20k_sbc_top` -> `sbc_t65_boot_monitor_top`. The smaller
 `pix16_sbc_minimal_top` -> `sbc_minimal_top` path remains a useful smoke test.
 Modules marked *(inactive)* are present for reference or simulation but are not
 included in the current SD boot build.
@@ -10,7 +11,7 @@ included in the current SD boot build.
 
 ## Module Hierarchy
 
-### Active SD Boot Build (synthesized for PIX16 board)
+### Active SD Boot Build (PIX16 board)
 
 ```text
 boards/pix16/rtl/
@@ -35,6 +36,32 @@ rtl/core/
 │   ├── peripherals/via6522.vhd    — VIA 6522: Timer 1 IRQ + Port B
 │   ├── peripherals/uart6551.vhd   — UART 6551: CPU TX/RX registers
 │   └── peripherals/vic_vga.vhd    — VIC: bus stealing + VGA output
+
+third_party/alinx_sd/              — vendor SD-card SPI sector core
+```
+
+### Active SD Boot Build (Tang Primer 20K board)
+
+```text
+boards/tang_primer_20k/rtl/
+├── tang20k_sbc_top.vhd            — Tang HDMI/CH340/external-SD board wrapper
+└── tang20k_hdmi_tx.vhd            — Gowin rPLL + TMDS output wrapper
+
+rtl/core/
+├── sbc_pkg.vhd                    — shared types, memory map, constants
+├── bus_decode.vhd                 — address → device selection
+├── sbc_t65_boot_monitor_top.vhd  — SBC core with internal BSRAM + shadow ROM
+│   ├── boot/boot_debug_uart.vhd   — serial boot-status output
+│   ├── boot/boot_vga_debug.vhd    — HDMI boot/status screen
+│   ├── boot/sd_rom_loader.v       — SD-sector loader into shadow ROM
+│   ├── boot/uart_debug_monitor.vhd — UART machine monitor and hex loader
+│   ├── cpu/t65_adapter.vhd        — T65 CPU wrapper
+│   ├── mem/sync_ram.vhd           — ZP/stack RAM, main RAM, and text VRAM
+│   ├── mem/boot_shadow_rom.vhd    — writable 16 KB ROM window at $C000-$FFFF
+│   ├── mem/char_rom.vhd           — 8×8 character patterns
+│   ├── peripherals/via6522.vhd    — VIA 6522: Timer 1 IRQ + Port B
+│   ├── peripherals/uart6551.vhd   — UART 6551: CPU TX/RX registers
+│   └── peripherals/vic_vga.vhd    — VIC: bus stealing + VGA/HDMI pixel output
 
 third_party/alinx_sd/              — vendor SD-card SPI sector core
 ```

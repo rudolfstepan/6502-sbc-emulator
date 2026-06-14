@@ -16,6 +16,7 @@ Welcome to the 6502 SBC FPGA documentation. This directory contains comprehensiv
 - **[SD Bootloader](./SD_BOOTLOADER_PLAN.md)** - SD-card shadow-ROM boot flow
 - **[Roadmap](./roadmap.md)** - Project roadmap and milestones
 - **[PIX16 Build Guide](../boards/pix16/README.md)** - Xilinx ISE build and programming guide for the PIX16 Spartan-6 board
+- **[Tang Primer 20K Guide](../boards/tang_primer_20k/README.md)** - Gowin build notes, CH340 UART, HDMI boot screen, and external microSD wiring
 - **[Hardware Support](./HARDWARE_SUPPORT.md)** - PIX16 board pinout, target device, and VGA smoke-test notes
 
 ## Project Structure
@@ -36,7 +37,7 @@ fpga/
 │   └── roadmap.md          Project roadmap
 ├── boards/
 │   ├── pix16/              PIX16 Spartan-6 (constraints, scripts, project, bitstreams)
-│   └── tang_primer_20k/    Gowin GW2A-18 (skeleton)
+│   └── tang_primer_20k/    Gowin GW2A-18 (HDMI, CH340 UART, external-SD boot)
 ├── rtl/core/               Board-agnostic VHDL
 │   ├── cpu/                CPU adapters
 │   ├── mem/                Memory (RAM/ROM)
@@ -106,6 +107,7 @@ The FPGA maintains 100% software compatibility with the C emulator:
 - ✅ PIX16 ISE project targeting `xc6slx16-ftg256-2`
 - ✅ Board-level VGA smoke test with ROM-scripted welcome text
 - ✅ PIX16 SD boot top with boot VGA status, SDRAM RAM test, and UART monitor
+- ✅ Tang Primer 20K HDMI boot/status screen, CH340 UART, and KEY1 FPGA monitor bring-up
 - ✅ Live 16 KB ROM upload into shadow ROM over UART
 - ✅ Comprehensive documentation
 
@@ -125,6 +127,8 @@ The FPGA maintains 100% software compatibility with the C emulator:
 | `rtl/core/sbc_t65_top.vhd` | System with T65 CPU |
 | `boards/pix16/rtl/pix16_sbc_sd_boot_top.vhd` | Active PIX16 SD-card/SDRAM/monitor board top |
 | `rtl/core/sbc_t65_sdram_boot_top.vhd` | T65 SBC core with SDRAM, shadow ROM, VGA, and monitor bus access |
+| `boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd` | Active Tang Primer 20K HDMI/CH340/external-SD board top |
+| `rtl/core/sbc_t65_boot_monitor_top.vhd` | T65 SBC core with internal BSRAM, SD-loaded shadow ROM, VGA, and monitor bus access |
 | `rtl/core/boot/uart_debug_monitor.vhd` | UART machine-language monitor |
 | `boards/pix16/rtl/pix16_sbc_minimal_top.vhd` | Minimal PIX16 VGA smoke-test board top |
 | `boards/pix16/project/fpga.xise` | Xilinx ISE project for `xc6slx16-ftg256-2` |

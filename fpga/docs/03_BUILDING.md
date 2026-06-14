@@ -23,6 +23,7 @@ For actual FPGA implementation, you'll need vendor tools:
 - **Xilinx Vivado** (Xilinx FPGA targets)
 - **Intel Quartus** (Intel Altera FPGA targets)
 - **Lattice Diamond** (Lattice FPGA targets)
+- **GowinEDA / GOWIN FPGA Designer** (Tang Primer 20K / GW2A targets)
 - **Open Source**: Project Trellis, nextpnr (for open source flows)
 
 ## Building the Project
@@ -222,6 +223,17 @@ The `--ieee=synopsys` flag is required for the T65 CPU core compatibility.
   ```
 - Program the FPGA bitstream once, then update ROM contents by rewriting
   `sim/generated/sbc_ehbasic_sd.img` to the SD card.
+
+**Tang Primer 20K / GowinEDA**:
+- Open `fpga/boards/tang_primer_20k/project/tang_sbc.gprj` in GowinEDA.
+- The active top is `tang20k_sbc_top`.
+- The current bring-up path uses HDMI boot/status output, CH340 UART at
+  `115200 8N1`, KEY1 for the FPGA monitor, and an external SPI microSD module
+  on `R16/P15/P16/N15`.
+- If place-and-route reports stale object errors from
+  `project/impl/gwsynthesis/tang_sbc.vg`, force a full resynthesis or clean the
+  generated implementation directory. The `.vg` file is a generated netlist from
+  the previous synthesis run.
 
 **Xilinx Vivado**:
 - Block RAM configured for:

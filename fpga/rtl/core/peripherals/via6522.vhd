@@ -85,9 +85,11 @@ architecture rtl of via6522 is
   -- For each bit: if DDR bit=1 use output register, if DDR bit=0 use input register
   -- This implements tri-state logic where DDR controls output driver enable
   function mixed_port(out_reg : data_t; ddr : data_t; in_reg : data_t) return data_t is
+    variable result : data_t;
   begin
     -- Bit-wise: (output AND direction) OR (input AND NOT direction)
-    return (out_reg and ddr) or (in_reg and not ddr);
+    result := (out_reg and ddr) or (in_reg and not ddr);
+    return result;
   end function;
 
   -- Helper function: Format Interrupt Flag Register for CPU read

@@ -24,10 +24,17 @@
         <!-- Memory -->
         <File path="../../../rtl/core/mem/sync_ram.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/mem/char_rom.vhd" type="file.vhdl" enable="1"/>
-        <File path="../../../rtl/core/mem/rom.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/mem/boot_shadow_rom.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Boot/status diagnostics -->
+        <File path="../../../rtl/core/boot/sd_rom_loader.v" type="file.verilog" enable="1"/>
+        <File path="../../../rtl/core/boot/boot_debug_uart.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/boot/boot_vga_debug.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/boot/uart_debug_monitor.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../third_party/alinx_sd/spi_master.v" type="file.verilog" enable="1"/>
+        <File path="../../../third_party/alinx_sd/sd_card_cmd.v" type="file.verilog" enable="1"/>
+        <File path="../../../third_party/alinx_sd/sd_card_sec_read_write.v" type="file.verilog" enable="1"/>
+        <File path="../../../third_party/alinx_sd/sd_card_top.v" type="file.verilog" enable="1"/>
 
         <!-- CPU adapter -->
         <File path="../../../rtl/core/cpu/t65_adapter.vhd" type="file.vhdl" enable="1"/>
@@ -35,8 +42,8 @@
         <!-- Address decoder -->
         <File path="../../../rtl/core/bus_decode.vhd" type="file.vhdl" enable="1"/>
 
-        <!-- SBC core (internal BSRAM, no SDRAM, no SD card) -->
-        <File path="../../../rtl/core/sbc_minimal_top.vhd" type="file.vhdl" enable="1"/>
+        <!-- SBC core (internal BSRAM + SD-loaded shadow ROM + UART monitor) -->
+        <File path="../../../rtl/core/sbc_t65_boot_monitor_top.vhd" type="file.vhdl" enable="1"/>
 
         <!-- HDMI TMDS encoder (generic, reusable) -->
         <File path="../../../rtl/core/hdmi/tmds_encoder.vhd" type="file.vhdl" enable="1"/>

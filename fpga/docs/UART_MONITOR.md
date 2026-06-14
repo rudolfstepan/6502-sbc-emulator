@@ -7,11 +7,25 @@ new 16 KB ROM image into the shadow-ROM RAM without rewriting the SD card.
 
 ## Hardware Entry
 
-The monitor is instantiated in `rtl/boards/pix16_sbc_sd_boot_top.vhd`.
+The monitor is instantiated in both active board tops:
+
+- PIX16: `boards/pix16/rtl/pix16_sbc_sd_boot_top.vhd`
+- Tang Primer 20K: `boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd`
+
+PIX16:
 
 1. Program the PIX16 with the `pix16_sbc_sd_boot_top` bitstream.
 2. Open the board UART at `230400 8N1`.
 3. Press hardware button `KEY0`.
+
+Tang Primer 20K:
+
+1. Program the Tang with the `tang20k_sbc_top` bitstream.
+2. Open the CH340 UART, for example Windows `COM12`, at `115200 8N1`.
+3. Press hardware button `KEY1`.
+
+In both cases:
+
 4. The monitor holds the T65 through `monitor_hold`, prints:
 
 ```text
@@ -51,12 +65,13 @@ L C000
 
 ## Accessible Address Ranges
 
-The monitor uses a small memory-master inside `sbc_t65_sdram_boot_top.vhd`.
+The monitor uses a small memory-master inside `sbc_t65_sdram_boot_top.vhd`
+on PIX16 and `sbc_t65_boot_monitor_top.vhd` on Tang.
 Currently supported ranges are:
 
 | Range | Target |
 | --- | --- |
-| `$0000-$7FFF` | Main RAM. `$0000-$01FF` is internal zero-page/stack RAM; the rest is SDRAM-backed. |
+| `$0000-$7FFF` | Main RAM. `$0000-$01FF` is internal zero-page/stack RAM. PIX16 uses SDRAM for the rest; the current Tang bring-up core uses internal BSRAM. |
 | `$8000-$87FF` | VIC text VRAM. Writes are visible immediately on VGA. |
 | `$8800-$880F` | VIA 6522 registers. Port B bit 0 is connected to board LED 1 after boot. |
 | `$8810-$8813` | UART 6551 registers. |
@@ -100,8 +115,8 @@ Default settings:
 
 | Setting | Value |
 | --- | --- |
-| Port | `COM15` |
-| Baud | `230400` |
+| Port | `COM15` on PIX16 examples; Tang has been tested as `COM12` |
+| Baud | `230400` on PIX16, `115200` on Tang |
 | Load address | `$C000` |
 | Image | `tools/roms/upload_demo.rom` |
 

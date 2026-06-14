@@ -53,6 +53,33 @@ details.
 ISE build products are intentionally ignored by `.gitignore`; `fpga.xise` is the
 project file that should be kept under version control.
 
+## Tang Primer 20K Board Status
+
+The Gowin project for the Tang Primer 20K lives at:
+
+```text
+fpga/boards/tang_primer_20k/project/tang_sbc.gprj
+```
+
+It targets the Sipeed Tang Primer 20K / Gowin GW2A-18. The current board top is
+`boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd`. It brings up HDMI through the
+Tang TMDS wrapper, displays the boot/status diagnostic screen first, initializes
+an external SPI microSD module, loads the 16 KB `$C000-$FFFF` ROM image into
+shadow ROM, and releases the T65 CPU after a successful load.
+
+Current verified bring-up:
+
+- HDMI boot/status output works.
+- CH340 UART works from the PC as the board serial port, tested as `COM12`.
+- KEY1 enters the FPGA UART monitor and holds the 6502 CPU.
+- Without the external SD module attached, boot debug output correctly reports
+  that SD initialization/read cannot complete.
+
+The Tang path currently uses internal BSRAM for main RAM instead of the on-board
+SDRAM. The CH340 UART runs at `115200 8N1`; the USB-OTG connector is separate and
+is not the SBC UART. The external SD module is wired in SPI mode on `R16/P15/P16/N15`
+as documented in `boards/tang_primer_20k/README.md`.
+
 ## Current Tests
 
 Run from this directory:
@@ -196,7 +223,7 @@ fpga/
       scripts/        ISE build scripts
       project/        ISE project file (fpga.xise)
       bitstreams/     programming files (.mcs/.cfi)
-    tang_primer_20k/  Gowin GW2A-18 board (skeleton)
+    tang_primer_20k/  Gowin GW2A-18 board (HDMI, CH340 UART, external-SD boot path)
   rtl/core/           board-agnostic synthesizable VHDL
     cpu/              CPU adapters
     mem/              RAM/ROM primitives
