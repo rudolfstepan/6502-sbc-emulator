@@ -103,7 +103,7 @@ architecture rtl of vic_vga is
 
   signal char_code : data_t;
   signal pbit      : std_logic;
-  signal cursor_cell    : std_logic;
+  signal cursor_pixel   : std_logic;
   signal cursor_visible : std_logic := '1';
   signal cursor_cnt     : natural range 0 to CURSOR_BLINK_DIV - 1 := 0;
 
@@ -246,12 +246,15 @@ begin
                std_logic_vector(to_unsigned(cline, 3));
 
   -- Pixel-Bit aus ROM-Muster; bit 7 im Zeichencode ist Reverse-Video.
-  cursor_cell <= '1' when in_text = '1' and cursor_enable = '1' and
-                          cursor_visible = '1' and
-                          to_integer(unsigned(cursor_x)) = col and
-                          to_integer(unsigned(cursor_y)) = crow
-                 else '0';
-  pbit <= ((char_data(7 - cpix) xor char_code(7)) xor cursor_cell)
+  -- The cursor is an OR overlay on the lower scan lines. It never clears
+  -- character pixels, so it cannot hide the last typed character.
+  cursor_pixel <= '1' when in_text = '1' and cursor_enable = '1' and
+                           cursor_visible = '1' and
+                           to_integer(unsigned(cursor_x)) = col and
+                           to_integer(unsigned(cursor_y)) = crow and
+                           cline >= 6
+                  else '0';
+  pbit <= ((char_data(7 - cpix) xor char_code(7)) or cursor_pixel)
           when in_text = '1' else '0';
 
   -- VGA-Sync (aktiv-low)

@@ -60,9 +60,16 @@ def normalize_basic_lines(text: str) -> list[str]:
     return lines
 
 
-def write_line(port, text: str, delay: float) -> None:
-    port.write(text.encode("ascii", errors="replace") + b"\r")
-    port.flush()
+def write_line(port, text: str, delay: float, char_delay: float) -> None:
+    payload = text.encode("ascii", errors="replace") + b"\r"
+    if char_delay > 0:
+        for byte in payload:
+            port.write(bytes([byte]))
+            port.flush()
+            time.sleep(char_delay)
+    else:
+        port.write(payload)
+        port.flush()
 
     if delay:
         time.sleep(delay)
@@ -89,7 +96,7 @@ def upload(args: argparse.Namespace) -> None:
 
         if args.new:
             print("Sending NEW")
-            write_line(port, "NEW", args.command_delay)
+            write_line(port, "NEW", args.command_delay, args.char_delay)
             response = read_some(port, args.wait)
             if args.verbose and response:
                 print(response.decode("ascii", errors="replace"), end="")
@@ -97,7 +104,7 @@ def upload(args: argparse.Namespace) -> None:
         print(f"Uploading {len(lines)} BASIC lines from {source}")
 
         for index, line in enumerate(lines, start=1):
-            write_line(port, line, args.line_delay)
+            write_line(port, line, args.line_delay, args.char_delay)
 
             response = read_some(port, args.echo_wait)
             if args.verbose and response:
@@ -108,7 +115,7 @@ def upload(args: argparse.Namespace) -> None:
 
         if args.run:
             print("Sending RUN")
-            write_line(port, "RUN", args.command_delay)
+            write_line(port, "RUN", args.command_delay, args.char_delay)
 
             response = read_some(port, args.wait)
             if args.verbose and response:
@@ -127,6 +134,7 @@ def parse_args() -> argparse.Namespace:
 
     parser.add_argument("--line-delay", type=float, default=0.08, help="delay after each BASIC line")
     parser.add_argument("--command-delay", type=float, default=0.2, help="delay after NEW/RUN")
+    parser.add_argument("--char-delay", type=float, default=0.003, help="delay between bytes, default 0.003")
     parser.add_argument("--settle", type=float, default=0.2, help="delay after opening the port")
     parser.add_argument("--wait", type=float, default=0.5, help="read time after commands")
     parser.add_argument("--echo-wait", type=float, default=0.02, help="read time after each line")
