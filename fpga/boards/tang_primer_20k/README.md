@@ -32,8 +32,15 @@ Target: Sipeed Tang Primer 20K (Gowin GW2A-LV18PG256C8/I7)
 
 ## Status
 
-**Not yet implemented.** The top-level wrapper and board-specific primitives
-(rPLL, BSRAM wrappers for SDRAM, HDMI encoder) still need to be written.
+HDMI bring-up is implemented with a Tang-specific top-level wrapper and DVI-style
+TMDS output. The default Gowin project currently shows the boot/status diagnostic
+screen on HDMI (`BOOT_DIAG_ONLY=true`) with SD signals tied inactive, so a missing
+or unported SD-card path is visible as a timeout instead of a blank screen.
+
+The full SD/SDRAM boot computer is still not ported to the Tang board. The active
+Tang SBC core is the internal-BSRAM `sbc_minimal_top`; set `BOOT_DIAG_ONLY=false`
+when you want HDMI to show that core's VIC output instead of the diagnostic
+screen.
 
 ## Build
 
@@ -44,3 +51,6 @@ make build     # synthesise + place & route
 make bitstream # generate .fs programming file
 make program   # flash via openFPGALoader
 ```
+
+If GowinEDA reports that a newly added VHDL unit is not compiled in `work`, run a
+clean build so the generated `project/impl` synthesis file list is recreated.

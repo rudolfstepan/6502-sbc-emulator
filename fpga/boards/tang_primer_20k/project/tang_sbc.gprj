@@ -1,4 +1,4 @@
-<?xml version="1" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE gowin-fpga-project>
 <Project>
     <Template>FPGA</Template>
@@ -25,6 +25,9 @@
         <File path="../../../rtl/core/mem/sync_ram.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/mem/char_rom.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/mem/rom.vhd" type="file.vhdl" enable="1"/>
+
+        <!-- Boot/status diagnostics -->
+        <File path="../../../rtl/core/boot/boot_vga_debug.vhd" type="file.vhdl" enable="1"/>
 
         <!-- CPU adapter -->
         <File path="../../../rtl/core/cpu/t65_adapter.vhd" type="file.vhdl" enable="1"/>

@@ -316,7 +316,8 @@ begin
       vga_g           => boot_vga_g,
       vga_b           => boot_vga_b,
       vga_hs          => boot_vga_hs,
-      vga_vs          => boot_vga_vs
+      vga_vs          => boot_vga_vs,
+      vga_de          => open
     );
 
   sbc_i : entity work.sbc_t65_sdram_boot_top

@@ -6,6 +6,9 @@ use ieee.numeric_std.all;
 use work.sbc_pkg.all;
 
 entity boot_vga_debug is
+  generic (
+    CLK_DIV : natural range 1 to 2 := 2
+  );
   port (
     clk             : in  std_logic;
     reset_n         : in  std_logic;
@@ -34,7 +37,8 @@ entity boot_vga_debug is
     vga_g           : out std_logic_vector(5 downto 0);
     vga_b           : out std_logic_vector(4 downto 0);
     vga_hs          : out std_logic;
-    vga_vs          : out std_logic
+    vga_vs          : out std_logic;
+    vga_de          : out std_logic
   );
 end entity;
 
@@ -129,6 +133,8 @@ begin
     if rising_edge(clk) then
       if reset_n = '0' then
         pce <= '0';
+      elsif CLK_DIV = 1 then
+        pce <= '1';
       else
         pce <= not pce;
       end if;
@@ -359,6 +365,7 @@ begin
 
   vga_hs <= '0' when hc >= H_SS and hc < H_SE else '1';
   vga_vs <= '0' when vc >= V_SS and vc < V_SE else '1';
+  vga_de <= active;
 
   vga_r <= "11111" when pbit = '1' and active = '1' and (boot_error = '1' or ram_test_error = '1' or no_card_timeout = '1') else
            "11111" when pbit = '1' and active = '1' and crow = 2 else

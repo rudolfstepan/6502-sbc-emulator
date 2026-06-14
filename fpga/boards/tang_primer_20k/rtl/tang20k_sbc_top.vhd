@@ -16,7 +16,8 @@ use work.sbc_pkg.all;
 entity tang20k_sbc_top is
   generic (
     ROM_INIT_FILE : string   := "../../../sim/hex/rom_welcome.hex";
-    BAUD          : positive := 115_200
+    BAUD          : positive := 115_200;
+    BOOT_DIAG_ONLY: boolean  := true
   );
   port (
     clk_27mhz  : in  std_logic;
@@ -46,21 +47,40 @@ architecture rtl of tang20k_sbc_top is
   signal vga_hs       : std_logic;
   signal vga_vs       : std_logic;
   signal vga_de       : std_logic;
+  signal sbc_vga_r    : std_logic_vector(4 downto 0);
+  signal sbc_vga_g    : std_logic_vector(5 downto 0);
+  signal sbc_vga_b    : std_logic_vector(4 downto 0);
+  signal sbc_vga_hs   : std_logic;
+  signal sbc_vga_vs   : std_logic;
+  signal sbc_vga_de   : std_logic;
+  signal boot_vga_r   : std_logic_vector(4 downto 0);
+  signal boot_vga_g   : std_logic_vector(5 downto 0);
+  signal boot_vga_b   : std_logic_vector(4 downto 0);
+  signal boot_vga_hs  : std_logic;
+  signal boot_vga_vs  : std_logic;
+  signal boot_vga_de  : std_logic;
 begin
   -- Hold reset until PLL has locked
   reset_n <= key(0) and pll_lock;
+
+  vga_r  <= boot_vga_r  when BOOT_DIAG_ONLY else sbc_vga_r;
+  vga_g  <= boot_vga_g  when BOOT_DIAG_ONLY else sbc_vga_g;
+  vga_b  <= boot_vga_b  when BOOT_DIAG_ONLY else sbc_vga_b;
+  vga_hs <= boot_vga_hs when BOOT_DIAG_ONLY else sbc_vga_hs;
+  vga_vs <= boot_vga_vs when BOOT_DIAG_ONLY else sbc_vga_vs;
+  vga_de <= boot_vga_de when BOOT_DIAG_ONLY else sbc_vga_de;
 
   sbc_i : entity work.sbc_minimal_top
     generic map (ROM_INIT_FILE => ROM_INIT_FILE, CLK_DIV => 1)
     port map (
       clk           => clk_sys,
       reset_n       => reset_n,
-      vga_r         => vga_r,
-      vga_g         => vga_g,
-      vga_b         => vga_b,
-      vga_hs        => vga_hs,
-      vga_vs        => vga_vs,
-      vga_de        => vga_de,
+      vga_r         => sbc_vga_r,
+      vga_g         => sbc_vga_g,
+      vga_b         => sbc_vga_b,
+      vga_hs        => sbc_vga_hs,
+      vga_vs        => sbc_vga_vs,
+      vga_de        => sbc_vga_de,
       via_portb     => via_portb,
       uart_rx       => uart_rx,
       uart_tx_data  => uart_tx_data,
@@ -71,6 +91,40 @@ begin
       dbg_cpu_din   => open,
       dbg_cpu_we    => open,
       dbg_cpu_sync  => open
+    );
+
+  boot_vga_i : entity work.boot_vga_debug
+    generic map (CLK_DIV => 1)
+    port map (
+      clk             => clk_sys,
+      reset_n         => reset_n,
+      sd_init_done    => '0',
+      sd_sec_read     => '0',
+      sd_sec_read_end => '0',
+      boot_done       => '0',
+      boot_error      => '0',
+      sd_ncs          => '1',
+      sd_dclk         => '0',
+      sd_mosi_o       => '1',
+      sd_miso_i       => '1',
+      loader_state    => x"0",
+      sd_sec_state    => "00000",
+      sd_cmd_state    => x"0",
+      sd_cmd_error    => '0',
+      ram_test_active => '0',
+      ram_test_done   => '0',
+      ram_test_error  => '0',
+      ram_test_phase  => x"0",
+      ram_test_addr   => (others => '0'),
+      ram_test_fail_addr => (others => '0'),
+      ram_test_expected  => x"00",
+      ram_test_actual    => x"00",
+      vga_r           => boot_vga_r,
+      vga_g           => boot_vga_g,
+      vga_b           => boot_vga_b,
+      vga_hs          => boot_vga_hs,
+      vga_vs          => boot_vga_vs,
+      vga_de          => boot_vga_de
     );
 
   uart_ser_i : entity work.uart_tx_ser
