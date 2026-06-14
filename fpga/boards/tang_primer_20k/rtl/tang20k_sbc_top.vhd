@@ -15,7 +15,7 @@ use work.sbc_pkg.all;
 
 entity tang20k_sbc_top is
   generic (
-    BAUD          : positive := 230_400
+    BAUD          : positive := 115_200
   );
   port (
     clk_27mhz  : in  std_logic;
@@ -161,8 +161,10 @@ architecture rtl of tang20k_sbc_top is
   signal ulpi_data_oe       : std_logic;
   signal ulpi_stp_i         : std_logic;
   signal ulpi_rst_i         : std_logic;
-  signal usb_status         : std_logic_vector(7 downto 0);
-  signal usb_phy_id         : std_logic_vector(31 downto 0);
+  signal usb_connected      : std_logic;
+  signal usb_keycode        : std_logic_vector(7 downto 0);
+  signal usb_modif          : std_logic_vector(7 downto 0);
+  signal usb_ascii          : std_logic_vector(7 downto 0);
 begin
   -- Hold reset until PLL has locked
   reset_n <= key(0) and pll_lock;
@@ -255,29 +257,17 @@ begin
       sd_sec_state    => sd_sec_state,
       sd_cmd_state    => sd_cmd_state,
       sd_cmd_error    => sd_cmd_error,
-      usb_status      => usb_status,
-      usb_phy_id      => usb_phy_id,
+      usb_connected   => usb_connected,
+      usb_keycode     => usb_keycode,
+      usb_modif       => usb_modif,
+      usb_ascii       => usb_ascii,
       uart_busy       => uart_tx_busy,
       uart_data       => boot_dbg_data,
       uart_valid      => boot_dbg_valid,
       active          => boot_dbg_active
     );
 
-  usb_diag_i : entity work.usb_ulpi_diag
-    port map (
-      clk       => clk_sys,
-      reset_n   => reset_n,
-      ulpi_clk  => ulpi_clk,
-      ulpi_dir  => ulpi_dir,
-      ulpi_nxt  => ulpi_nxt,
-      ulpi_data_i => ulpi_data_i,
-      ulpi_data_o => ulpi_data_o,
-      ulpi_data_oe => ulpi_data_oe,
-      ulpi_stp  => ulpi_stp_i,
-      ulpi_rst  => ulpi_rst_i,
-      status    => usb_status,
-      phy_id    => usb_phy_id
-    );
+  -- usb_ulpi_diag replaced by usb_hid_host inside sbc_i (via ULPI ports)
 
   monitor_rx_i : entity work.uart_rx_ser
     generic map (CLK_HZ => 27_000_000, BAUD => BAUD)
@@ -339,6 +329,18 @@ begin
       uart_tx_valid => uart_tx_valid,
       uart_tx_busy  => uart_tx_busy,
       via_portb     => via_portb,
+      ulpi_clk      => ulpi_clk,
+      ulpi_dir      => ulpi_dir,
+      ulpi_nxt      => ulpi_nxt,
+      ulpi_data_i   => ulpi_data_i,
+      ulpi_data_o   => ulpi_data_o,
+      ulpi_data_oe  => ulpi_data_oe,
+      ulpi_stp      => ulpi_stp_i,
+      ulpi_rst      => ulpi_rst_i,
+      usb_connected => usb_connected,
+      usb_keycode   => usb_keycode,
+      usb_modif     => usb_modif,
+      usb_ascii     => usb_ascii,
       dbg_cpu_addr  => open,
       dbg_cpu_data  => open,
       dbg_cpu_din   => open,
@@ -364,8 +366,10 @@ begin
       sd_sec_state    => sd_sec_state,
       sd_cmd_state    => sd_cmd_state,
       sd_cmd_error    => sd_cmd_error,
-      usb_status      => usb_status,
-      usb_phy_id      => usb_phy_id,
+      usb_connected   => usb_connected,
+      usb_keycode     => usb_keycode,
+      usb_modif       => usb_modif,
+      usb_ascii       => usb_ascii,
       ram_test_active => '0',
       ram_test_done   => boot_done,
       ram_test_error  => '0',

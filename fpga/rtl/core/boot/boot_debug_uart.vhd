@@ -27,8 +27,10 @@ entity boot_debug_uart is
     sd_sec_state    : in  std_logic_vector(4 downto 0);
     sd_cmd_state    : in  std_logic_vector(3 downto 0);
     sd_cmd_error    : in  std_logic;
-    usb_status      : in  std_logic_vector(7 downto 0) := (others => '0');
-    usb_phy_id      : in  std_logic_vector(31 downto 0) := (others => '0');
+    usb_connected   : in  std_logic := '0';
+    usb_keycode     : in  std_logic_vector(7 downto 0) := (others => '0');
+    usb_modif       : in  std_logic_vector(7 downto 0) := (others => '0');
+    usb_ascii       : in  std_logic_vector(7 downto 0) := (others => '0');
 
     uart_busy       : in  std_logic;
     uart_data       : out data_t;
@@ -104,8 +106,10 @@ architecture rtl of boot_debug_uart is
       when S_STAT_6  => return x"53"; -- S: SD sector state
       when S_STAT_9  => return x"43"; -- C: SD command state
       when S_STAT_11 => return x"46"; -- F: flags
-      when S_STAT_13 => return x"55"; -- U: USB/ULPI status
-      when S_STAT_16 => return x"49"; -- I: USB PHY ID
+      when S_STAT_13 => return x"55"; -- U: USB connected flag
+      when S_STAT_15 => return x"4B"; -- K: keycode
+      when S_STAT_18 => return x"4D"; -- M: modifier
+      when S_STAT_21 => return x"41"; -- A: ASCII
       when S_STAT_25 => return x"0D";
       when S_STAT_26 => return x"0A";
       when S_DONE_0  => return x"44"; -- D: boot done
@@ -152,8 +156,7 @@ architecture rtl of boot_debug_uart is
       when S_STAT_20 => return S_STAT_21;
       when S_STAT_21 => return S_STAT_22;
       when S_STAT_22 => return S_STAT_23;
-      when S_STAT_23 => return S_STAT_24;
-      when S_STAT_24 => return S_STAT_25;
+      when S_STAT_23 => return S_STAT_25;  -- skip S_STAT_24 (unused)
       when S_STAT_25 => return S_STAT_26;
       when S_STAT_26 => return S_IDLE;
       when S_DONE_0  => return S_DONE_1;
@@ -173,8 +176,10 @@ architecture rtl of boot_debug_uart is
     sec       : std_logic_vector(4 downto 0);
     cmd       : std_logic_vector(3 downto 0);
     flags     : std_logic_vector(3 downto 0);
-    usb       : std_logic_vector(7 downto 0);
-    usb_id    : std_logic_vector(31 downto 0)
+    usb_con   : std_logic;
+    usb_key   : std_logic_vector(7 downto 0);
+    usb_mod   : std_logic_vector(7 downto 0);
+    usb_asc   : std_logic_vector(7 downto 0)
   ) return data_t is
   begin
     case s is
@@ -184,16 +189,14 @@ architecture rtl of boot_debug_uart is
       when S_STAT_8  => return hex_char(sec(3 downto 0));
       when S_STAT_10 => return hex_char(cmd);
       when S_STAT_12 => return hex_char(flags);
-      when S_STAT_14 => return hex_char(usb(7 downto 4));
-      when S_STAT_15 => return hex_char(usb(3 downto 0));
-      when S_STAT_17 => return hex_char(usb_id(31 downto 28));
-      when S_STAT_18 => return hex_char(usb_id(27 downto 24));
-      when S_STAT_19 => return hex_char(usb_id(23 downto 20));
-      when S_STAT_20 => return hex_char(usb_id(19 downto 16));
-      when S_STAT_21 => return hex_char(usb_id(15 downto 12));
-      when S_STAT_22 => return hex_char(usb_id(11 downto 8));
-      when S_STAT_23 => return hex_char(usb_id(7 downto 4));
-      when S_STAT_24 => return hex_char(usb_id(3 downto 0));
+      -- USB HID: U<con>K<key_hi><key_lo>M<mod_hi><mod_lo>A<asc_hi><asc_lo>
+      when S_STAT_14 => return hex_char("000" & usb_con);
+      when S_STAT_16 => return hex_char(usb_key(7 downto 4));
+      when S_STAT_17 => return hex_char(usb_key(3 downto 0));
+      when S_STAT_19 => return hex_char(usb_mod(7 downto 4));
+      when S_STAT_20 => return hex_char(usb_mod(3 downto 0));
+      when S_STAT_22 => return hex_char(usb_asc(7 downto 4));
+      when S_STAT_23 => return hex_char(usb_asc(3 downto 0));
       when others    => return msg_byte(s);
     end case;
   end function;
@@ -313,8 +316,8 @@ begin
 
             when others =>
               data_reg <= state_byte(state, pins_v, loader_state, sd_sec_state,
-                                     sd_cmd_state, flags_v, usb_status,
-                                     usb_phy_id);
+                                     sd_cmd_state, flags_v, usb_connected,
+                                     usb_keycode, usb_modif, usb_ascii);
               valid_reg <= '1';
               wait_uart <= '1';
               state <= next_msg_state(state);

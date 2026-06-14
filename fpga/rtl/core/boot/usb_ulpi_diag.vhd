@@ -249,20 +249,13 @@ begin
             end if;
 
           when W_SCR_DATA =>
-            data_o_reg <= ULPI_SCRATCH_VALUE;
+            -- ULPI register write: drive DATA + STP in the same clock.
+            -- The PHY does NOT assert NXT again here; STP commits the write.
+            data_o_reg  <= ULPI_SCRATCH_VALUE;
             data_oe_reg <= '1';
-            if wait_count = x"0000" then
-              wait_count <= wait_count + 1;
-            elsif ulpi_nxt = '1' and ulpi_dir = '0' then
-              wait_count <= (others => '0');
-              read_state <= W_SCR_GAP;
-            elsif wait_count = x"0FFF" then
-              wait_count <= (others => '0');
-              error_code <= x"7";
-              read_state <= R_ERROR;
-            else
-              wait_count <= wait_count + 1;
-            end if;
+            stp_reg     <= '1';
+            wait_count  <= (others => '0');
+            read_state  <= W_SCR_GAP;
 
           when W_SCR_GAP =>
             if ulpi_dir = '0' then

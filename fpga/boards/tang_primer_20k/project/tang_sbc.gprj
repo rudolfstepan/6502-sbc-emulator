@@ -26,6 +26,9 @@
         <File path="../../../rtl/core/mem/char_rom.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/mem/boot_shadow_rom.vhd" type="file.vhdl" enable="1"/>
 
+        <!-- USB HID host -->
+        <File path="../../../rtl/core/usb/usb_hid_host.vhd" type="file.vhdl" enable="1"/>
+
         <!-- Boot/status diagnostics -->
         <File path="../../../rtl/core/boot/sd_rom_loader.v" type="file.verilog" enable="1"/>
         <File path="../../../rtl/core/boot/boot_debug_uart.vhd" type="file.vhdl" enable="1"/>

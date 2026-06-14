@@ -32,8 +32,12 @@ package sbc_pkg is
   constant ADDR_UART_BASE       : unsigned(15 downto 0) := x"8810";
   constant ADDR_UART_LAST       : unsigned(15 downto 0) := x"8813";
 
-  -- Disk controller: Floppy disk interface (16 bytes)
-  constant ADDR_DISK_BASE       : unsigned(15 downto 0) := x"8820";
+  -- USB HID host: keyboard register file (4 bytes)
+  constant ADDR_USB_BASE        : unsigned(15 downto 0) := x"8820";
+  constant ADDR_USB_LAST        : unsigned(15 downto 0) := x"8823";
+
+  -- Disk controller: Floppy disk interface (12 bytes, after USB)
+  constant ADDR_DISK_BASE       : unsigned(15 downto 0) := x"8824";
   constant ADDR_DISK_LAST       : unsigned(15 downto 0) := x"882F";
 
   -- Sound synthesizer channel 0 (10 bytes)
@@ -83,6 +87,7 @@ package sbc_pkg is
     DEV_VIC_TEXT,  -- VIC text display memory
     DEV_VIA,       -- Parallel I/O controller
     DEV_UART,      -- Serial UART interface
+    DEV_USB,       -- USB HID host keyboard
     DEV_DISK,      -- Disk controller
     DEV_SOUND0,    -- Synthesis channel 0
     DEV_VIC_BLIT,  -- Hardware graphics blitter

@@ -39,7 +39,10 @@ begin
     -- 0x8810-0x8813: UART serial interface (4 bytes)
     elsif in_range(addr, ADDR_UART_BASE, ADDR_UART_LAST) then
       sel <= DEV_UART;
-    -- 0x8820-0x882F: Disk controller (16 bytes)
+    -- 0x8820-0x8823: USB HID host keyboard (4 bytes)
+    elsif in_range(addr, ADDR_USB_BASE, ADDR_USB_LAST) then
+      sel <= DEV_USB;
+    -- 0x8824-0x882F: Disk controller (12 bytes)
     elsif in_range(addr, ADDR_DISK_BASE, ADDR_DISK_LAST) then
       sel <= DEV_DISK;
     -- 0x8830-0x8839: Sound synthesizer channel 0 (10 bytes)

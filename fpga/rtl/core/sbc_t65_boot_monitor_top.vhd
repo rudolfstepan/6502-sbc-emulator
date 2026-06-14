@@ -42,6 +42,22 @@ entity sbc_t65_boot_monitor_top is
 
     via_portb   : out data_t;
 
+    -- USB HID host (ULPI PHY interface, optional — tie to '0'/'Z' if absent)
+    ulpi_clk     : in  std_logic := '0';
+    ulpi_dir     : in  std_logic := '0';
+    ulpi_nxt     : in  std_logic := '0';
+    ulpi_data_i  : in  std_logic_vector(7 downto 0) := (others => '0');
+    ulpi_data_o  : out std_logic_vector(7 downto 0);
+    ulpi_data_oe : out std_logic;
+    ulpi_stp     : out std_logic;
+    ulpi_rst     : out std_logic;
+
+    -- USB HID diagnostic outputs (for boot debug display)
+    usb_connected : out std_logic;
+    usb_keycode   : out std_logic_vector(7 downto 0);
+    usb_modif     : out std_logic_vector(7 downto 0);
+    usb_ascii     : out std_logic_vector(7 downto 0);
+
     dbg_cpu_addr : out addr_t;
     dbg_cpu_data : out data_t;
     dbg_cpu_din  : out data_t;
@@ -62,6 +78,7 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal cpu_enable  : std_logic := '0';
   signal cpu_rdy     : std_logic := '1';
   signal cpu_irq_n   : std_logic := '1';
+  signal usb_cs      : std_logic;
   signal dev_sel     : device_sel_t;
 
   signal zp_dout     : data_t;
@@ -112,6 +129,8 @@ architecture rtl of sbc_t65_boot_monitor_top is
 
   signal via_irq     : std_logic;
   signal uart_irq    : std_logic;
+  signal usb_irq     : std_logic;
+  signal usb_dout    : data_t;
   signal uart_rx_data  : data_t;
   signal uart_rx_valid : std_logic;
   signal uart_rx_valid_cpu : std_logic;
@@ -151,7 +170,8 @@ begin
 
   cpu_bus_we <= cpu_we and not cpu_enable;
   cpu_rdy    <= not vic_stealing and not monitor_hold;
-  cpu_irq_n  <= not (via_irq or uart_irq);
+  cpu_irq_n  <= not (via_irq or uart_irq or usb_irq);
+  usb_cs     <= '1' when monitor_hold = '0' and dev_sel = DEV_USB else '0';
 
   zp_cs   <= '1' when dev_sel = DEV_SRAM and cpu_addr(15 downto 9) = "0000000" else '0';
   zp_we   <= cpu_bus_we when monitor_hold = '0' and zp_cs = '1' else '0';
@@ -236,6 +256,8 @@ begin
         cpu_din <= via_dout;
       when DEV_UART =>
         cpu_din <= uart_dout;
+      when DEV_USB =>
+        cpu_din <= usb_dout;
       when others =>
         cpu_din <= x"FF";
     end case;
@@ -476,6 +498,29 @@ begin
       end if;
     end if;
   end process;
+
+  usb_hid_i : entity work.usb_hid_host
+    port map (
+      clk          => clk,
+      reset_n      => cpu_reset_n,
+      ulpi_clk     => ulpi_clk,
+      ulpi_dir     => ulpi_dir,
+      ulpi_nxt     => ulpi_nxt,
+      ulpi_data_i  => ulpi_data_i,
+      ulpi_data_o  => ulpi_data_o,
+      ulpi_data_oe => ulpi_data_oe,
+      ulpi_stp     => ulpi_stp,
+      ulpi_rst     => ulpi_rst,
+      cs             => usb_cs,
+      we             => cpu_bus_we,
+      addr           => cpu_addr(1 downto 0),
+      dout           => usb_dout,
+      irq            => usb_irq,
+      diag_connected => usb_connected,
+      diag_keycode   => usb_keycode,
+      diag_modif     => usb_modif,
+      diag_ascii     => usb_ascii
+    );
 
   char_i : entity work.char_rom
     port map (addr => char_addr, dout => char_data);
