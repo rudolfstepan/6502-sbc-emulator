@@ -16,10 +16,13 @@
 //
 // VGA is routed to the P3 GPIO expansion header (bank 6 LVCMOS33 pins).
 // Wire a resistor-ladder DAC breakout board:
-//   HS = T11, VS = T9
-//   R[4:0] = T8 T7 T6 R10 R9
-//   G[5:0] = R8 R7 P10 P9 P8 P7
-//   B[4:0] = P6 N9 N8 N7 N6
+//   HS = T11, VS = P16
+//   R[4:0] = T8 T7 T6 R16 R9
+//   G[5:0] = R8 R7 P15 P9 P8 P7
+//   B[4:0] = P6 N15 N8 N7 N6
+//
+// Pins avoided (SSPI/MSPI dedicated, cause PR2017 without project option):
+//   T10 (SSPI), T9 (SSPI), R10 (MSPI), P10 (MSPI), N9 (SSPI)
 
 // -------------------------------------------------------------------------
 // Clock (27 MHz on-board oscillator)
@@ -37,10 +40,10 @@ IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
 // User buttons (active-low)
-// key[0] = S1 (T10) — primary reset button, LVCMOS33 bank
-// key[1] = S2 (T3)  — spare user button, LVCMOS15 bank
+// key[0] = T5  — LVCMOS33 reset (T10 is SSPI dedicated; T5 confirmed safe)
+// key[1] = T3  — spare user button, LVCMOS15 bank
 // -------------------------------------------------------------------------
-IO_LOC "key[0]" T10;
+IO_LOC "key[0]" T5;
 IO_PORT "key[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 IO_LOC "key[1]" T3;
 IO_PORT "key[1]" IO_TYPE=LVCMOS15 PULL_MODE=UP;
@@ -63,7 +66,7 @@ IO_PORT "led[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 // -------------------------------------------------------------------------
 IO_LOC "vga_hs" T11;
 IO_PORT "vga_hs" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_vs" T9;
+IO_LOC "vga_vs" P16;
 IO_PORT "vga_vs" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 
 IO_LOC "vga_r[4]" T8;
@@ -72,7 +75,7 @@ IO_LOC "vga_r[3]" T7;
 IO_PORT "vga_r[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 IO_LOC "vga_r[2]" T6;
 IO_PORT "vga_r[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_r[1]" R10;
+IO_LOC "vga_r[1]" R16;
 IO_PORT "vga_r[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 IO_LOC "vga_r[0]" R9;
 IO_PORT "vga_r[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
@@ -81,7 +84,7 @@ IO_LOC "vga_g[5]" R8;
 IO_PORT "vga_g[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 IO_LOC "vga_g[4]" R7;
 IO_PORT "vga_g[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_g[3]" P10;
+IO_LOC "vga_g[3]" P15;
 IO_PORT "vga_g[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 IO_LOC "vga_g[2]" P9;
 IO_PORT "vga_g[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
@@ -92,7 +95,7 @@ IO_PORT "vga_g[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 
 IO_LOC "vga_b[4]" P6;
 IO_PORT "vga_b[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_b[3]" N9;
+IO_LOC "vga_b[3]" N15;
 IO_PORT "vga_b[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 IO_LOC "vga_b[2]" N8;
 IO_PORT "vga_b[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
