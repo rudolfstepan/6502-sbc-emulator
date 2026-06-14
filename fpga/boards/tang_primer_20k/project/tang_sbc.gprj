@@ -5,179 +5,55 @@
     <Version>5</Version>
     <Device name="GW2A-18" pn="GW2A-LV18PG256C8/I7">gw2a18-002</Device>
     <FileList>
-        <!-- Package — must elaborate before all other work-library units -->
-        <File>
-            <Path>../../../rtl/core/sbc_pkg.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <!-- Package — must compile before all other work-library units -->
+        <File path="../../../rtl/core/sbc_pkg.vhd" type="file.vhdl" enable="1"/>
 
-        <!-- T65 6502 core (compile order: Pack → MCode → ALU → T65) -->
-        <File>
-            <Path>../../../third_party/t65/rtl/T65_Pack.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../third_party/t65/rtl/T65_MCode.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../third_party/t65/rtl/T65_ALU.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../third_party/t65/rtl/T65.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <!-- T65 6502 core (order: Pack -> MCode -> ALU -> T65) -->
+        <File path="../../../third_party/t65/rtl/T65_Pack.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../third_party/t65/rtl/T65_MCode.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../third_party/t65/rtl/T65_ALU.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../third_party/t65/rtl/T65.vhd" type="file.vhdl" enable="1"/>
 
         <!-- SD card SPI core (Alinx vendor Verilog) -->
-        <File>
-            <Path>../../../third_party/alinx_sd/spi_master.v</Path>
-            <FileType>Verilog</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../third_party/alinx_sd/sd_card_cmd.v</Path>
-            <FileType>Verilog</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../third_party/alinx_sd/sd_card_sec_read_write.v</Path>
-            <FileType>Verilog</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../third_party/alinx_sd/sd_card_top.v</Path>
-            <FileType>Verilog</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../third_party/alinx_sd/spi_master.v" type="file.verilog" enable="1"/>
+        <File path="../../../third_party/alinx_sd/sd_card_cmd.v" type="file.verilog" enable="1"/>
+        <File path="../../../third_party/alinx_sd/sd_card_sec_read_write.v" type="file.verilog" enable="1"/>
+        <File path="../../../third_party/alinx_sd/sd_card_top.v" type="file.verilog" enable="1"/>
 
         <!-- Peripherals -->
-        <File>
-            <Path>../../../rtl/core/peripherals/via6522.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/peripherals/uart_tx_ser.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/peripherals/uart_rx_ser.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/peripherals/uart6551.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/peripherals/vic_vga.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../rtl/core/peripherals/via6522.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/peripherals/uart_tx_ser.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/peripherals/uart_rx_ser.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/peripherals/uart6551.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/peripherals/vic_vga.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Memory -->
-        <File>
-            <Path>../../../rtl/core/mem/sync_ram.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/mem/char_rom.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/mem/boot_shadow_rom.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/mem/sdram_if.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/mem/sdram_ctrl.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../rtl/core/mem/sync_ram.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/mem/char_rom.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/mem/boot_shadow_rom.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/mem/sdram_if.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/mem/sdram_ctrl.vhd" type="file.vhdl" enable="1"/>
 
         <!-- CPU adapter -->
-        <File>
-            <Path>../../../rtl/core/cpu/t65_adapter.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../rtl/core/cpu/t65_adapter.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Address decoder -->
-        <File>
-            <Path>../../../rtl/core/bus_decode.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../rtl/core/bus_decode.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Boot subsystem -->
-        <File>
-            <Path>../../../rtl/core/boot/sd_rom_loader.v</Path>
-            <FileType>Verilog</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/boot/boot_debug_uart.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/boot/boot_vga_debug.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/boot/boot_sdram_test.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
-        <File>
-            <Path>../../../rtl/core/boot/uart_debug_monitor.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../rtl/core/boot/sd_rom_loader.v" type="file.verilog" enable="1"/>
+        <File path="../../../rtl/core/boot/boot_debug_uart.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/boot/boot_vga_debug.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/boot/boot_sdram_test.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/boot/uart_debug_monitor.vhd" type="file.vhdl" enable="1"/>
 
         <!-- SBC core -->
-        <File>
-            <Path>../../../rtl/core/sbc_t65_sdram_boot_top.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../../../rtl/core/sbc_t65_sdram_boot_top.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Board top (Tang Primer 20K) -->
-        <File>
-            <Path>../rtl/tang20k_sbc_top.vhd</Path>
-            <FileType>VHDL</FileType>
-            <InLibrary>work</InLibrary>
-        </File>
+        <File path="../rtl/tang20k_sbc_top.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Physical constraints -->
-        <File>
-            <Path>../constraints/tang20k_sbc.cst</Path>
-            <FileType>CST</FileType>
-        </File>
+        <File path="../constraints/tang20k_sbc.cst" type="file.cst" enable="1"/>
     </FileList>
-    <OptionsList>
-        <Option name="synthesize">GowinSynthesis</Option>
-        <Option name="top_module">tang20k_sbc_top</Option>
-        <Option name="output_base_name">tang_sbc</Option>
-        <Option name="sim_startup_model">false</Option>
-        <Option name="use_mspi_as_regular_io">true</Option>
-        <Option name="use_sspi_as_regular_io">true</Option>
-        <Option name="use_done_as_regular_io">false</Option>
-    </OptionsList>
 </Project>
