@@ -19,7 +19,8 @@ use work.sbc_pkg.all;
 
 entity sbc_minimal_top is
   generic (
-    ROM_INIT_FILE : string := ""
+    ROM_INIT_FILE : string  := "";
+    CLK_DIV       : natural := 2   -- vic_vga pixel-clock divisor (2=50 MHz, 1=27 MHz)
   );
   port (
     clk      : in  std_logic;
@@ -31,6 +32,7 @@ entity sbc_minimal_top is
     vga_b    : out std_logic_vector(4 downto 0);
     vga_hs   : out std_logic;
     vga_vs   : out std_logic;
+    vga_de   : out std_logic;   -- data enable: '1' during active video
 
     -- VIA Port B output (exposed for board LEDs etc.)
     via_portb : out data_t;
@@ -246,6 +248,7 @@ begin
     port map (addr => char_addr, dout => char_data);
 
   vic_i : entity work.vic_vga
+    generic map (CLK_DIV => CLK_DIV)
     port map (
       clk          => clk,
       reset_n      => reset_n,
@@ -256,6 +259,7 @@ begin
       char_data    => char_data,
       vga_hs       => vga_hs,
       vga_vs       => vga_vs,
+      vga_de       => vga_de,
       vga_r        => vga_r,
       vga_g        => vga_g,
       vga_b        => vga_b

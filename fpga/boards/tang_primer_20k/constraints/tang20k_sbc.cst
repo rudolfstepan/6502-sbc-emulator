@@ -4,34 +4,24 @@
 //Part Number: GW2A-LV18PG256C8/I7
 //Device: GW2A-18
 //
-// Pin assignments confirmed from manufacturer examples:
-//   UART_HELLO/src/uart_Hello.cst  — UART, clock, rst_n
-//   HDMI/src/dk_video.cst          — LEDs, reset T10, clock H11
-//   Litex/sipeed_tang_primer_20k   — buttons, LED array, DDR3 bank map
-//   Lite-bottom_test_project       — GPIO expansion header pin map
+// Pin assignments confirmed from manufacturer example CSTs:
+//   UART_HELLO — UART (M11/T13), clock (H11)
+//   HDMI       — TMDS pairs, LEDs, reset T10 / clock H11
+//   Litex      — buttons, LED array
+//   PT8211     — confirmed safe GPIO: R16, P15, P16, N15, T3, T5
 //
-// NOTE: Tang Primer 20K has NO on-board microSD (it's on the dock).
-//       The on-board DDR3 SDRAM uses SSTL15 banks — incompatible with
-//       plain LVCMOS33 SDR SDRAM.  This build uses only internal BSRAM.
+// Avoided: T10/T9 (SSPI), R10/P10 (MSPI), N9 (SSPI) — PR2017 without project option.
 //
-// VGA is routed to the P3 GPIO expansion header (bank 6 LVCMOS33 pins).
-// Wire a resistor-ladder DAC breakout board:
-//   HS = T11, VS = P16
-//   R[4:0] = T8 T7 T6 R16 R9
-//   G[5:0] = R8 R7 P15 P9 P8 P7
-//   B[4:0] = P6 N15 N8 N7 N6
-//
-// Pins avoided (SSPI/MSPI dedicated, cause PR2017 without project option):
-//   T10 (SSPI), T9 (SSPI), R10 (MSPI), P10 (MSPI), N9 (SSPI)
+// Video: HDMI TMDS via on-board connector (no GPIO VGA breakout needed).
 
 // -------------------------------------------------------------------------
-// Clock (27 MHz on-board oscillator)
+// Clock
 // -------------------------------------------------------------------------
 IO_LOC "clk_27mhz" H11;
 IO_PORT "clk_27mhz" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
 
 // -------------------------------------------------------------------------
-// UART (USB-C CH340 bridge)
+// UART (USB-C CH340)
 // -------------------------------------------------------------------------
 IO_LOC "uart_tx" M11;
 IO_PORT "uart_tx" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
@@ -39,9 +29,9 @@ IO_LOC "uart_rx" T13;
 IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
-// User buttons (active-low)
-// key[0] = T5  — LVCMOS33 reset (T10 is SSPI dedicated; T5 confirmed safe)
-// key[1] = T3  — spare user button, LVCMOS15 bank
+// Buttons (active-low)
+// key[0] = T5  LVCMOS33 reset (UART_HELLO: rst_n = T5)
+// key[1] = T3  LVCMOS15 spare
 // -------------------------------------------------------------------------
 IO_LOC "key[0]" T5;
 IO_PORT "key[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP;
@@ -49,7 +39,7 @@ IO_LOC "key[1]" T3;
 IO_PORT "key[1]" IO_TYPE=LVCMOS15 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
-// LEDs (active-low, all on LVCMOS33 bank)
+// LEDs (active-low)
 // -------------------------------------------------------------------------
 IO_LOC "led[0]" L16;
 IO_PORT "led[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
@@ -61,45 +51,24 @@ IO_LOC "led[3]" N16;
 IO_PORT "led[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 
 // -------------------------------------------------------------------------
-// VGA — GPIO expansion header P3 (bank 6, all LVCMOS33)
-// Connect a resistor-DAC VGA breakout to these pins.
-// -------------------------------------------------------------------------
-IO_LOC "vga_hs" T11;
-IO_PORT "vga_hs" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_vs" P16;
-IO_PORT "vga_vs" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-
-IO_LOC "vga_r[4]" T8;
-IO_PORT "vga_r[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_r[3]" T7;
-IO_PORT "vga_r[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_r[2]" T6;
-IO_PORT "vga_r[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_r[1]" R16;
-IO_PORT "vga_r[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_r[0]" R9;
-IO_PORT "vga_r[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-
-IO_LOC "vga_g[5]" R8;
-IO_PORT "vga_g[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_g[4]" R7;
-IO_PORT "vga_g[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_g[3]" P15;
-IO_PORT "vga_g[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_g[2]" P9;
-IO_PORT "vga_g[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_g[1]" P8;
-IO_PORT "vga_g[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_g[0]" P7;
-IO_PORT "vga_g[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-
-IO_LOC "vga_b[4]" P6;
-IO_PORT "vga_b[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_b[3]" N15;
-IO_PORT "vga_b[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_b[2]" N8;
-IO_PORT "vga_b[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_b[1]" N7;
-IO_PORT "vga_b[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "vga_b[0]" N6;
-IO_PORT "vga_b[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+// HDMI TMDS differential pairs (from manufacturer HDMI example dk_video.cst)
+// Clock channel
+IO_LOC "tmds_clk_p" G16;
+IO_PORT "tmds_clk_p" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+IO_LOC "tmds_clk_n" H15;
+IO_PORT "tmds_clk_n" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+// Data channel 0 — Blue + HS/VS
+IO_LOC "tmds_d_p[0]" H14;
+IO_PORT "tmds_d_p[0]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+IO_LOC "tmds_d_n[0]" H16;
+IO_PORT "tmds_d_n[0]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+// Data channel 1 — Green
+IO_LOC "tmds_d_p[1]" J15;
+IO_PORT "tmds_d_p[1]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+IO_LOC "tmds_d_n[1]" K16;
+IO_PORT "tmds_d_n[1]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+// Data channel 2 — Red
+IO_LOC "tmds_d_p[2]" K14;
+IO_PORT "tmds_d_p[2]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;
+IO_LOC "tmds_d_n[2]" K15;
+IO_PORT "tmds_d_n[2]" IO_TYPE=LVCMOS33D PULL_MODE=NONE DRIVE=3.5;

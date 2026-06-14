@@ -35,7 +35,11 @@
         <!-- SBC core (internal BSRAM, no SDRAM, no SD card) -->
         <File path="../../../rtl/core/sbc_minimal_top.vhd" type="file.vhdl" enable="1"/>
 
-        <!-- Board top (Tang Primer 20K) -->
+        <!-- HDMI TMDS encoder (generic, reusable) -->
+        <File path="../../../rtl/core/hdmi/tmds_encoder.vhd" type="file.vhdl" enable="1"/>
+
+        <!-- Board top and HDMI TX (Tang Primer 20K, Gowin-specific primitives) -->
+        <File path="../rtl/tang20k_hdmi_tx.vhd" type="file.vhdl" enable="1"/>
         <File path="../rtl/tang20k_sbc_top.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Physical constraints -->

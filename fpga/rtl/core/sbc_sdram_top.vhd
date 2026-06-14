@@ -350,6 +350,7 @@ begin
       char_data    => char_data,
       vga_hs       => vga_hs,
       vga_vs       => vga_vs,
+      vga_de       => open,
       vga_r        => vga_r,
       vga_g        => vga_g,
       vga_b        => vga_b

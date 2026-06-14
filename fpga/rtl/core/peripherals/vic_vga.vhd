@@ -20,23 +20,28 @@ use ieee.numeric_std.all;
 use work.sbc_pkg.all;
 
 entity vic_vga is
+  generic (
+    -- Pixel-clock divisor: 2 for 50 MHz systems (pixel = 25 MHz),
+    --                      1 for 27 MHz systems (pixel = 27 MHz, ~64 Hz refresh).
+    CLK_DIV : natural := 2
+  );
   port (
     clk          : in  std_logic;
     reset_n      : in  std_logic;
 
     -- Bus-Steal-Interface
-    -- Wenn vic_stealing='1': VIC treibt vic_addr, liest vram_data, CPU gehalten
     vic_addr     : out addr_t;
-    vram_data    : in  data_t;      -- synchrones VRAM, Daten kommen 1 Takt nach vic_addr
+    vram_data    : in  data_t;
     vic_stealing : out std_logic;
 
     -- Char-ROM (kombinatorisch)
     char_addr    : out std_logic_vector(9 downto 0);
     char_data    : in  data_t;
 
-    -- VGA-Ausgang 640x480 @ ~60Hz
+    -- VGA-Ausgang 640x480
     vga_hs       : out std_logic;
     vga_vs       : out std_logic;
+    vga_de       : out std_logic;  -- data enable: '1' during active video
     vga_r        : out std_logic_vector(4 downto 0);
     vga_g        : out std_logic_vector(5 downto 0);
     vga_b        : out std_logic_vector(4 downto 0)
@@ -92,12 +97,14 @@ architecture rtl of vic_vga is
   signal pbit      : std_logic;
 
 begin
-  -- Pixel-Takt-Enable: 50MHz -> 25MHz
+  -- Pixel-clock enable: divide by CLK_DIV (2 for 50 MHz, 1 for 27 MHz)
   process(clk)
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
         pce <= '0';
+      elsif CLK_DIV = 1 then
+        pce <= '1';
       else
         pce <= not pce;
       end if;
@@ -216,6 +223,7 @@ begin
   -- VGA-Sync (aktiv-low)
   vga_hs <= '0' when hc >= H_SS and hc < H_SE else '1';
   vga_vs <= '0' when vc >= V_SS and vc < V_SE else '1';
+  vga_de <= '1' when hc < H_VIS and vc < V_VIS else '0';
 
   -- VGA-Farbe: weiss auf schwarz
   vga_r <= "11111"  when pbit = '1' else "00000";
