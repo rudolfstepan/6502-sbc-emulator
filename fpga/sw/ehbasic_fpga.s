@@ -24,8 +24,8 @@
 ;   *     kernel CLRSCR alive
 ;   A     CLRSCR returned
 ;   R     all ZP BRAM vectors written
-;   S     about to test indirect call JMP(VEC_OUT=$E4)
-;   H     indirect call succeeded, EHB_UART_CHROUT reached
+;   S     vector setup complete, about to enter final boot checks
+;   H     final boot check reached
 ;   U     entering EhBASIC LAB_COLD
 ;
 ; Build:
@@ -113,21 +113,16 @@ RESET_ENTRY:
     lda #'R'
     jsr EHB_UART_CHROUT
 
-    ; Diag S+H: test indirect call JMP (VEC_OUT=$E4) = EHB_UART_CHROUT
-    ; Reads from ZP BRAM — must succeed on first try.
+    ; Diag S+H: UART-only startup markers. Keep these off VEC_OUT so the
+    ; first visible EhBASIC screen starts cleanly at the home position.
     lda #'S'
     jsr EHB_UART_CHROUT
     lda #'H'
-    jsr diag_indirect_out
+    jsr EHB_UART_CHROUT
     lda #'U'
     jsr EHB_UART_CHROUT
 
     jmp LAB_COLD                ; EhBASIC cold start (never returns)
-
-; Helper: routes A through JMP (VEC_OUT) — same path EhBASIC uses.
-; VEC_OUT is in ZP BRAM, so this must be reliable every time.
-diag_indirect_out:
-    jmp (VEC_OUT)
 
 ; ============================================================
 ; IRQ / NMI handlers — live in ROM (shadow BRAM), not SDRAM.
