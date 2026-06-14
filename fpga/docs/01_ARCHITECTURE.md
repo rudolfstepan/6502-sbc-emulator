@@ -150,10 +150,10 @@ anything reaches VRAM or EhBASIC's tokenizer.
 
 ### Kernel ROM
 
-Source: `fpga/asm/rom_demo.s` (ca65 assembly) — built with the cc65 toolchain.
+Source: `fpga/sw/rom_demo.s` (ca65 assembly) — built with the cc65 toolchain.
 
 ```bash
-cd fpga/asm && make        # assembles, links, installs fpga/sim/rom_welcome.hex
+cd fpga/sw && make        # assembles, links, installs fpga/sim/hex/rom_welcome.hex
 ```
 
 The kernel initialises VIA Timer 1 in free-running mode (period $FFFF ≈ 1.3 ms),
@@ -178,7 +178,7 @@ Row 8:  VIA-T1:  XX    (live counter, ~3 Hz)
 Build and upload:
 
 ```bash
-cd fpga/asm
+cd fpga/sw
 make all                                    # assemble + install sim hex
 python upload_rom_demo.py --run --verbose   # upload via UART monitor
 # or: make upload-demo
@@ -258,5 +258,5 @@ The VGA pixel clock is 25 MHz, derived from a `pixel_ce` toggle inside `vic_vga`
 
 - [Modules Reference](./02_MODULES.md)
 - [UART Monitor](./UART_MONITOR.md)
-- [Build Instructions](../BUILD_PIX16.md)
+- [Build Instructions](../boards/pix16/README.md)
 - [Simulation Guide](./06_SIMULATION.md)

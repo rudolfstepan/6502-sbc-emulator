@@ -13,17 +13,18 @@ included in the current SD boot build.
 ### Active SD Boot Build (synthesized for PIX16 board)
 
 ```text
-rtl/
+boards/pix16/rtl/
+└── pix16_sbc_sd_boot_top.vhd     — PIX16 SD/SDRAM/VGA/UART board wrapper
+
+rtl/core/
 ├── sbc_pkg.vhd                    — shared types, memory map, constants
 ├── bus_decode.vhd                 — address → device selection
-├── boards/pix16_sbc_sd_boot_top.vhd — PIX16 SD/SDRAM/VGA/UART board wrapper
+├── sbc_t65_sdram_boot_top.vhd    — SBC core with SDRAM + shadow ROM
 │   ├── boot/boot_debug_uart.vhd   — serial boot-status output
 │   ├── boot/boot_vga_debug.vhd    — VGA boot/status/RAM-test screen
 │   ├── boot/boot_sdram_test.vhd   — SDRAM self-test before CPU release
 │   ├── boot/sd_rom_loader.v       — SD-sector loader into shadow ROM
 │   ├── boot/uart_debug_monitor.vhd — UART machine monitor and hex loader
-│   ├── third_party/alinx_sd/      — vendor SD-card SPI sector core
-│   └── sbc_t65_sdram_boot_top.vhd — SBC core with SDRAM + shadow ROM
 │   ├── cpu/t65_adapter.vhd        — T65 CPU wrapper (+ RDY bus-steal port)
 │   │   └── third_party/t65/       — external T65 6502 core
 │   ├── mem/sync_ram.vhd           — ZP/stack RAM and text VRAM
@@ -31,28 +32,32 @@ rtl/
 │   ├── mem/sdram_if.vhd           — byte interface to board SDRAM controller
 │   ├── mem/sdram_ctrl.vhd         — board SDRAM command/data controller
 │   ├── mem/char_rom.vhd           — 8×8 character patterns
-│   ├── peripherals/via6522.vhd   — VIA 6522: Timer 1 IRQ + Port B
-│   ├── peripherals/uart6551.vhd  — UART 6551: CPU TX/RX registers
-│   └── peripherals/vic_vga.vhd   — VIC: bus stealing + VGA output
+│   ├── peripherals/via6522.vhd    — VIA 6522: Timer 1 IRQ + Port B
+│   ├── peripherals/uart6551.vhd   — UART 6551: CPU TX/RX registers
+│   └── peripherals/vic_vga.vhd    — VIC: bus stealing + VGA output
+
+third_party/alinx_sd/              — vendor SD-card SPI sector core
 ```
 
 ### Minimal VGA Smoke Test
 
 ```text
-rtl/
-├── sbc_minimal_top.vhd            — compact T65/VGA core
-└── boards/pix16_sbc_minimal_top.vhd — PIX16 wrapper for the minimal top
+rtl/core/
+└── sbc_minimal_top.vhd            — compact T65/VGA core
+
+boards/pix16/rtl/
+└── pix16_sbc_minimal_top.vhd     — PIX16 wrapper for the minimal top
 ```
 
 ### Assembly toolchain
 
 ```text
-fpga/asm/
+fpga/sw/
 ├── rom_demo.s           — ca65 6502 assembly source (kernel + ISR + strings)
 ├── rom_demo.cfg         — ld65 linker config: 2 KB ROM at $F800
 ├── bin_to_fpga_hex.py   — binary → FPGA sim hex converter (skips 0xEA fill)
 ├── upload_rom_demo.py   — UART monitor upload script for rom_demo.bin
-└── Makefile             — make all → installs ../sim/rom_welcome.hex
+└── Makefile             — make all → installs ../sim/hex/rom_welcome.hex
                            make upload-demo → uploads rom_demo.bin via UART
                            make sd-ehbasic  → builds 16 KB EhBASIC ROM + SD image
 ```
@@ -79,7 +84,7 @@ Build commands (from project root):
 python tools/build_fpga_ehbasic.py            # ROM only
 python tools/build_fpga_ehbasic.py --sd-image # ROM + SD boot image
 python tools/build_fpga_ehbasic.py --upload --run --verbose  # ROM + UART upload
-make -C fpga/asm sd-ehbasic                   # same as --sd-image via make
+make -C fpga/sw sd-ehbasic                    # same as --sd-image via make
 ```
 
 ### Character ROM generator
@@ -97,14 +102,16 @@ Run: `python fpga/tools/gen_petscii_char_rom.py`
 ### Inactive (reference / simulation only)
 
 ```text
-rtl/
+rtl/core/
 ├── sbc_t65_top.vhd                — full SBC (VIA + UART + VIC core)
 ├── sbc_top.vhd                    — test-mode SBC (ROM-scripted CPU slot)
-├── pix16_top.vhd                  — old PIX16 top (test_runner + vic_core)
-├── boards/pix16_board.vhd         — old board integration
 ├── peripherals/vic_core.vhd       — old dual-port VIC (replaced by vic_vga)
 ├── peripherals/vic_pixel_gen.vhd  — old pixel generator (replaced by vic_vga)
 └── peripherals/reg_stub.vhd       — generic register placeholder
+
+boards/pix16/rtl/
+├── pix16_top.vhd                  — old PIX16 top (test_runner + vic_core)
+└── pix16_board.vhd                — old board integration
 ```
 
 ---
@@ -192,7 +199,7 @@ Thin wrapper that exposes the exact ports required by `pix16.ucf`. Instantiates
 
 ```vhdl
 entity pix16_sbc_minimal_top is
-  generic (ROM_INIT_FILE : string := "../sim/rom_welcome.hex");
+  generic (ROM_INIT_FILE : string := "../../../sim/hex/rom_welcome.hex");
   port (
     clk, reset_n             : in  std_logic;
     vga_out_r                : out std_logic_vector(4 downto 0);
@@ -528,5 +535,5 @@ Times out with failure if not all characters arrive within 5000 clock cycles.
 **See Also:**
 
 - [Architecture Overview](./01_ARCHITECTURE.md)
-- [Build Instructions](../BUILD_PIX16.md)
+- [Build Instructions](../boards/pix16/README.md)
 - [Simulation Guide](./06_SIMULATION.md)

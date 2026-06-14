@@ -30,7 +30,7 @@ RAM, the boot VGA screen, RAM self-test, and the UART hardware monitor.
 ### Step 0 — Create or refresh the project
 
 ```bash
-cd fpga
+cd fpga/boards/pix16
 xtclsh scripts/create_sd_boot_ise_project.tcl
 ```
 
@@ -43,9 +43,9 @@ Expected active settings:
 | --- | --- |
 | Top module | `pix16_sbc_sd_boot_top` |
 | Constraint file | `../constraints/pix16_sd_boot.ucf` |
-| Board top | `rtl/boards/pix16_sbc_sd_boot_top.vhd` |
-| Core top | `rtl/sbc_t65_sdram_boot_top.vhd` |
-| Shadow ROM | `rtl/mem/boot_shadow_rom.vhd`, 16 KB at `$C000-$FFFF` |
+| Board top | `rtl/pix16_sbc_sd_boot_top.vhd` |
+| Core top | `../../rtl/core/sbc_t65_sdram_boot_top.vhd` |
+| Shadow ROM | `../../rtl/core/mem/boot_shadow_rom.vhd`, 16 KB at `$C000-$FFFF` |
 
 ### Step 1 — Build the SD image
 
@@ -59,7 +59,7 @@ loads this image into shadow ROM after reset.
 
 ### Step 2 — Build and program the bitstream
 
-Open `fpga/fpga/fpga.xise` in ISE, select `pix16_sbc_sd_boot_top` as top if it
+Open `fpga/boards/pix16/project/fpga.xise` in ISE, select `pix16_sbc_sd_boot_top` as top if it
 is not already selected, then run implementation and bitgen. Program the
 generated `pix16_sbc_sd_boot_top.bit` with iMPACT.
 
@@ -77,7 +77,7 @@ Live ROM upload over the monitor:
 python tools/upload_monitor_hex.py --build-demo --port COM15 --baud 230400 --run --verbose
 ```
 
-See [UART Monitor](./docs/UART_MONITOR.md) for commands such as memory dump,
+See [UART Monitor](../../docs/UART_MONITOR.md) for commands such as memory dump,
 byte edit, disassembly, `L` hex load, and `G` execute.
 
 ---
@@ -87,11 +87,11 @@ byte edit, disassembly, `L` hex load, and `G` execute.
 ### Step 0 — Build the ROM (optional, pre-built hex is checked in)
 
 ```bash
-cd fpga/asm
+cd fpga/sw
 make          # requires cc65 toolchain at C:/tools/cc65/bin
 ```
 
-This assembles `rom_demo.s`, links it, and installs `fpga/sim/rom_welcome.hex`.
+This assembles `rom_demo.s`, links it, and installs `fpga/sim/hex/rom_welcome.hex`.
 The hex file is already committed; only re-run this step when changing the kernel.
 
 ### Step 1 — Open the project
@@ -99,7 +99,7 @@ The hex file is already committed; only re-run this step when changing the kerne
 ```text
 ISE Design Suite 14.7
 → File > Open Project
-→ fpga/fpga/fpga.xise
+→ fpga/boards/pix16/project/fpga.xise
 ```
 
 The project is pre-configured:
@@ -112,20 +112,20 @@ The project is pre-configured:
 | Speed grade | -2 |
 | Top module | `pix16_sbc_minimal_top` |
 | Constraint file | `../constraints/pix16.ucf` |
-| ROM init file | `../sim/rom_welcome.hex` |
+| ROM init file | `../../../sim/hex/rom_welcome.hex` |
 
 ### Step 2 — Source files
 
 The project includes all required files automatically. Active synthesis files:
 
-- `rtl/sbc_pkg.vhd`
-- `third_party/t65/rtl/T65_Pack.vhd`, `T65_MCode.vhd`, `T65_ALU.vhd`, `T65.vhd`
-- `rtl/mem/rom.vhd`, `sync_ram.vhd`, `char_rom.vhd`
-- `rtl/cpu/t65_adapter.vhd`
-- `rtl/bus_decode.vhd`
-- `rtl/peripherals/vic_vga.vhd`
-- `rtl/sbc_minimal_top.vhd`
-- `rtl/boards/pix16_sbc_minimal_top.vhd`
+- `../../rtl/core/sbc_pkg.vhd`
+- `../../../third_party/t65/rtl/T65_Pack.vhd`, `T65_MCode.vhd`, `T65_ALU.vhd`, `T65.vhd`
+- `../../rtl/core/mem/rom.vhd`, `sync_ram.vhd`, `char_rom.vhd`
+- `../../rtl/core/cpu/t65_adapter.vhd`
+- `../../rtl/core/bus_decode.vhd`
+- `../../rtl/core/peripherals/vic_vga.vhd`
+- `../../rtl/core/sbc_minimal_top.vhd`
+- `rtl/pix16_sbc_minimal_top.vhd`
 - `constraints/pix16.ucf`
 
 ### Step 3 — Run synthesis and implementation
@@ -135,7 +135,7 @@ ISE Process panel
 → Implement Design (or Run All)
 ```
 
-Expected output: `fpga/fpga/pix16_sbc_minimal_top.bit`
+Expected output: `fpga/boards/pix16/project/pix16_sbc_minimal_top.bit`
 
 ### Step 4 — Program the FPGA
 
@@ -143,7 +143,7 @@ Expected output: `fpga/fpga/pix16_sbc_minimal_top.bit`
 ISE → Tools > iMPACT
 → Boundary Scan
 → Right-click XC6SLX16 → Program
-→ Select fpga/fpga/pix16_sbc_minimal_top.bit
+→ Select fpga/boards/pix16/project/pix16_sbc_minimal_top.bit
 ```
 
 Or via command line:
@@ -212,7 +212,7 @@ CPU overhead: about 2.6 % of total system clocks.
 
 ## ROM Hex Format
 
-`sim/rom_welcome.hex` — one entry per line, **no comments**:
+`sim/hex/rom_welcome.hex` — one entry per line, **no comments**:
 
 ```text
 XXXX YY
@@ -256,8 +256,8 @@ Default fill: `0xEA` (NOP). Reset vector is at offsets `07FC`–`07FD`.
 
 ### Blank screen (signal present but no text)
 
-- Confirm `ROM_INIT_FILE` resolves correctly relative to the ISE project directory (`fpga/fpga/`).
-- The generic defaults to `"../sim/rom_welcome.hex"` which resolves to `fpga/sim/rom_welcome.hex`.
+- Confirm `ROM_INIT_FILE` resolves correctly relative to the ISE project directory (`fpga/boards/pix16/project/`).
+- The generic defaults to `"../../../sim/hex/rom_welcome.hex"` which resolves to `fpga/sim/hex/rom_welcome.hex`.
 - If the ROM file is not found, `rom.vhd` fills with NOP (`0xEA`) and the CPU loops forever without writing to VRAM.
 
 ### Synthesis very slow
@@ -270,5 +270,5 @@ Default fill: `0xEA` (NOP). Reset vector is at offsets `07FC`–`07FD`.
 
 **See Also:**
 
-- [Architecture Overview](./docs/01_ARCHITECTURE.md)
-- [Modules Reference](./docs/02_MODULES.md)
+- [Architecture Overview](../../docs/01_ARCHITECTURE.md)
+- [Modules Reference](../../docs/02_MODULES.md)

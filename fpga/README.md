@@ -27,11 +27,11 @@ changing the top-level wiring repeatedly.
 The checked-in Xilinx ISE project for the PIX16 board lives at:
 
 ```text
-fpga/fpga/fpga.xise
+fpga/boards/pix16/project/fpga.xise
 ```
 
 It targets `xc6slx16-ftg256-2`. The current hardware bring-up target is
-`rtl/boards/pix16_sbc_sd_boot_top.vhd` with `constraints/pix16_sd_boot.ucf`.
+`boards/pix16/rtl/pix16_sbc_sd_boot_top.vhd` with `boards/pix16/constraints/pix16_sd_boot.ucf`.
 This top integrates the T65 CPU, SDRAM-backed main RAM, 2 KB text VRAM, VIA,
 UART, VGA, SD-card ROM loading, a boot status screen, an SDRAM self-test, and a
 UART hardware monitor.
@@ -85,8 +85,8 @@ The local third-party CPU import lives under `third_party/t65/`. It currently
 contains the T65(b) VHDL core and a project-local adapter:
 
 ```text
-third_party/t65/rtl/     imported T65 source files
-rtl/cpu/t65_adapter.vhd  local 16-bit bus adapter
+third_party/t65/rtl/          imported T65 source files
+rtl/core/cpu/t65_adapter.vhd  local 16-bit bus adapter
 ```
 
 The adapter maps T65's 24-bit address bus down to the SBC's 16-bit address space,
@@ -103,7 +103,7 @@ and registers read data during the stable bus phase so FPGA-style synchronous
 writes and asynchronous reads have deterministic simulation timing. The
 script-driven smoke-test top keeps the default synchronous memory paths.
 
-`sim/tb_sbc_t65_indirect_vic.vhd` is kept as an experimental/quarantined test for
+`sim/tb/tb_sbc_t65_indirect_vic.vhd` is kept as an experimental/quarantined test for
 `STA ($zp),Y` into VIC text RAM. It currently exposes a T65 indirect-addressing
 integration issue and is intentionally not part of the default `make test` target.
 
@@ -140,9 +140,10 @@ The PIX16 SD boot path keeps the FPGA bitstream stable and loads the 16 KB SBC
 ROM window from the SD card into shadow RAM at reset:
 
 ```sh
-cd fpga
+# from fpga/:
 make sd-boot-image
-xtclsh scripts/create_sd_boot_ise_project.tcl
+# from fpga/boards/pix16/:
+cd boards/pix16 && xtclsh scripts/create_sd_boot_ise_project.tcl
 ```
 
 If `xtclsh` is not in your normal shell PATH, run the project command from the
@@ -188,12 +189,24 @@ $C000-$FFFF   ROM
 
 ```text
 fpga/
-  constraints/        board-specific pin constraints
-  docs/               FPGA implementation notes
-  rtl/                synthesizable VHDL
+  boards/
+    pix16/            PIX16 Spartan-6 board (self-contained)
+      rtl/            board-specific top-level VHDL
+      constraints/    UCF pin constraints
+      scripts/        ISE build scripts
+      project/        ISE project file (fpga.xise)
+      bitstreams/     programming files (.mcs/.cfi)
+    tang_primer_20k/  Gowin GW2A-18 board (skeleton)
+  rtl/core/           board-agnostic synthesizable VHDL
     cpu/              CPU adapters
     mem/              RAM/ROM primitives
     peripherals/      memory-mapped chips
+    boot/             boot subsystem modules
+  sim/
+    tb/               VHDL testbenches
+    hex/              static ROM hex files
+  sw/                 6502 firmware (assembly sources)
+  tools/              build utilities
   third_party/        imported open-source cores
-  sim/                testbenches
+  docs/               FPGA implementation notes
 ```

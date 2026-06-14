@@ -15,8 +15,8 @@ Welcome to the 6502 SBC FPGA documentation. This directory contains comprehensiv
 - **[UART Monitor](./UART_MONITOR.md)** - Hardware monitor commands and live ROM upload over UART
 - **[SD Bootloader](./SD_BOOTLOADER_PLAN.md)** - SD-card shadow-ROM boot flow
 - **[Roadmap](./roadmap.md)** - Project roadmap and milestones
-- **[PIX16 Build Guide](../BUILD_PIX16.md)** - Xilinx ISE build and programming guide for the PIX16 Spartan-6 board
-- **[Hardware Support](../HARDWARE_SUPPORT.md)** - PIX16 board pinout, target device, and VGA smoke-test notes
+- **[PIX16 Build Guide](../boards/pix16/README.md)** - Xilinx ISE build and programming guide for the PIX16 Spartan-6 board
+- **[Hardware Support](./HARDWARE_SUPPORT.md)** - PIX16 board pinout, target device, and VGA smoke-test notes
 
 ## Project Structure
 
@@ -34,14 +34,20 @@ fpga/
 │   ├── UART_MONITOR.md     UART hardware monitor and ROM upload
 │   ├── SD_BOOTLOADER_PLAN.md SD-card shadow-ROM boot flow
 │   └── roadmap.md          Project roadmap
-├── rtl/                     VHDL source code
+├── boards/
+│   ├── pix16/              PIX16 Spartan-6 (constraints, scripts, project, bitstreams)
+│   └── tang_primer_20k/    Gowin GW2A-18 (skeleton)
+├── rtl/core/               Board-agnostic VHDL
 │   ├── cpu/                CPU adapters
 │   ├── mem/                Memory (RAM/ROM)
-│   └── peripherals/        Device controllers
-├── sim/                     Testbenches
-├── constraints/            Board-specific pin constraints
+│   ├── peripherals/        Device controllers
+│   └── boot/               Boot subsystem
+├── sim/
+│   ├── tb/                 Testbenches
+│   └── hex/                Static ROM hex files
+├── sw/                     6502 firmware (assembly)
 ├── third_party/            Imported open-source cores
-└── tools/                   Build utilities
+└── tools/                  Build utilities
 ```
 
 ## Key Concepts
@@ -113,18 +119,18 @@ The FPGA maintains 100% software compatibility with the C emulator:
 
 | File | Purpose |
 |------|---------|
-| `rtl/sbc_pkg.vhd` | Memory map constants and type definitions |
-| `rtl/bus_decode.vhd` | Address decoder |
-| `rtl/sbc_top.vhd` | Main system integration (test mode) |
-| `rtl/sbc_t65_top.vhd` | System with T65 CPU |
-| `rtl/boards/pix16_sbc_sd_boot_top.vhd` | Active PIX16 SD-card/SDRAM/monitor board top |
-| `rtl/sbc_t65_sdram_boot_top.vhd` | T65 SBC core with SDRAM, shadow ROM, VGA, and monitor bus access |
-| `rtl/boot/uart_debug_monitor.vhd` | UART machine-language monitor |
-| `rtl/boards/pix16_sbc_minimal_top.vhd` | Minimal PIX16 VGA smoke-test board top |
-| `../fpga/fpga.xise` | Xilinx ISE project for `xc6slx16-ftg256-2` |
-| `rtl/peripherals/*.vhd` | Peripheral controllers |
-| `rtl/mem/*.vhd` | Memory components |
-| `sim/tb_*.vhd` | Testbenches |
+| `rtl/core/sbc_pkg.vhd` | Memory map constants and type definitions |
+| `rtl/core/bus_decode.vhd` | Address decoder |
+| `rtl/core/sbc_top.vhd` | Main system integration (test mode) |
+| `rtl/core/sbc_t65_top.vhd` | System with T65 CPU |
+| `boards/pix16/rtl/pix16_sbc_sd_boot_top.vhd` | Active PIX16 SD-card/SDRAM/monitor board top |
+| `rtl/core/sbc_t65_sdram_boot_top.vhd` | T65 SBC core with SDRAM, shadow ROM, VGA, and monitor bus access |
+| `rtl/core/boot/uart_debug_monitor.vhd` | UART machine-language monitor |
+| `boards/pix16/rtl/pix16_sbc_minimal_top.vhd` | Minimal PIX16 VGA smoke-test board top |
+| `boards/pix16/project/fpga.xise` | Xilinx ISE project for `xc6slx16-ftg256-2` |
+| `rtl/core/peripherals/*.vhd` | Peripheral controllers |
+| `rtl/core/mem/*.vhd` | Memory components |
+| `sim/tb/*.vhd` | Testbenches |
 
 ## Next Steps
 

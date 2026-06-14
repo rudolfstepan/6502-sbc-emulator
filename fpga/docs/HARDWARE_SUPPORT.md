@@ -46,20 +46,20 @@ This document describes the hardware support infrastructure created for deployin
 ## Design Files
 
 ### Constraint File
-- **Location**: `fpga/constraints/pix16.ucf`
+- **Location**: `fpga/boards/pix16/constraints/pix16.ucf`
 - **Purpose**: Maps VHDL signals to FPGA pins and specifies timing constraints
 - **Format**: ISE User Constraint File (compatible with ISE 13.x, 14.x)
 
 ### RTL Modules
 
 #### 1. Top-Level Module (SD Boot — Active)
-- **File**: `rtl/boards/pix16_sbc_sd_boot_top.vhd`
+- **File**: `boards/pix16/rtl/pix16_sbc_sd_boot_top.vhd`
 - **Purpose**: PIX16 board wrapper for the full SD boot design
 - **Ports**: All board I/O (VGA, SDRAM, SD card, buttons, LEDs, UART)
-- **ISE target**: `fpga/fpga/fpga.xise`, top `pix16_sbc_sd_boot_top`, device `xc6slx16-ftg256-2`
+- **ISE target**: `fpga/boards/pix16/project/fpga.xise`, top `pix16_sbc_sd_boot_top`, device `xc6slx16-ftg256-2`
 
 #### 2. SBC Core
-- **File**: `rtl/sbc_t65_sdram_boot_top.vhd`
+- **File**: `rtl/core/sbc_t65_sdram_boot_top.vhd`
 - **Purpose**: Integrates the T65 CPU, SDRAM RAM, 16 KB shadow ROM, bus decoder, VIA 6522, UART 6551, and VIC display
 - **Memory map**: ZP/stack → internal RAM; $0200–$7FFF → SDRAM; $8000–$87FF → VRAM; $8800 → VIA; $8810 → UART; $C000–$FFFF → shadow ROM
 
@@ -82,13 +82,13 @@ This document describes the hardware support infrastructure created for deployin
 
 ### ISE Project
 
-The ISE project (`fpga/fpga/fpga.xise`) contains only the files required by the
+The ISE project (`fpga/boards/pix16/project/fpga.xise`) contains only the files required by the
 `pix16_sbc_sd_boot_top` hierarchy. Legacy top-level designs (`pix16_top`,
 `pix16_board`, `vic_core`, `vic_pixel_gen`) are excluded from the project to
 keep the hierarchy view unambiguous.
 
 ### Package
-- **File**: `rtl/sbc_pkg.vhd`
+- **File**: `rtl/core/sbc_pkg.vhd`
 - **Purpose**: Shared types (`addr_t`, `data_t`, `device_sel_t`), memory-map constants, `in_range` helper
 
 ## Build Instructions
@@ -105,16 +105,16 @@ keep the hierarchy view unambiguous.
 ### Building with ISE GUI
 ```
 1. ISE Design Suite > File > Open Project
-2. Open fpga/fpga/fpga.xise
+2. Open fpga/boards/pix16/project/fpga.xise
 3. Verify device: xc6slx16-ftg256-2
 4. Verify top module: pix16_sbc_sd_boot_top
 5. Implement > Run All (or Process > Run All)
-6. Generate bitstream: fpga/fpga/pix16_sbc_sd_boot_top.bit
+6. Generate bitstream: fpga/boards/pix16/project/pix16_sbc_sd_boot_top.bit
 ```
 
 ### Building with Command-Line ISE
 ```bash
-cd fpga/fpga
+cd fpga/boards/pix16/project
 ise fpga.xise -batch -run "Project -> Run All"
 ```
 
@@ -129,7 +129,7 @@ make hardware_analyze  # Verify VHDL compilation
 1. Connect USB programming cable to board
 2. Tools > iMPACT
 3. Create New Project > Parallel Cable IV (or appropriate cable)
-4. Select bitstream: `fpga/fpga/pix16_sbc_sd_boot_top.bit`
+4. Select bitstream: `fpga/boards/pix16/project/pix16_sbc_sd_boot_top.bit`
 5. Right-click device > Program
 6. Wait for "Programming succeeded"
 
@@ -156,8 +156,8 @@ xc3sprog -c ftdi pix16_sbc_sd_boot_top.bit
 ```bash
 # 1. Program the FPGA bitstream via iMPACT
 # 2. Press KEY0 on the board to enter monitor mode
-# 3. From fpga/asm/:
-cd fpga/asm
+# 3. From fpga/sw/:
+cd fpga/sw
 make all                       # build rom_demo.bin
 python upload_rom_demo.py --run --verbose   # upload and start
 ```
@@ -202,6 +202,6 @@ Use Xilinx CoreGen to create PLL in ISE project if needed.
 | 2026-06-04 | 1.0 | Initial hardware support infrastructure created |
 
 ## Related Documentation
-- [BUILD_PIX16.md](BUILD_PIX16.md) - Detailed build and programming guide
+- [PIX16 Build Guide](../boards/pix16/README.md) - Detailed build and programming guide
 - [README.md](README.md) - General project overview
 - [fpga/docs/](docs/) - Additional design documentation
