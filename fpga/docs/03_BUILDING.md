@@ -227,9 +227,20 @@ The `--ieee=synopsys` flag is required for the T65 CPU core compatibility.
 **Tang Primer 20K / GowinEDA**:
 - Open `fpga/boards/tang_primer_20k/project/tang_sbc.gprj` in GowinEDA.
 - The active top is `tang20k_sbc_top`.
+- The project targets `GW2A-18C` / `GW2A-LV18PG256C8/I7`, matching the Sipeed
+  Tang Primer 20K examples.
 - The current bring-up path uses HDMI boot/status output, CH340 UART at
-  `115200 8N1`, KEY1 for the FPGA monitor, and an external SPI microSD module
-  on `R16/P15/P16/N15`.
+  `115200 8N1`, KEY1 for the FPGA monitor, and the on-board microSD/SDIO slot
+  in SPI mode on `N10/N11/R14/M8`.
+- The SDIO slot uses dual-purpose pins. In `Project > Configuration`, enable the
+  corresponding `SSPI` option so pins such as `sd_miso=M8` can be used as
+  regular IO. The checked-in generated implementation config also enables `MSPI`,
+  matching Sipeed's working example projects for the dock.
+- If Gowin regenerates `impl/pnr/device.cfg` with `SSPI regular_io = false`, run
+  this after Synthesis and before Place & Route:
+  ```powershell
+  powershell -ExecutionPolicy Bypass -File fpga/boards/tang_primer_20k/scripts/fix_gowin_dual_purpose.ps1
+  ```
 - If place-and-route reports stale object errors from
   `project/impl/gwsynthesis/tang_sbc.vg`, force a full resynthesis or clean the
   generated implementation directory. The `.vg` file is a generated netlist from

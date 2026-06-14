@@ -166,7 +166,7 @@ begin
   pll_i : rPLL
     generic map (
       FCLKIN         => "27",
-      DEVICE         => "GW2A-18",
+      DEVICE         => "GW2A-18C",
       IDIV_SEL       => 0,
       FBDIV_SEL      => 4,
       ODIV_SEL       => 4,

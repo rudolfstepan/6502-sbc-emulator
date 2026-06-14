@@ -7,10 +7,13 @@ PROJECT_FILE := project/tang_sbc.gprj
 GOWIN       ?= gw_sh
 OPENLOAD    ?= openFPGALoader
 
-.PHONY: build program clean
+.PHONY: build fix-pnr program clean
 
 build:
 	$(GOWIN) -d $(PROJECT_FILE) -run all
+
+fix-pnr:
+	powershell -ExecutionPolicy Bypass -File scripts/fix_gowin_dual_purpose.ps1
 
 program:
 	$(OPENLOAD) -b tang_primer_20k project/impl/pnr/$(TOP_MODULE).fs

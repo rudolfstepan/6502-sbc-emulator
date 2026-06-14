@@ -2,7 +2,7 @@
 
 ## System Design
 
-The 6502 SBC FPGA is a synthesizable hardware implementation of a 6502-based single-board computer targeting real FPGA boards. The active PIX16 path is `pix16_sbc_sd_boot_top`: T65 CPU, SDRAM-backed RAM, SD-loaded 16 KB shadow ROM, VGA text output, VIA, UART, boot status screen, RAM self-test, and a UART hardware monitor. The active Tang Primer 20K bring-up path is `tang20k_sbc_top`: HDMI boot/status output, CH340 UART, KEY1 monitor entry, external-SD ROM loading, and an internal-BSRAM main RAM core for now. The older `sbc_minimal_top` remains useful as a compact VGA/T65 smoke-test design.
+The 6502 SBC FPGA is a synthesizable hardware implementation of a 6502-based single-board computer targeting real FPGA boards. The active PIX16 path is `pix16_sbc_sd_boot_top`: T65 CPU, SDRAM-backed RAM, SD-loaded 16 KB shadow ROM, VGA text output, VIA, UART, boot status screen, RAM self-test, and a UART hardware monitor. The active Tang Primer 20K bring-up path is `tang20k_sbc_top`: HDMI boot/status output, CH340 UART, KEY1 monitor entry, on-board microSD ROM loading, and an internal-BSRAM main RAM core for now. The older `sbc_minimal_top` remains useful as a compact VGA/T65 smoke-test design.
 
 ---
 
@@ -41,15 +41,15 @@ and shadow-ROM concept with Tang-specific board glue:
 Tang Primer 20K board
   -> HDMI/DVI output through tang20k_hdmi_tx
   -> CH340 UART at 115200 8N1
-  -> external SPI microSD module on R16/P15/P16/N15
+  -> on-board microSD/SDIO slot in SPI mode on N10/N11/R14/M8
   -> sd_rom_loader writes the 16 KB ROM window into boot_shadow_rom
   -> sbc_t65_boot_monitor_top uses internal BSRAM main RAM during bring-up
   -> KEY1 enters the UART monitor and holds the CPU
 ```
 
-Without the external SD module attached, the expected Tang behavior is a visible
-boot/status screen plus UART boot debug text reporting SD init/read failure while
-the CPU remains held.
+Without a card in the on-board microSD slot, the expected Tang behavior is a
+visible boot/status screen plus UART boot debug text reporting SD init/read
+failure while the CPU remains held.
 
 ### Active Memory Map
 

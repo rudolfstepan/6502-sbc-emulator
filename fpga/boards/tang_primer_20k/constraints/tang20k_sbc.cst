@@ -2,15 +2,17 @@
 //All rights reserved.
 //File Title: Physical Constraints file
 //Part Number: GW2A-LV18PG256C8/I7
-//Device: GW2A-18
+//Device: GW2A-18C
 //
 // Pin assignments confirmed from manufacturer example CSTs:
 //   UART_HELLO — CH340 UART pins (M11/T13), clock (H11)
 //   HDMI       — TMDS pairs, LEDs, reset T10 / clock H11
 //   Litex      — buttons, LED array
-//   PT8211     — confirmed safe GPIO: R16, P15, P16, N15, T3, T5
+//   TangPrimer-20K-example README — SD card/SDIO pins (N10/R14/M8/N11/D15)
+//   PT8211     — audio DAC pins R16, P15, P16, N15
 //
-// Avoided: T10/T9 (SSPI), R10/P10 (MSPI), N9 (SSPI) — PR2017 without project option.
+// The on-board SDIO pins use dual-purpose SSPI pins. Enable the corresponding
+// Dual Purpose Pin / SSPI option in GowinEDA project configuration.
 //
 // Video: HDMI TMDS via on-board connector (no GPIO VGA breakout needed).
 
@@ -30,15 +32,19 @@ IO_LOC "uart_rx" T13;
 IO_PORT "uart_rx" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
-// External microSD module on free GPIO pins (SPI mode)
+// On-board microSD/SDIO slot used in SPI mode
+//   SDIO CLK  -> SPI SCK
+//   SDIO CMD  -> SPI MOSI / DI
+//   SDIO DAT0 -> SPI MISO / DO
+//   SDIO DAT3 -> SPI CS
 // -------------------------------------------------------------------------
-IO_LOC "sd_dclk" R16;
+IO_LOC "sd_dclk" N10;
 IO_PORT "sd_dclk" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "sd_ncs" P15;
+IO_LOC "sd_ncs" N11;
 IO_PORT "sd_ncs" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
-IO_LOC "sd_mosi" P16;
+IO_LOC "sd_mosi" R14;
 IO_PORT "sd_mosi" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
-IO_LOC "sd_miso" N15;
+IO_LOC "sd_miso" M8;
 IO_PORT "sd_miso" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------

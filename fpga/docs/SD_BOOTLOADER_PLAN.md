@@ -21,17 +21,22 @@ from the demo controller's perspective, not the SD card label.
 
 ### Tang Primer 20K
 
-The Tang Primer 20K board has no integrated microSD socket in this design, so an
-external 3.3 V SPI microSD module is connected to free GPIO pins:
+The Tang Primer 20K has an on-board microSD/SDIO slot. The current boot path uses
+it in SPI mode:
 
-| Signal | FPGA Pin | SD module pin | SPI Role |
-|--------|----------|---------------|----------|
-| `sd_dclk` | `R16` | SCK | SCK |
-| `sd_ncs`  | `P15` | CS  | CS, active low |
-| `sd_mosi` | `P16` | MOSI / DI | controller output to card |
-| `sd_miso` | `N15` | MISO / DO | controller input from card |
+| SBC signal | FPGA Pin | SDIO signal | SPI Role |
+|------------|----------|-------------|----------|
+| `sd_dclk` | `N10` | CLK  | SCK |
+| `sd_ncs`  | `N11` | DAT3 | CS, active low |
+| `sd_mosi` | `R14` | CMD  | controller output to card |
+| `sd_miso` | `M8`  | DAT0 | controller input from card |
 
-Use a 3.3 V module or level shifting; the FPGA pins are not 5 V tolerant.
+Unused SDIO pins in this SPI-mode path are `DAT1=M7`, `DAT2=M10`, and card-detect
+`DET_A=D15`.
+
+These are dual-purpose pins on the Gowin device. The Tang GowinEDA project must
+enable the `SSPI` dual-purpose option, otherwise P&R reports errors such as
+`PR2017` for `sd_miso=M8`.
 
 ## Vendor SD Core
 
@@ -99,7 +104,7 @@ reset_n low/high
 | `rtl/sbc_t65_sdram_boot_top.vhd` | Current SBC core with SDRAM main RAM, shadow ROM, VGA, and monitor bus master |
 | `rtl/sbc_t65_boot_monitor_top.vhd` | Tang bring-up core with internal BSRAM main RAM, shadow ROM, VGA, and monitor bus master |
 | `rtl/boards/pix16_sbc_sd_boot_top.vhd` | PIX16 board top with SD pins, boot VGA, UART monitor, and CPU gated by boot/RAM-test status |
-| `boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd` | Tang board top with HDMI, CH340 UART, external SD pins, boot VGA, and KEY1 monitor |
+| `boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd` | Tang board top with HDMI, CH340 UART, on-board SD pins, boot VGA, and KEY1 monitor |
 | `rtl/boot/boot_vga_debug.vhd` | VGA boot/status screen for SD, loader, and RAM-test state |
 | `rtl/boot/boot_sdram_test.vhd` | SDRAM self-test before CPU release |
 | `rtl/boot/uart_debug_monitor.vhd` | Hardware monitor that can patch the loaded shadow ROM after boot |
@@ -161,5 +166,5 @@ The full SD card path uses the copied vendor Verilog SD core and is intended for
 mixed-language synthesis in Xilinx ISE and GowinEDA.
 
 Tang bring-up has verified the boot/status screen, CH340 UART, and KEY1 monitor.
-With no external SD module attached, the expected boot debug behavior is a
+With no card in the on-board microSD slot, the expected boot debug behavior is a
 repeating SD init/read failure status on UART and HDMI while the CPU remains held.

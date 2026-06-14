@@ -44,7 +44,7 @@ third_party/alinx_sd/              — vendor SD-card SPI sector core
 
 ```text
 boards/tang_primer_20k/rtl/
-├── tang20k_sbc_top.vhd            — Tang HDMI/CH340/external-SD board wrapper
+├── tang20k_sbc_top.vhd            — Tang HDMI/CH340/on-board-SD board wrapper
 └── tang20k_hdmi_tx.vhd            — Gowin rPLL + TMDS output wrapper
 
 rtl/core/
