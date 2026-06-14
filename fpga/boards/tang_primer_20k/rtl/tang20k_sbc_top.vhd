@@ -15,7 +15,7 @@ use work.sbc_pkg.all;
 
 entity tang20k_sbc_top is
   generic (
-    BAUD          : positive := 115_200
+    BAUD          : positive := 230_400
   );
   port (
     clk_27mhz  : in  std_logic;

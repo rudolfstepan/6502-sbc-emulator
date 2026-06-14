@@ -76,7 +76,7 @@ Current verified bring-up:
   reports that SD initialization/read cannot complete.
 
 The Tang path currently uses internal BSRAM for main RAM instead of the on-board
-SDRAM. The CH340 UART runs at `115200 8N1`; the USB-OTG connector is separate and
+SDRAM. The CH340 UART runs at `230400 8N1`; the USB-OTG connector is separate and
 is not the SBC UART. The on-board microSD slot is used in SPI mode on
 `N10/N11/R14/M8` as documented in `boards/tang_primer_20k/README.md`.
 

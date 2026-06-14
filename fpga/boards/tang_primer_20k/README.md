@@ -51,7 +51,7 @@ The Tang boot core currently uses internal BSRAM for main RAM instead of the
 on-board SDRAM. Pressing KEY1 enters the FPGA UART monitor, holds the 6502 CPU,
 and switches HDMI back to the diagnostic screen while monitor operations run.
 
-The CH340 UART is connected to the SBC UART at 115200 8N1 on FPGA pins `M11`
+The CH340 UART is connected to the SBC UART at 230400 8N1 on FPGA pins `M11`
 (`uart_tx`) and `T13` (`uart_rx`). On Windows this appears as a COM port such as
 `COM12` and is used for normal SBC input and output. The USB-OTG connector for
 peripherals is separate from this UART path.

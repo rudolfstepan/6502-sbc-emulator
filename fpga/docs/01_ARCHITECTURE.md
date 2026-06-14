@@ -40,7 +40,7 @@ and shadow-ROM concept with Tang-specific board glue:
 ```text
 Tang Primer 20K board
   -> HDMI/DVI output through tang20k_hdmi_tx
-  -> CH340 UART at 115200 8N1
+  -> CH340 UART at 230400 8N1
   -> on-board microSD/SDIO slot in SPI mode on N10/N11/R14/M8
   -> sd_rom_loader writes the 16 KB ROM window into boot_shadow_rom
   -> sbc_t65_boot_monitor_top uses internal BSRAM main RAM during bring-up

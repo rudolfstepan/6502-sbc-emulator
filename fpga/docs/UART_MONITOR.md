@@ -21,7 +21,7 @@ PIX16:
 Tang Primer 20K:
 
 1. Program the Tang with the `tang20k_sbc_top` bitstream.
-2. Open the CH340 UART, for example Windows `COM12`, at `115200 8N1`.
+2. Open the CH340 UART, for example Windows `COM12`, at `230400 8N1`.
 3. Press hardware button `KEY1`.
 
 In both cases:
@@ -116,7 +116,7 @@ Default settings:
 | Setting | Value |
 | --- | --- |
 | Port | `COM15` on PIX16 examples; Tang has been tested as `COM12` |
-| Baud | `230400` on PIX16, `115200` on Tang |
+| Baud | `230400` on PIX16 and Tang |
 | Load address | `$C000` |
 | Image | `tools/roms/upload_demo.rom` |
 

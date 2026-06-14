@@ -230,7 +230,7 @@ The `--ieee=synopsys` flag is required for the T65 CPU core compatibility.
 - The project targets `GW2A-18C` / `GW2A-LV18PG256C8/I7`, matching the Sipeed
   Tang Primer 20K examples.
 - The current bring-up path uses HDMI boot/status output, CH340 UART at
-  `115200 8N1`, KEY1 for the FPGA monitor, and the on-board microSD/SDIO slot
+  `230400 8N1`, KEY1 for the FPGA monitor, and the on-board microSD/SDIO slot
   in SPI mode on `N10/N11/R14/M8`.
 - The SDIO slot uses dual-purpose pins. In `Project > Configuration`, enable the
   corresponding `SSPI` option so pins such as `sd_miso=M8` can be used as
