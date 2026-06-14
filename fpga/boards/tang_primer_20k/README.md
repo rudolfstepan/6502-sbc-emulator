@@ -74,42 +74,82 @@ On-board microSD slot wiring in SPI mode:
 The slot also exposes `DAT1=M7`, `DAT2=M10`, and card-detect `DET_A=D15`; those
 are not used by the current SPI-mode boot path.
 
-GowinEDA project configuration must enable the SDIO dual-purpose pins as regular
-IO. In the GUI this is under `Project > Configuration`; enable the corresponding
-`SSPI` option. The checked-in implementation config also keeps `MSPI` enabled,
-matching Sipeed's HDMI/test-board examples for this dock.
+The on-board SDIO slot uses pins M8 (sd_miso / DAT0) and M10 (unused) which are
+dual-purpose SSPI pins on the GW2A-18C. The build uses a Tcl script
+(`project/build.tcl`) instead of the `.gprj` project file so that
+`set_option -use_sspi_as_gpio 1` is passed to P&R before placement runs.
+This permanently embeds the setting and avoids the `PR2017`/`PR2028` errors that
+occur when GowinEDA regenerates `device.cfg` from `.gprj` defaults.
 
 ## Build
 
+### Prerequisites
+
+| Tool              | Purpose                     | Notes                                    |
+|-------------------|-----------------------------|------------------------------------------|
+| GowinEDA >= 1.9.8 | Synthesis + P&R + bitstream | `gw_sh` must be on `PATH`               |
+| openFPGALoader    | Flash bitstream to board    | Optional; GowinEDA Programmer also works |
+
+On Windows, add `C:\Gowin\Gowin_V1.9.8.08\IDE\bin` to your `PATH` or set
+`GOWIN=C:/Gowin/Gowin_V1.9.8.08/IDE/bin/gw_sh.exe` when invoking make.
+
+### Building the bitstream
+
+All steps run from this directory (`fpga/boards/tang_primer_20k/`).
+
 ```bash
-# From this directory
-make project   # create GowinEDA project
-make build     # synthesise + place & route
-make bitstream # generate .fs programming file
-make program   # flash via openFPGALoader
+make build
 ```
 
-If GowinEDA reports that a newly added VHDL unit is not compiled in `work`, run a
-clean build so the generated `project/impl` synthesis file list is recreated.
+This executes `gw_sh project/build.tcl` from inside `project/` and runs the full
+flow — synthesis, place & route, and bitstream generation — in one shot.
 
-If P&R reports stale objects from `project/impl/gwsynthesis/tang_sbc.vg`, remove
-old generated implementation artifacts or force a full resynthesis. That file is
-a generated netlist from the previous build, not the source of truth.
+The output bitstream is:
 
-If P&R reports `PR2017` for `sd_miso` or another SD pin, the generated P&R
-configuration still has the SDIO dual-purpose pins disabled. In the GUI, run
-Synthesis first, then run this fixup, then start only Place & Route:
-
-```powershell
-cd fpga/boards/tang_primer_20k
-powershell -ExecutionPolicy Bypass -File scripts/fix_gowin_dual_purpose.ps1
+```
+project/impl/pnr/tang_sbc.fs
 ```
 
-The script must run after Gowin creates `project/impl/pnr/device.cfg`, because a
-full `Run All` can regenerate that file with `SSPI regular_io = false`.
+### Why `build.tcl` instead of the `.gprj` project file
 
-From the repository root the equivalent command is:
+The on-board microSD DAT0 line (`sd_miso`, pin M8) is a dual-purpose SSPI pin on
+the GW2A-18C. GowinEDA regenerates `impl/pnr/device.cfg` from the `.gprj`
+defaults at the start of every P&R run and defaults SSPI to `false`, which causes
+errors `PR2017` / `PR2028`.
 
-```powershell
-powershell -ExecutionPolicy Bypass -File fpga/boards/tang_primer_20k/scripts/fix_gowin_dual_purpose.ps1
+`project/build.tcl` calls `set_option -use_sspi_as_gpio 1` before `run all` so
+gw_sh writes `set SSPI regular_io = true` into `device.cfg` on the first pass.
+No post-build patching is needed.
+
+### Programming the board
+
+With openFPGALoader (USB cable connected to the Tang Primer 20K JTAG port):
+
+```bash
+make program
 ```
+
+Or manually:
+
+```bash
+openFPGALoader -b tang_primer_20k project/impl/pnr/tang_sbc.fs
+```
+
+GowinEDA Programmer can also be used: open `tang_sbc.fs` and select the
+`GW2A-18C` device with the `SRAM Program` operation.
+
+### Clean rebuild
+
+```bash
+make clean   # removes project/impl/ and project/tmp/
+make build
+```
+
+### Troubleshooting
+
+| Symptom | Fix |
+|---------|-----|
+| `gw_sh: command not found` | Add GowinEDA `bin/` to `PATH`, or set `GOWIN=<full path>` |
+| `PR2017` / `PR2028` on `sd_miso` | Build is using the old `.gprj` flow; switch to `make build` which uses `build.tcl` |
+| Newly added VHDL unit not compiled in `work` | Run `make clean && make build` to force full resynthesis |
+| Stale objects from `tang_sbc.vg` | Run `make clean` — that file is a generated netlist, not source |
