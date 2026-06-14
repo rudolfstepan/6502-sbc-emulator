@@ -23,7 +23,10 @@ entity vic_vga is
   generic (
     -- Pixel-clock divisor: 2 for 50 MHz systems (pixel = 25 MHz),
     --                      1 for 27 MHz systems (pixel = 27 MHz, ~64 Hz refresh).
-    CLK_DIV : natural := 2
+    CLK_DIV : natural := 2;
+    -- Number of clk cycles per cursor blink phase. 25_000_000 gives a
+    -- C64-like half-second phase on 50 MHz boards.
+    CURSOR_BLINK_DIV : positive := 25_000_000
   );
   port (
     clk          : in  std_logic;
@@ -37,6 +40,11 @@ entity vic_vga is
     -- Char-ROM (kombinatorisch)
     char_addr    : out std_logic_vector(9 downto 0);
     char_data    : in  data_t;
+
+    -- Text cursor register inputs (0..39, 0..24)
+    cursor_x     : in  std_logic_vector(5 downto 0);
+    cursor_y     : in  std_logic_vector(4 downto 0);
+    cursor_enable : in std_logic := '1';
 
     -- VGA-Ausgang 640x480
     vga_hs       : out std_logic;
@@ -95,6 +103,9 @@ architecture rtl of vic_vga is
 
   signal char_code : data_t;
   signal pbit      : std_logic;
+  signal cursor_cell    : std_logic;
+  signal cursor_visible : std_logic := '1';
+  signal cursor_cnt     : natural range 0 to CURSOR_BLINK_DIV - 1 := 0;
 
 begin
   -- Pixel-clock enable: divide by CLK_DIV (2 for 50 MHz, 1 for 27 MHz)
@@ -107,6 +118,23 @@ begin
         pce <= '1';
       else
         pce <= not pce;
+      end if;
+    end if;
+  end process;
+
+  -- C64-style blinking text cursor: invert the whole character cell while
+  -- visible. The kernel updates cursor_x/y through VIC registers $9001/$9002.
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset_n = '0' then
+        cursor_cnt <= 0;
+        cursor_visible <= '1';
+      elsif cursor_cnt = CURSOR_BLINK_DIV - 1 then
+        cursor_cnt <= 0;
+        cursor_visible <= not cursor_visible;
+      else
+        cursor_cnt <= cursor_cnt + 1;
       end if;
     end if;
   end process;
@@ -218,7 +246,13 @@ begin
                std_logic_vector(to_unsigned(cline, 3));
 
   -- Pixel-Bit aus ROM-Muster; bit 7 im Zeichencode ist Reverse-Video.
-  pbit <= (char_data(7 - cpix) xor char_code(7)) when in_text = '1' else '0';
+  cursor_cell <= '1' when in_text = '1' and cursor_enable = '1' and
+                          cursor_visible = '1' and
+                          to_integer(unsigned(cursor_x)) = col and
+                          to_integer(unsigned(cursor_y)) = crow
+                 else '0';
+  pbit <= ((char_data(7 - cpix) xor char_code(7)) xor cursor_cell)
+          when in_text = '1' else '0';
 
   -- VGA-Sync (aktiv-low)
   vga_hs <= '0' when hc >= H_SS and hc < H_SE else '1';

@@ -81,6 +81,7 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal sdram_dout  : data_t;
   signal rom_dout    : data_t;
   signal vram_dout   : data_t;
+  signal vic_reg_dout : data_t;
   signal via_dout    : data_t;
   signal uart_dout   : data_t;
 
@@ -96,6 +97,7 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal sdram_cs    : std_logic;
   signal vram_we     : std_logic;
   signal vram_we_mux : std_logic;
+  signal vic_reg_we  : std_logic;
   signal via_cs      : std_logic;
   signal via_cs_mux  : std_logic;
   signal via_we_mux  : std_logic;
@@ -112,6 +114,8 @@ architecture rtl of sbc_t65_sdram_boot_top is
   signal vram_din_mux  : data_t;
   signal vic_addr     : addr_t;
   signal vic_stealing : std_logic;
+  signal vic_cursor_x : std_logic_vector(5 downto 0) := (others => '0');
+  signal vic_cursor_y : std_logic_vector(4 downto 0) := (others => '0');
 
   signal sdram_rdy       : std_logic;
   signal sdram_rst       : std_logic;
@@ -227,6 +231,7 @@ begin
                        rom_load_data;
   sdram_cs <= '1'        when monitor_hold = '0' and dev_sel = DEV_SRAM and zp_cs = '0' else '0';
   vram_we  <= cpu_bus_we when monitor_hold = '0' and dev_sel = DEV_VIC_TEXT else '0';
+  vic_reg_we <= cpu_bus_we when monitor_hold = '0' and dev_sel = DEV_VIC_REG else '0';
   via_cs   <= '1'        when monitor_hold = '0' and dev_sel = DEV_VIA      else '0';
   uart_cs  <= '1'        when monitor_hold = '0' and dev_sel = DEV_UART     else '0';
 
@@ -286,7 +291,7 @@ begin
   monitor_mem_ready <= mon_ready_reg;
   uart_rx_valid_cpu <= uart_rx_valid when monitor_hold = '0' else '0';
 
-  process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, via_dout,
+  process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout,
           uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr)
   begin
     case dev_sel is
@@ -306,12 +311,49 @@ begin
         end if;
       when DEV_VIC_TEXT =>
         cpu_din <= vram_dout;
+      when DEV_VIC_REG =>
+        cpu_din <= vic_reg_dout;
       when DEV_VIA =>
         cpu_din <= via_dout;
       when DEV_UART =>
         cpu_din <= uart_dout;
       when others =>
         cpu_din <= x"FF";
+    end case;
+  end process;
+
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset_n = '0' then
+        vic_cursor_x <= (others => '0');
+        vic_cursor_y <= (others => '0');
+      elsif vic_reg_we = '1' then
+        case cpu_addr(3 downto 0) is
+          when x"1" =>
+            if unsigned(cpu_dout(5 downto 0)) < to_unsigned(40, 6) then
+              vic_cursor_x <= cpu_dout(5 downto 0);
+            end if;
+          when x"2" =>
+            if unsigned(cpu_dout(4 downto 0)) < to_unsigned(25, 5) then
+              vic_cursor_y <= cpu_dout(4 downto 0);
+            end if;
+          when others =>
+            null;
+        end case;
+      end if;
+    end if;
+  end process;
+
+  process(cpu_addr, vic_cursor_x, vic_cursor_y)
+  begin
+    case cpu_addr(3 downto 0) is
+      when x"1" =>
+        vic_reg_dout <= "00" & vic_cursor_x;
+      when x"2" =>
+        vic_reg_dout <= "000" & vic_cursor_y;
+      when others =>
+        vic_reg_dout <= x"00";
     end case;
   end process;
 
@@ -668,6 +710,9 @@ begin
       vic_stealing => vic_stealing,
       char_addr    => char_addr,
       char_data    => char_data,
+      cursor_x     => vic_cursor_x,
+      cursor_y     => vic_cursor_y,
+      cursor_enable => '1',
       vga_hs       => vga_hs,
       vga_vs       => vga_vs,
       vga_de       => open,

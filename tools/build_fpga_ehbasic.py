@@ -12,7 +12,7 @@ Pipeline:
        - convert bracketed immediates  #[expr] -> #(expr)
        - convert bare label lines to ca65 syntax  LABEL -> LABEL:
        - convert inline data labels  FOO  .byte -> FOO:  .byte
-  3. Assemble fpga/asm/ehbasic_fpga.s (which .includes the patched basic.asm).
+  3. Assemble fpga/sw/ehbasic_fpga.s (which .includes the patched basic.asm).
   4. Link to a 12 KB binary (ehbasic ROM at $D000-$FFFF).
   5. Load roms/kernel.rom (4 KB, $C000-$CFFF).
   6. Combine: kernel (4 KB) || ehbasic (12 KB) -> 16 KB image.
@@ -44,8 +44,8 @@ from pathlib import Path
 ROOT        = Path(__file__).resolve().parent.parent
 CACHE_ASM   = ROOT / "tools" / "ehbasic_port" / ".cache" / "basic.asm"
 KERNEL_ROM  = ROOT / "roms" / "kernel.rom"
-WRAPPER_S   = ROOT / "fpga" / "asm" / "ehbasic_fpga.s"
-LINKER_CFG  = ROOT / "fpga" / "asm" / "ehbasic_fpga.cfg"
+WRAPPER_S   = ROOT / "fpga" / "sw" / "ehbasic_fpga.s"
+LINKER_CFG  = ROOT / "fpga" / "sw" / "ehbasic_fpga.cfg"
 OUT_DIR     = ROOT / "tools" / "roms"
 OUT_ROM     = OUT_DIR / "fpga_ehbasic_16kb.rom"
 OUT_IMG     = OUT_DIR / "fpga_ehbasic_16kb.img"

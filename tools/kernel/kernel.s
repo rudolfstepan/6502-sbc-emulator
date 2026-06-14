@@ -58,9 +58,8 @@ UART_RDRF   = $08
 DISK_CMD_DIR = $03
 DISK_ST_OK   = $02
 
-; Cursor position is tracked in ZP BRAM (not VIC hardware registers).
-; VIC_CURSOR_X/Y ($9001/$9002) are write-only in this FPGA build —
-; the VIC reads VRAM directly and has no hardware cursor state.
+; Cursor position is tracked in ZP BRAM and mirrored to the VIC cursor
+; registers ($9001/$9002), where the text VIC draws a blinking cursor cell.
 CURSOR_X    = $EC
 CURSOR_Y    = $ED
 SCRPTR_LO   = $EC
@@ -199,6 +198,8 @@ backspace:
 done:
     stx CURSOR_X
     sty CURSOR_Y
+    stx VIC_CURSOR_X
+    sty VIC_CURSOR_Y
 restore:
     ; Restore registers (reverse order)
     pla
@@ -296,6 +297,8 @@ loop:
     lda #0
     sta CURSOR_X
     sta CURSOR_Y
+    sta VIC_CURSOR_X
+    sta VIC_CURSOR_Y
     rts
 .endproc
 
@@ -360,6 +363,8 @@ done:
     bcs done
     stx CURSOR_X
     sty CURSOR_Y
+    stx VIC_CURSOR_X
+    sty VIC_CURSOR_Y
 done:
     rts
 .endproc
