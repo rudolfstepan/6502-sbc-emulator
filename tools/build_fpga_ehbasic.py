@@ -118,40 +118,39 @@ def patch_basic_asm(src: Path, dst: Path) -> None:
             sys.exit(f"ERROR: could not patch '{pattern}' in basic.asm")
     print("  patched: VEC_CC/IN/OUT/LD/SV -> ZP BRAM $EA/$E2/$E4/$E6/$E8")
 
-    # 2c. Bypass unreliable SDRAM write-read test in memory auto-detect.
-    # LAB_COLD auto-detect (press Enter at "Memory size?") writes $55/$AA to
-    # each SDRAM address and reads back immediately.  If the first test at $0301
-    # fails (e.g., write-to-read turnaround issue in sdram_if), Itempl/h stays
-    # at $0301 -> Ememl/h = $0301 (1 byte) -> immediate OOM.
-    # Fix: pre-load Itempl=$FF, Itemph=$7F before the loop.  On the first
-    # iteration: INC Itempl -> $00 (Z=1) -> falls through to INC Itemph -> $80
-    # = hi(Ram_top) -> BEQ LAB_2DB6 exits immediately with Ememl/h = $8000.
-    # Note: this patch runs before the bare-labels step (step 4), so the
-    # label line is still "LAB_2D93\n" (no colon yet).
-    old_autodet = (
+    # 2c. Skip the interactive "Memory size ?" prompt entirely. The FPGA
+    # memory map is fixed, so cold start can feed Ram_top straight into the
+    # normal LAB_2DB6 setup path instead of waiting for Enter and then probing
+    # SDRAM byte-by-byte.
+    old_mem_prompt = (
+        "\tJSR\tLAB_CRLF\t\t; print CR/LF\n"
+        "\tLDA\t#<LAB_MSZM\t\t; point to memory size message (low addr)\n"
+        "\tLDY\t#>LAB_MSZM\t\t; point to memory size message (high addr)\n"
+        "\tJSR\tLAB_18C3\t\t; print null terminated string from memory\n"
+        "\tJSR\tLAB_INLN\t\t; print \"? \" and get BASIC input\n"
+        "\tSTX\tBpntrl\t\t; set BASIC execute pointer low byte\n"
+        "\tSTY\tBpntrh\t\t; set BASIC execute pointer high byte\n"
+        "\tJSR\tLAB_GBYT\t\t; get last byte back\n"
+        "\n"
         "\tBNE\tLAB_2DAA\t\t; branch if not null (user typed something)\n"
         "\n"
         "\tLDY\t#$00\t\t\t; else clear Y\n"
         "\t\t\t\t\t; character was null so get memory size the hard way\n"
         "\t\t\t\t\t; we get here with Y=0 and Itempl/h = Ram_base\n"
-        "LAB_2D93\n"
     )
-    new_autodet = (
-        "\tBNE\tLAB_2DAA\t\t; branch if not null (user typed something)\n"
-        "\n"
-        "\tLDA\t#$FF\t\t\t; bypass SDRAM test: first INC->$00 (Z=1)\n"
+    new_mem_prompt = (
+        "\tJSR\tLAB_CRLF\t\t; print CR/LF\n"
+        "\tLDA\t#<Ram_top\t\t; fixed FPGA BASIC RAM top low byte\n"
         "\tSTA\tItempl\n"
-        "\tLDA\t#(>Ram_top-1)\t\t; first INC Itemph->hi(Ram_top)->exit\n"
+        "\tLDA\t#>Ram_top\t\t; fixed FPGA BASIC RAM top high byte\n"
         "\tSTA\tItemph\n"
-        "\tLDY\t#$00\t\t\t; else clear Y\n"
-        "\t\t\t\t\t; Itempl/h preset: loop exits immediately at Ram_top\n"
-        "\t\t\t\t\t; we get here with Y=0 and Itempl/h = Ram_top-1\n"
-        "LAB_2D93\n"
+        "\tJMP\tLAB_2DB6\t\t; skip interactive memory-size prompt\n"
+        "\n"
     )
-    if old_autodet not in text:
-        sys.exit("ERROR: could not find auto-detect init block in basic.asm")
-    text = text.replace(old_autodet, new_autodet, 1)
-    print("  patched: auto-detect pre-init Itempl/h -> Ram_top-1 (bypasses SDRAM test)")
+    if old_mem_prompt not in text:
+        sys.exit("ERROR: could not find memory-size prompt block in basic.asm")
+    text = text.replace(old_mem_prompt, new_mem_prompt, 1)
+    print("  patched: skipped interactive Memory size prompt (Ram_top=$8000)")
 
     # 3. Bracketed immediates  #[expr] -> #(expr)
     text, cnt = re.subn(r"#\[([^\]]+)\]", r"#(\1)", text)
