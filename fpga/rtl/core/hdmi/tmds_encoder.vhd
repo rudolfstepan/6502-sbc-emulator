@@ -77,12 +77,11 @@ begin
         cnt <= (others => '0');
       elsif de = '0' then
         cnt <= (others => '0');
-        case c1 & c0 is
-          when "00"   => q <= CTRL_00;
-          when "01"   => q <= CTRL_01;
-          when "10"   => q <= CTRL_10;
-          when others => q <= CTRL_11;
-        end case;
+        if    c1 = '0' and c0 = '0' then q <= CTRL_00;
+        elsif c1 = '0' and c0 = '1' then q <= CTRL_01;
+        elsif c1 = '1' and c0 = '0' then q <= CTRL_10;
+        else                              q <= CTRL_11;
+        end if;
       else
         n1m  := signed("0" & std_logic_vector(count_ones(q_m(7 downto 0))));
         n0m  := to_signed(8, 5) - n1m;
