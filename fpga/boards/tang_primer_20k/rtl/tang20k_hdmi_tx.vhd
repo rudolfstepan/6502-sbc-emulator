@@ -9,6 +9,14 @@
 --   H = 27 MHz / 800 = 33.75 kHz
 --   V = 33750 / 525  = 64.3 Hz   (most monitors accept this range)
 --
+-- Clock generation:
+--   rPLL: CLKIN=27 MHz, IDIV_SEL=0, FBDIV_SEL=4, ODIV_SEL=4
+--         CLKOUT = 27*(4+1)/(0+1) = 135 MHz  (FCLK for OSER10)
+--         VCO = 27*5*4 = 540 MHz  (GowinEDA formula; valid range 500-1250 MHz)
+--   CLKDIV: HCLKIN=135 MHz, DIV_MODE="5" -> CLKOUT = 27 MHz  (PCLK for OSER10)
+--   Note: rPLL CLKOUTD cannot be used here because DYN_SDIV_SEL must be even,
+--         but 135/27=5 is odd.  CLKDIV supports odd divisors.
+--
 -- TMDS channel mapping (DVI spec):
 --   D0 = Blue,  C0=HS, C1=VS during blanking
 --   D1 = Green, C0=0,  C1=0
@@ -16,9 +24,10 @@
 --   CLK = fixed 1111100000 pattern
 --
 -- Gowin primitives used:
---   rPLL  — generates 135 MHz (CLKOUT) and 27 MHz (CLKOUTD) from 27 MHz input
---   OSER10 — 10:1 DDR serialiser (PCLK=27 MHz, FCLK=135 MHz)
---   ELVDS_OBUF — differential LVDS output driver
+--   rPLL     -- generates 135 MHz (CLKOUT) from 27 MHz input
+--   CLKDIV   -- divides 135 MHz by 5 to produce 27 MHz pixel clock
+--   OSER10   -- 10:1 DDR serialiser (PCLK=27 MHz, FCLK=135 MHz)
+--   ELVDS_OBUF -- differential LVDS output driver
 library ieee;
 use ieee.std_logic_1164.all;
 use work.sbc_pkg.all;
@@ -35,7 +44,7 @@ entity tang20k_hdmi_tx is
     vga_g     : in  std_logic_vector(5 downto 0);
     vga_b     : in  std_logic_vector(4 downto 0);
     -- PLL-derived clocks fed back to board top for the SBC
-    clk_pix   : out std_logic;   -- 27 MHz (PLL-synchronised, use as system clock)
+    clk_pix   : out std_logic;   -- 27 MHz (CLKDIV output, use as system clock)
     pll_lock  : out std_logic;
     -- HDMI TMDS differential outputs
     tmds_clk_p : out std_logic;
@@ -46,22 +55,22 @@ entity tang20k_hdmi_tx is
 end entity;
 
 architecture rtl of tang20k_hdmi_tx is
-  -- Gowin rPLL: 27 MHz -> 135 MHz (CLKOUT) and 27 MHz (CLKOUTD, SDIV=5)
+  -- Gowin rPLL
   component rPLL is
     generic (
-      FCLKIN       : string  := "100.0";
-      DEVICE       : string  := "GW1N-1";
-      IDIV_SEL     : integer := 0;
-      FBDIV_SEL    : integer := 0;
-      ODIV_SEL     : integer := 8;
-      PSDA_SEL     : string  := "0000";
-      DUTYDA_SEL   : string  := "1000";
-      DYN_SDIV_SEL : integer := 2;
-      CLKFB_SEL    : string  := "internal";
-      CLKOUT_BYPASS  : string := "false";
-      CLKOUTP_BYPASS : string := "false";
-      CLKOUTD_BYPASS : string := "false";
-      CLKOUTD_SRC  : string  := "CLKOUT"
+      FCLKIN         : string  := "100.0";
+      DEVICE         : string  := "GW1N-1";
+      IDIV_SEL       : integer := 0;
+      FBDIV_SEL      : integer := 0;
+      ODIV_SEL       : integer := 8;
+      PSDA_SEL       : string  := "0000";
+      DUTYDA_SEL     : string  := "1000";
+      DYN_SDIV_SEL   : integer := 2;
+      CLKFB_SEL      : string  := "internal";
+      CLKOUT_BYPASS  : string  := "false";
+      CLKOUTP_BYPASS : string  := "false";
+      CLKOUTD_BYPASS : string  := "false";
+      CLKOUTD_SRC    : string  := "CLKOUT"
     );
     port (
       CLKOUT  : out std_logic;
@@ -78,6 +87,20 @@ architecture rtl of tang20k_hdmi_tx is
       PSDA    : in  std_logic_vector(3 downto 0);
       DUTYDA  : in  std_logic_vector(3 downto 0);
       FDLY    : in  std_logic_vector(3 downto 0)
+    );
+  end component;
+
+  -- Gowin dedicated clock divider (supports odd divisors, unlike rPLL CLKOUTD)
+  component CLKDIV is
+    generic (
+      DIV_MODE : string := "2";
+      GSREN    : string := "false"
+    );
+    port (
+      CLKOUT : out std_logic;
+      HCLKIN : in  std_logic;
+      RESETN : in  std_logic;
+      CALIB  : in  std_logic
     );
   end component;
 
@@ -113,7 +136,8 @@ architecture rtl of tang20k_hdmi_tx is
 
   signal clk_5x   : std_logic;
   signal clk_sys  : std_logic;
-  signal rst       : std_logic;
+  signal lock_i   : std_logic;
+  signal rst      : std_logic;
 
   -- 8-bit expanded colour (replicate MSBs to fill low bits)
   signal r8 : std_logic_vector(7 downto 0);
@@ -133,28 +157,30 @@ architecture rtl of tang20k_hdmi_tx is
   constant TMDS_CLK : std_logic_vector(9 downto 0) := "0000011111";
 begin
   rst      <= not reset_n;
+  pll_lock <= lock_i;
   clk_pix  <= clk_sys;
 
-  -- rPLL: 27 MHz * 20 / 4 = 135 MHz CLKOUT, CLKOUTD = 135/5 = 27 MHz
+  -- rPLL: 27 MHz -> 135 MHz
+  --   CLKOUT = FCLKIN * (FBDIV_SEL+1) / (IDIV_SEL+1) = 27*5/1 = 135 MHz
+  --   VCO    = FCLKIN * (FBDIV_SEL+1) * ODIV_SEL / (IDIV_SEL+1) = 27*5*4 = 540 MHz
   pll_i : rPLL
     generic map (
-      FCLKIN       => "27",
-      DEVICE       => "GW2A-18",
-      IDIV_SEL     => 0,
-      FBDIV_SEL    => 19,
-      ODIV_SEL     => 4,
-      DYN_SDIV_SEL => 5,
-      CLKFB_SEL    => "internal",
+      FCLKIN         => "27",
+      DEVICE         => "GW2A-18",
+      IDIV_SEL       => 0,
+      FBDIV_SEL      => 4,
+      ODIV_SEL       => 4,
+      CLKFB_SEL      => "internal",
       CLKOUT_BYPASS  => "false",
       CLKOUTP_BYPASS => "false",
       CLKOUTD_BYPASS => "false",
-      CLKOUTD_SRC  => "CLKOUT"
+      CLKOUTD_SRC    => "CLKOUT"
     )
     port map (
       CLKIN   => clk_in,
       CLKOUT  => clk_5x,
-      CLKOUTD => clk_sys,
-      LOCK    => pll_lock,
+      CLKOUTD => open,
+      LOCK    => lock_i,
       RESET   => rst,
       RESET_P => '0',
       CLKFB   => '0',
@@ -167,12 +193,22 @@ begin
       FDLY    => (others => '0')
     );
 
+  -- CLKDIV: 135 MHz / 5 = 27 MHz pixel clock
+  clkdiv_i : CLKDIV
+    generic map (DIV_MODE => "5", GSREN => "false")
+    port map (
+      HCLKIN => clk_5x,
+      RESETN => lock_i,
+      CALIB  => '0',
+      CLKOUT => clk_sys
+    );
+
   -- Expand 5/6/5-bit VGA colour to 8-bit (replicate top bits into low bits)
   r8 <= vga_r & vga_r(4 downto 2);
   g8 <= vga_g & vga_g(5 downto 4);
   b8 <= vga_b & vga_b(4 downto 2);
 
-  -- TMDS encoders (1 cycle latency, all synchronous to clk_sys)
+  -- TMDS encoders (1 cycle latency, all synchronous to clk_sys = 27 MHz)
   -- Channel 2: Red
   enc_r : entity work.tmds_encoder
     port map (clk => clk_sys, reset_n => reset_n, de => vga_de,
@@ -188,7 +224,7 @@ begin
     port map (clk => clk_sys, reset_n => reset_n, de => vga_de,
               d => b8, c0 => vga_hs, c1 => vga_vs, q => tmds_b);
 
-  -- OSER10 serialisers (PCLK = 27 MHz from PLL, FCLK = 135 MHz)
+  -- OSER10 serialisers (PCLK = 27 MHz from CLKDIV, FCLK = 135 MHz from rPLL)
   -- D0 is transmitted first (LSB first matches DVI TMDS bit order)
   ser_r : OSER10
     port map (PCLK => clk_sys, FCLK => clk_5x, RESET => rst, Q => ser_d(2),
