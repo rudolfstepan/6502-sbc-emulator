@@ -175,22 +175,22 @@ begin
     );
 
   zp_ram_i : entity work.sync_ram
-    generic map (ADDR_WIDTH => 9, ASYNC_READ => true)
+    generic map (ADDR_WIDTH => 9, ASYNC_READ => false)
     port map (clk => clk, we => zp_we,
               addr => cpu_addr(8 downto 0), din => cpu_dout, dout => zp_dout);
 
   sram_i : entity work.sync_ram
-    generic map (ADDR_WIDTH => 12, ASYNC_READ => true)
+    generic map (ADDR_WIDTH => 12, ASYNC_READ => false)
     port map (clk => clk, we => sram_we,
               addr => cpu_addr(11 downto 0), din => cpu_dout, dout => sram_dout);
 
   vram_i : entity work.sync_ram
-    generic map (ADDR_WIDTH => 11, ASYNC_READ => true)
+    generic map (ADDR_WIDTH => 11, ASYNC_READ => false)
     port map (clk => clk, we => vram_we_mux,
               addr => vram_addr, din => cpu_dout, dout => vram_dout);
 
   rom_i : entity work.rom
-    generic map (ADDR_WIDTH => 11, INIT_FILE => ROM_INIT_FILE, ASYNC_READ => true)
+    generic map (ADDR_WIDTH => 11, INIT_FILE => ROM_INIT_FILE, ASYNC_READ => false)
     port map (clk => clk, addr => cpu_addr(10 downto 0), dout => rom_dout);
 
   -- -------------------------------------------------------------------------
