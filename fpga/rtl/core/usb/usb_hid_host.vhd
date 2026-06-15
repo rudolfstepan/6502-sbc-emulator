@@ -164,18 +164,24 @@ architecture rtl of usb_hid_host is
   constant REG_SCRATCH   : std_logic_vector(5 downto 0) := "010110"; -- 0x16
 
   -- ULPI FunctionControl bits:
-  --   bit6 SuspendM, bit5 PHY reset, bits4:3 OpMode, bit2 TermSelect,
-  --   bits1:0 XcvrSelect.  FS normal host is SuspendM=1, Reset=0,
-  --   OpMode=00, TermSelect=1, XcvrSelect=FS(01) => 0x45.
-  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"45";
-  -- USB bus reset is SE0 on the USB lines, not the ULPI PHY reset bit.
-  -- Use FS transceiver with OpMode=10 for the reset interval.
-  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"55";
+  -- ULPI 1.1 FunctionControl register (addr 0x04) bit layout:
+  --   bit7=SuspendM(1=not suspended), bit6=Reset(1=assert, self-clearing),
+  --   bits[5:4]=OpMode(00=normal,10=SE0), bits[3:2]=XcvrSelect(01=FS),
+  --   bit1=TermSelect(1=FS), bit0=Reserved.
+  -- 0x86 = 1000_0110: SuspendM=1, Reset=0, OpMode=00, XcvrSelect=FS, TermSelect=1
+  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"86";
+  -- USB bus reset: drive SE0 via OpMode=10 (not the ULPI Reset bit).
+  -- 0xA6 = 1010_0110: SuspendM=1, Reset=0, OpMode=10(SE0), XcvrSelect=FS, TermSelect=1
+  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"A6";
 
-  -- OTGControl: DrvVbus + DpPulldown + DmPulldown for host mode.
-  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"23";
+  -- OTGControl for FS host: DmPulldown(2)+DpPulldown(1)+IdPullup(0).
+  -- DrvVbusExternal(5) and DrvVbus(6) are intentionally NOT set: on the Tang
+  -- Primer 20K the USB3317 DRV_VBUS output drives a PMOS gate directly (no
+  -- inverter), so DRV_VBUS=LOW (bits 5:6 = 0) turns the PMOS ON and supplies
+  -- VBUS to the USB-A host connector.  Setting either bit would de-assert VBUS.
+  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"07";
 
-  -- ULPI RXCMD line states (bits[3:2])
+  -- ULPI RXCMD line states (bits[5:4], per ULPI 1.1 spec)
   constant LS_SE0 : std_logic_vector(1 downto 0) := "00";
   constant LS_K   : std_logic_vector(1 downto 0) := "01";
   constant LS_J   : std_logic_vector(1 downto 0) := "10";
@@ -359,6 +365,12 @@ architecture rtl of usb_hid_host is
   signal stp_r       : std_logic := '0';
   signal phy_rst_release : std_logic := '0';
   signal phy_rst_cnt : natural range 0 to T_PHY_RESET_SYS := 0;
+  -- Watchdog: detects frozen ulpi_clk in the 27 MHz clk domain.
+  -- progress_s(4) = ulpi_beat_u[22] toggles every 70 ms at 60 MHz.
+  -- If it doesn't toggle within 200 ms of PHY release, the clock has stopped
+  -- and we re-assert hardware reset to recover.
+  signal phy_clk_alive_prev : std_logic := '0';
+  signal phy_clk_wdt : natural range 0 to 5_400_000 := 0;
   signal phy_rst_rel_meta : std_logic := '0';
   signal phy_rst_rel_sync : std_logic := '0';
 
@@ -366,6 +378,10 @@ architecture rtl of usb_hid_host is
   signal rw_addr_r   : std_logic_vector(5 downto 0) := (others => '0');
   signal rw_data_r   : std_logic_vector(7 downto 0) := (others => '0');
   signal rw_return_r : host_state_t := H_DETECT;
+  -- One-shot flag: marks the first cycle in H_REG_WRITE_NXT after the command
+  -- byte was placed on the bus.  Replaces the "rw_timeout = T_REG_DIR_WAIT_U"
+  -- startup check so the timeout is free to run without being reset on DIR edges.
+  signal rw_first    : std_logic := '0';
 
   -- PHY config register write sequence
   -- Each reg_seq entry: addr[5:0] & data[7:0] = 14 bits
@@ -469,7 +485,7 @@ begin
   ulpi_rst     <= phy_rst_release;
   phase_u       <= host_phase_code(host_st);
   state_code_u  <= host_state_code(host_st);
-  bus_debug_u   <= ulpi_dir & ulpi_nxt & data_oe_r & stp_r & ulpi_data_i(3 downto 0);
+  -- bus_debug_u is now a register updated inside the ulpi_clk process.
 
   -- =========================================================================
   -- ULPI / USB host state machine  (ulpi_clk domain)
@@ -496,6 +512,7 @@ begin
         host_st      <= H_PHY_RST;
         timer        <= 0;
         rw_timeout   <= (others => '0');
+        rw_first     <= '0';
         data_o_r     <= (others => '0');
         data_oe_r    <= '0';
         stp_r        <= '0';
@@ -505,6 +522,7 @@ begin
         progress_u   <= (others => '0');
         ulpi_beat_u  <= (others => '0');
         ulpi_data_dbg_u <= (others => '0');
+        bus_debug_u  <= (others => '0');
         key_valid_u  <= '0';
         reg_seq_idx  <= 0;
         enum_step    <= EN_SET_ADDR;
@@ -520,7 +538,8 @@ begin
                       std_logic_vector(timeout_v(15 downto 12));
         ulpi_data_dbg_u <= ulpi_data_i;
         if ulpi_dir = '1' and ulpi_nxt = '0' then
-          line_state_u <= ulpi_data_i(3 downto 2);
+          line_state_u <= ulpi_data_i(5 downto 4);
+          bus_debug_u  <= ulpi_data_i;   -- latch last RXCMD for diagnostic
         end if;
 
         case host_st is
@@ -556,7 +575,7 @@ begin
             if ulpi_dir = '0' then
               data_o_r  <= "10" & rw_addr_r;
               data_oe_r <= '1';
-              rw_timeout <= T_REG_DIR_WAIT_U;
+              rw_first  <= '1';   -- startup flag for H_REG_WRITE_NXT
               host_st   <= H_REG_WRITE_NXT;
             else
               data_oe_r <= '0';
@@ -564,11 +583,13 @@ begin
             end if;
 
           when H_REG_DIR_BLOCKED =>
+            -- Do NOT reset rw_timeout here: the global timeout must count down
+            -- across retries so we eventually reach H_ERROR if NXT never comes.
             data_oe_r <= '0';
             if ulpi_dir = '0' then
-              rw_timeout <= T_REG_DIR_WAIT_U;
               host_st <= H_REG_WRITE;
             elsif rw_timeout = x"0000" then
+              timer <= T_NAK_RETRY;
               host_st <= H_ERROR;
             else
               rw_timeout <= rw_timeout - 1;
@@ -580,22 +601,26 @@ begin
               -- PHY owns the ULPI bus for an RXCMD/event. Release DATA and
               -- retry the register write once DIR drops.
               data_oe_r <= '0';
+              rw_first  <= '0';
               if rw_timeout = x"0000" then
+                timer <= T_NAK_RETRY;
                 host_st <= H_ERROR;
               else
                 rw_timeout <= rw_timeout - 1;
                 host_st <= H_REG_WRITE;
               end if;
-            elsif rw_timeout = T_REG_DIR_WAIT_U then
+            elsif rw_first = '1' then
+              -- First cycle after command placed on bus: give one ULPI clock for
+              -- the data to propagate to pins before we start sampling NXT.
               data_oe_r <= '1';
-              -- The command reaches the pins after this clock edge. Start
-              -- sampling NXT on the following ULPI clock.
+              rw_first  <= '0';
               rw_timeout <= rw_timeout - 1;
             elsif ulpi_nxt = '1' then
               data_oe_r <= '1';
               host_st <= H_REG_WRITE_STP;
             elsif rw_timeout = x"0000" then
-              data_oe_r <= '1';
+              data_oe_r <= '0';
+              timer <= T_NAK_RETRY;
               host_st <= H_ERROR;
             else
               data_oe_r <= '1';
@@ -630,9 +655,9 @@ begin
           when H_DETECT =>
             data_oe_r   <= '0';
             connected_u <= '0';
-            -- DIR=1, NXT=0 -> RXCMD byte; bits[3:2] = LineState
+            -- DIR=1, NXT=0 -> RXCMD byte; bits[5:4] = LineState (ULPI 1.1 spec)
             if ulpi_dir = '1' and ulpi_nxt = '0' then
-              if ulpi_data_i(3 downto 2) = LS_J then
+              if ulpi_data_i(5 downto 4) = LS_J then
                 -- FS device attached (J = idle on FS bus)
                 timer   <= T_BUS_RESET;
                 host_st <= H_BUS_RST;
@@ -1022,8 +1047,19 @@ begin
             end if;
 
           when H_ERROR =>
-            -- Stay here until reset
+            -- Wait T_NAK_RETRY then restart from H_PHY_RST so the full init
+            -- sequence retries.  This makes PH briefly show F then 0 on each
+            -- attempt, letting the UART diagnostic reveal whether we ever advance.
             data_oe_r <= '0';
+            if timer = 0 then
+              rw_timeout  <= T_REG_DIR_WAIT_U;
+              rw_first    <= '0';
+              reg_seq_idx <= 0;
+              timer       <= T_PHY_RESET;
+              host_st     <= H_PHY_RST;
+            else
+              timer <= timer - 1;
+            end if;
 
           when others =>
             host_st <= H_ERROR;
@@ -1039,13 +1075,31 @@ begin
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
-        phy_rst_release <= '0';
-        phy_rst_cnt <= 0;
+        phy_rst_release    <= '0';
+        phy_rst_cnt        <= 0;
+        phy_clk_alive_prev <= '0';
+        phy_clk_wdt        <= 0;
       elsif phy_rst_cnt = T_PHY_RESET_SYS then
-        phy_rst_release <= '1';
+        -- PHY is out of hardware reset; monitor ulpi_clk via progress_s(4).
+        phy_rst_release    <= '1';
+        phy_clk_alive_prev <= progress_s(4);
+        if progress_s(4) /= phy_clk_alive_prev then
+          -- Clock beat detected: ulpi_beat_u[22] toggled. Clock is alive.
+          phy_clk_wdt <= 0;
+        elsif phy_clk_wdt = 5_400_000 then
+          -- 200 ms elapsed with no clock beat: ulpi_clk has stopped.
+          -- Re-assert hardware reset to restart the PHY and its clock.
+          phy_rst_cnt        <= 0;
+          phy_rst_release    <= '0';
+          phy_clk_wdt        <= 0;
+        else
+          phy_clk_wdt <= phy_clk_wdt + 1;
+        end if;
       else
-        phy_rst_cnt <= phy_rst_cnt + 1;
-        phy_rst_release <= '0';
+        phy_rst_cnt        <= phy_rst_cnt + 1;
+        phy_rst_release    <= '0';
+        phy_clk_alive_prev <= '0';
+        phy_clk_wdt        <= 0;
       end if;
 
       -- Meta
@@ -1159,9 +1213,14 @@ begin
   diag_connected <= connected_s;
   diag_keycode   <= fifo(to_integer(fifo_rp(2 downto 0))).code  when fifo_empty = '0' else state_code_s;
   diag_modif     <= fifo(to_integer(fifo_rp(2 downto 0))).modif when fifo_empty = '0' else bus_debug_s;
+  -- When no key is in the FIFO, ASC shows progress_s instead of raw ULPI data:
+  --   ASC[7:4] = ulpi_beat_u[25:22]: toggles every 70 ms at 60 MHz.
+  --              If this nibble NEVER changes between KEY[1] presses the
+  --              ulpi_clk has stopped (PHY suspended or bus fault).
+  --   ASC[3:0] = rw_timeout[15:12]: rough remaining timeout (0=timed out, F=full)
   diag_ascii     <= keycode_to_ascii(
                       fifo(to_integer(fifo_rp(2 downto 0))).code,
                       fifo(to_integer(fifo_rp(2 downto 0))).modif)
-                    when fifo_empty = '0' else ulpi_data_dbg_s;
+                    when fifo_empty = '0' else progress_s;
 
 end architecture;
