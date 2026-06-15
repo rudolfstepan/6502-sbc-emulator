@@ -27,13 +27,10 @@ entity tang20k_sbc_top is
     sd_ncs     : out std_logic;
     sd_mosi    : out std_logic;
     sd_miso    : in  std_logic;
-    -- USB3317 ULPI PHY on the USB-OTG connector
-    ulpi_rst   : out std_logic;
-    ulpi_clk   : in  std_logic;
-    ulpi_dir   : in  std_logic;
-    ulpi_nxt   : in  std_logic;
-    ulpi_stp   : out std_logic;
-    ulpi_data  : inout std_logic_vector(7 downto 0);
+    -- USB HID host (nand2mario bit-bang, low-speed 1.5 Mbps on PMOD GPIO)
+    -- Requires 15 kΩ pull-downs on D+ and D− to GND; VBUS supplied externally.
+    usb_dm     : inout std_logic;
+    usb_dp     : inout std_logic;
     -- HDMI TMDS differential outputs
     tmds_clk_p : out std_logic;
     tmds_clk_n : out std_logic;
@@ -88,6 +85,40 @@ architecture rtl of tang20k_sbc_top is
       boot_done              : out std_logic;
       boot_error             : out std_logic;
       dbg_state              : out std_logic_vector(3 downto 0)
+    );
+  end component;
+
+  component rPLL is
+    generic (
+      FCLKIN         : string  := "100.0";
+      DEVICE         : string  := "GW1N-1";
+      IDIV_SEL       : integer := 0;
+      FBDIV_SEL      : integer := 0;
+      ODIV_SEL       : integer := 8;
+      PSDA_SEL       : string  := "0000";
+      DUTYDA_SEL     : string  := "1000";
+      DYN_SDIV_SEL   : integer := 2;
+      CLKFB_SEL      : string  := "internal";
+      CLKOUT_BYPASS  : string  := "false";
+      CLKOUTP_BYPASS : string  := "false";
+      CLKOUTD_BYPASS : string  := "false";
+      CLKOUTD_SRC    : string  := "CLKOUT"
+    );
+    port (
+      CLKOUT  : out std_logic;
+      LOCK    : out std_logic;
+      CLKOUTP : out std_logic;
+      CLKOUTD : out std_logic;
+      RESET   : in  std_logic;
+      RESET_P : in  std_logic;
+      CLKIN   : in  std_logic;
+      CLKFB   : in  std_logic;
+      FBDSEL  : in  std_logic_vector(5 downto 0);
+      IDSEL   : in  std_logic_vector(5 downto 0);
+      ODSEL   : in  std_logic_vector(5 downto 0);
+      PSDA    : in  std_logic_vector(3 downto 0);
+      DUTYDA  : in  std_logic_vector(3 downto 0);
+      FDLY    : in  std_logic_vector(3 downto 0)
     );
   end component;
 
@@ -156,11 +187,8 @@ architecture rtl of tang20k_sbc_top is
   signal monitor_jump_req   : std_logic;
   signal monitor_jump_addr  : addr_t;
   signal sd_seen_read_end   : std_logic := '0';
-  signal ulpi_data_i        : std_logic_vector(7 downto 0);
-  signal ulpi_data_o        : std_logic_vector(7 downto 0);
-  signal ulpi_data_oe       : std_logic;
-  signal ulpi_stp_i         : std_logic;
-  signal ulpi_rst_i         : std_logic;
+  signal usb_clk            : std_logic;   -- 12 MHz for nand2mario UKP
+  signal usb_pll_lock       : std_logic;
   signal usb_connected      : std_logic;
   signal usb_keycode        : std_logic_vector(7 downto 0);
   signal usb_modif          : std_logic_vector(7 downto 0);
@@ -179,11 +207,40 @@ begin
   sd_ncs <= sd_ncs_i;
   sd_dclk <= sd_dclk_i;
   sd_mosi <= sd_mosi_i;
-  ulpi_rst <= ulpi_rst_i;
-  ulpi_stp <= ulpi_stp_i;
-  ulpi_data <= ulpi_data_o when ulpi_data_oe = '1' else (others => 'Z');
-  ulpi_data_i <= ulpi_data;
   boot_vga_active <= (not boot_done) or boot_error or monitor_active;
+
+  -- 12 MHz clock for nand2mario USB HID host
+  -- CLKOUT = 27 * (FBDIV_SEL+1) / (IDIV_SEL+1) = 27*4/9 = 12 MHz
+  -- VCO    = 12 * ODIV_SEL = 12 * 64 = 768 MHz
+  usb_pll_i : rPLL
+    generic map (
+      FCLKIN         => "27",
+      DEVICE         => "GW2A-18C",
+      IDIV_SEL       => 8,
+      FBDIV_SEL      => 3,
+      ODIV_SEL       => 64,
+      CLKFB_SEL      => "internal",
+      CLKOUT_BYPASS  => "false",
+      CLKOUTP_BYPASS => "false",
+      CLKOUTD_BYPASS => "false",
+      CLKOUTD_SRC    => "CLKOUT"
+    )
+    port map (
+      CLKIN   => clk_27mhz,
+      CLKOUT  => usb_clk,
+      LOCK    => usb_pll_lock,
+      RESET   => '0',
+      RESET_P => '0',
+      CLKFB   => '0',
+      CLKOUTP => open,
+      CLKOUTD => open,
+      FBDSEL  => (others => '0'),
+      IDSEL   => (others => '0'),
+      ODSEL   => (others => '0'),
+      PSDA    => (others => '0'),
+      DUTYDA  => (others => '0'),
+      FDLY    => (others => '0')
+    );
 
   vga_r  <= boot_vga_r  when boot_vga_active = '1' else sbc_vga_r;
   vga_g  <= boot_vga_g  when boot_vga_active = '1' else sbc_vga_g;
@@ -274,7 +331,6 @@ begin
       active          => boot_dbg_active
     );
 
-  -- usb_ulpi_diag replaced by usb_hid_host inside sbc_i (via ULPI ports)
 
   monitor_rx_i : entity work.uart_rx_ser
     generic map (CLK_HZ => 27_000_000, BAUD => BAUD)
@@ -346,14 +402,9 @@ begin
       uart_tx_valid => uart_tx_valid,
       uart_tx_busy  => uart_tx_busy,
       via_portb     => via_portb,
-      ulpi_clk      => ulpi_clk,
-      ulpi_dir      => ulpi_dir,
-      ulpi_nxt      => ulpi_nxt,
-      ulpi_data_i   => ulpi_data_i,
-      ulpi_data_o   => ulpi_data_o,
-      ulpi_data_oe  => ulpi_data_oe,
-      ulpi_stp      => ulpi_stp_i,
-      ulpi_rst      => ulpi_rst_i,
+      usb_clk       => usb_clk,
+      usb_dm        => usb_dm,
+      usb_dp        => usb_dp,
       usb_connected => usb_connected,
       usb_keycode   => usb_keycode,
       usb_modif     => usb_modif,

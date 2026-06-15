@@ -17,37 +17,23 @@
 // Video: HDMI TMDS via on-board connector (no GPIO VGA breakout needed).
 
 // -------------------------------------------------------------------------
-// USB3317 USB-OTG ULPI PHY.
-// First bring-up only observes ULPI and holds the data bus high-Z; full HID
-// host support will be layered on top after the PHY diagnostics are stable.
-// Pinout from TangPrimer-20K-example USB/usb_serial/src/usb_example.cst.
+// USB HID host via PMOD GPIO (nand2mario bit-bang, low-speed 1.5 Mbps).
+//
+// Physical wiring (USB-A or USB-B mini connector on PMOD breakout):
+//   usb_dm (D-)  -> USB pin 2  + 15 kΩ pull-down to GND
+//   usb_dp (D+)  -> USB pin 3  + 15 kΩ pull-down to GND
+//   VBUS (5 V)   -> USB pin 1  (supply from PMOD 5 V rail or external)
+//   GND          -> USB pin 4
+//
+// FIXME: Replace the pin locations below with the two actual PMOD header pins
+// you have wired.  Verify against the Tang Primer 20K schematic before building.
+// The pins shown here (A14, B14) are placeholders for PMOD connector J3 pins
+// 1 and 2 (signal side).  Check that they are LVCMOS33 I/O banks.
 // -------------------------------------------------------------------------
-IO_LOC "ulpi_stp" K11;
-IO_PORT "ulpi_stp" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_rst" F10;
-IO_PORT "ulpi_rst" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[7]" R12;
-IO_PORT "ulpi_data[7]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[6]" P13;
-IO_PORT "ulpi_data[6]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[5]" R13;
-IO_PORT "ulpi_data[5]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[4]" T14;
-IO_PORT "ulpi_data[4]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[3]" H13;
-IO_PORT "ulpi_data[3]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[2]" J12;
-IO_PORT "ulpi_data[2]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[1]" H12;
-IO_PORT "ulpi_data[1]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_data[0]" G11;
-IO_PORT "ulpi_data[0]" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "ulpi_nxt" K13;
-IO_PORT "ulpi_nxt" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "ulpi_dir" K12;
-IO_PORT "ulpi_dir" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
-IO_LOC "ulpi_clk" T15;
-IO_PORT "ulpi_clk" IO_TYPE=LVCMOS33 PULL_MODE=NONE;
+IO_LOC "usb_dm" A14;
+IO_PORT "usb_dm" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "usb_dp" B14;
+IO_PORT "usb_dp" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
 
 // -------------------------------------------------------------------------
 // Clock

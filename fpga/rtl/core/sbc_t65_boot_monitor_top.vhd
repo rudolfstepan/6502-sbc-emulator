@@ -42,15 +42,10 @@ entity sbc_t65_boot_monitor_top is
 
     via_portb   : out data_t;
 
-    -- USB HID host (ULPI PHY interface, optional — tie to '0'/'Z' if absent)
-    ulpi_clk     : in  std_logic := '0';
-    ulpi_dir     : in  std_logic := '0';
-    ulpi_nxt     : in  std_logic := '0';
-    ulpi_data_i  : in  std_logic_vector(7 downto 0) := (others => '0');
-    ulpi_data_o  : out std_logic_vector(7 downto 0);
-    ulpi_data_oe : out std_logic;
-    ulpi_stp     : out std_logic;
-    ulpi_rst     : out std_logic;
+    -- USB HID host (nand2mario bit-bang over PMOD GPIO)
+    usb_clk : in  std_logic := '0';
+    usb_dm  : inout std_logic;
+    usb_dp  : inout std_logic;
 
     -- USB HID diagnostic outputs (for boot debug display)
     usb_connected : out std_logic;
@@ -61,7 +56,7 @@ entity sbc_t65_boot_monitor_top is
     usb_key_event : out std_logic;
     usb_polling   : out std_logic;
 
-    -- ULPI bus capture readout
+    -- ULPI bus capture (stubbed — was ULPI debug; kept for backward compat)
     usb_cap_addr  : in  std_logic_vector(6 downto 0) := (others => '0');
     usb_cap_data  : out std_logic_vector(15 downto 0);
     usb_cap_ready : out std_logic;
@@ -509,16 +504,11 @@ begin
 
   usb_hid_i : entity work.usb_hid_host
     port map (
-      clk          => clk,
-      reset_n      => reset_n,
-      ulpi_clk     => ulpi_clk,
-      ulpi_dir     => ulpi_dir,
-      ulpi_nxt     => ulpi_nxt,
-      ulpi_data_i  => ulpi_data_i,
-      ulpi_data_o  => ulpi_data_o,
-      ulpi_data_oe => ulpi_data_oe,
-      ulpi_stp     => ulpi_stp,
-      ulpi_rst     => ulpi_rst,
+      clk            => clk,
+      reset_n        => reset_n,
+      usb_clk        => usb_clk,
+      usb_dm         => usb_dm,
+      usb_dp         => usb_dp,
       cs             => usb_cs,
       we             => cpu_bus_we,
       addr           => cpu_addr(1 downto 0),
@@ -530,11 +520,12 @@ begin
       diag_ascii     => usb_ascii,
       diag_phase     => usb_phase,
       diag_key_event => usb_key_event,
-      diag_polling   => usb_polling,
-      diag_cap_addr  => usb_cap_addr,
-      diag_cap_data  => usb_cap_data,
-      diag_cap_ready => usb_cap_ready
+      diag_polling   => usb_polling
     );
+
+  -- Bus-capture feature removed (was ULPI-specific); tie off outputs.
+  usb_cap_data  <= (others => '0');
+  usb_cap_ready <= '0';
 
   char_i : entity work.char_rom
     port map (addr => char_addr, dout => char_data);
