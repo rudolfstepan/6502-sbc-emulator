@@ -165,6 +165,7 @@ architecture rtl of tang20k_sbc_top is
   signal usb_keycode        : std_logic_vector(7 downto 0);
   signal usb_modif          : std_logic_vector(7 downto 0);
   signal usb_ascii          : std_logic_vector(7 downto 0);
+  signal usb_phase          : std_logic_vector(3 downto 0);
 begin
   -- Hold reset until PLL has locked
   reset_n <= key(0) and pll_lock;
@@ -261,6 +262,7 @@ begin
       usb_keycode     => usb_keycode,
       usb_modif       => usb_modif,
       usb_ascii       => usb_ascii,
+      usb_phase       => usb_phase,
       uart_busy       => uart_tx_busy,
       uart_data       => boot_dbg_data,
       uart_valid      => boot_dbg_valid,
@@ -297,7 +299,12 @@ begin
       mem_rdata => monitor_mem_rdata,
       mem_ready => monitor_mem_ready,
       jump_req  => monitor_jump_req,
-      jump_addr => monitor_jump_addr
+      jump_addr => monitor_jump_addr,
+      usb_connected => usb_connected,
+      usb_keycode   => usb_keycode,
+      usb_modif     => usb_modif,
+      usb_ascii     => usb_ascii,
+      usb_phase     => usb_phase
     );
 
   sbc_i : entity work.sbc_t65_boot_monitor_top
@@ -341,6 +348,7 @@ begin
       usb_keycode   => usb_keycode,
       usb_modif     => usb_modif,
       usb_ascii     => usb_ascii,
+      usb_phase     => usb_phase,
       dbg_cpu_addr  => open,
       dbg_cpu_data  => open,
       dbg_cpu_din   => open,
@@ -370,6 +378,7 @@ begin
       usb_keycode     => usb_keycode,
       usb_modif       => usb_modif,
       usb_ascii       => usb_ascii,
+      usb_phase       => usb_phase,
       ram_test_active => '0',
       ram_test_done   => boot_done,
       ram_test_error  => '0',

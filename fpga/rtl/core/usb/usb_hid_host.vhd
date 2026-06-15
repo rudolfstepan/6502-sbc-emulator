@@ -44,7 +44,9 @@ entity usb_hid_host is
     diag_connected : out std_logic;
     diag_keycode   : out std_logic_vector(7 downto 0);
     diag_modif     : out std_logic_vector(7 downto 0);
-    diag_ascii     : out std_logic_vector(7 downto 0)
+    diag_ascii     : out std_logic_vector(7 downto 0);
+    -- Phase: 0=PHY init, 1=detect, 2=bus rst, 3=enum, 4=poll, F=error
+    diag_phase     : out std_logic_vector(3 downto 0)
   );
 end entity;
 
@@ -276,6 +278,7 @@ architecture rtl of usb_hid_host is
 
   signal host_st     : host_state_t := H_PHY_RST;
   signal timer       : natural range 0 to T_BUS_RESET + 1 := 0;
+  signal rw_timeout  : natural range 0 to 4095 := 0;  -- separate from timer
 
   -- ULPI output registers
   signal data_o_r    : std_logic_vector(7 downto 0) := (others => '0');
@@ -291,8 +294,8 @@ architecture rtl of usb_hid_host is
   -- Each reg_seq entry: addr[5:0] & data[7:0] = 14 bits
   type reg_seq_t is array (0 to 3) of std_logic_vector(13 downto 0);
   constant REG_SEQ : reg_seq_t := (
-    REG_FUNC_CTRL  & x"45",   -- FunctionCtrl: XCVR=FS, Term=1, OpMode=00, SuspendM=1
-    REG_OTG_CTRL   & x"06",   -- OTG Ctrl: DpPulldown=1, DmPulldown=1 (host)
+    REG_FUNC_CTRL  & x"62",   -- FunctionCtrl: XcvrSel=FS, TermSel=1, OpMode=00, Reset=0, SuspendM=1
+    REG_OTG_CTRL   & x"26",   -- OTG Ctrl: DrvVbus=1, DmPulldown=1, DpPulldown=1 (host+VBUS)
     REG_USB_INT_EN & x"00",   -- disable PHY interrupts
     REG_SCRATCH    & x"A5"    -- scratch verify
   );
@@ -388,6 +391,7 @@ begin
       if reset_n = '0' then
         host_st      <= H_PHY_RST;
         timer        <= 0;
+        rw_timeout   <= 0;
         data_o_r     <= (others => '0');
         data_oe_r    <= '0';
         stp_r        <= '0';
@@ -433,10 +437,10 @@ begin
           -- -------------------------------------------------------------------
           when H_REG_WRITE =>
             if ulpi_dir = '0' then
-              data_o_r  <= "10" & rw_addr_r;
-              data_oe_r <= '1';
-              host_st   <= H_REG_WRITE_NXT;
-              timer     <= 4096;
+              data_o_r   <= "10" & rw_addr_r;
+              data_oe_r  <= '1';
+              rw_timeout <= 4095;   -- use separate counter, leaves timer intact
+              host_st    <= H_REG_WRITE_NXT;
             end if;
 
           when H_REG_WRITE_NXT =>
@@ -444,10 +448,10 @@ begin
             data_oe_r <= '1';
             if ulpi_nxt = '1' and ulpi_dir = '0' then
               host_st <= H_REG_WRITE_STP;
-            elsif timer = 0 then
+            elsif rw_timeout = 0 then
               host_st <= H_ERROR;
             else
-              timer <= timer - 1;
+              rw_timeout <= rw_timeout - 1;
             end if;
 
           when H_REG_WRITE_STP =>
@@ -490,9 +494,9 @@ begin
           -- Phase 4: USB bus reset (drive SE0 for 50 ms)
           -- -------------------------------------------------------------------
           when H_BUS_RST =>
-            -- Write FunctionControl with OpMode=10 (drive SE0 = chip reset)
+            -- Assert Reset bit (bit1) in FunctionControl → PHY drives SE0 on USB bus
             rw_addr_r   <= REG_FUNC_CTRL;
-            rw_data_r   <= x"55";    -- SuspendM=1, Reset=0, OpMode=01(chirp K for FS reset)
+            rw_data_r   <= x"66";    -- XcvrSel=FS, TermSel=1, OpMode=00, Reset=1, SuspendM=1
             rw_return_r <= H_BUS_RST_WAIT;
             reg_seq_idx <= 0;         -- single register write, no sequence
             timer       <= T_BUS_RESET;
@@ -501,7 +505,7 @@ begin
           when H_BUS_RST_WAIT =>
             if timer = 0 then
               rw_addr_r   <= REG_FUNC_CTRL;
-              rw_data_r   <= x"45";    -- Back to normal FS
+              rw_data_r   <= x"62";    -- Clear Reset, back to normal FS (SuspendM=1)
               rw_return_r <= H_BUS_RST_RECOV;
               reg_seq_idx <= 0;         -- single register write, no sequence
               timer       <= T_RESET_RECOV;
@@ -971,6 +975,22 @@ begin
   end process;
 
   irq <= not fifo_empty;
+
+  -- Diagnostic phase: encode host state as 4-bit nibble for display
+  diag_phase <= x"0" when host_st = H_PHY_RST or host_st = H_PHY_RST_WAIT
+                         or host_st = H_REG_WRITE or host_st = H_REG_WRITE_NXT
+                         or host_st = H_REG_WRITE_STP else
+                x"1" when host_st = H_DETECT else
+                x"2" when host_st = H_BUS_RST or host_st = H_BUS_RST_WAIT
+                         or host_st = H_BUS_RST_RECOV else
+                x"3" when host_st = H_ENUM_WAIT or host_st = H_SETUP_TOKEN
+                         or host_st = H_SETUP_TX or host_st = H_SETUP_DATA
+                         or host_st = H_SETUP_DATA_TX or host_st = H_STATUS_IN
+                         or host_st = H_STATUS_IN_TX or host_st = H_STATUS_WAIT
+                         or host_st = H_RX_ACK_TX or host_st = H_NAK_WAIT else
+                x"4" when host_st = H_IN_TOKEN or host_st = H_IN_TX
+                         or host_st = H_RX_WAIT or host_st = H_RX_ACK else
+                x"F";
 
   -- Diagnostic outputs: head of FIFO (or zeros when empty)
   diag_connected <= connected_s;

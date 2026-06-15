@@ -31,6 +31,7 @@ entity boot_debug_uart is
     usb_keycode     : in  std_logic_vector(7 downto 0) := (others => '0');
     usb_modif       : in  std_logic_vector(7 downto 0) := (others => '0');
     usb_ascii       : in  std_logic_vector(7 downto 0) := (others => '0');
+    usb_phase       : in  std_logic_vector(3 downto 0) := (others => '0');
 
     uart_busy       : in  std_logic;
     uart_data       : out data_t;
@@ -156,7 +157,8 @@ architecture rtl of boot_debug_uart is
       when S_STAT_20 => return S_STAT_21;
       when S_STAT_21 => return S_STAT_22;
       when S_STAT_22 => return S_STAT_23;
-      when S_STAT_23 => return S_STAT_25;  -- skip S_STAT_24 (unused)
+      when S_STAT_23 => return S_STAT_24;
+      when S_STAT_24 => return S_STAT_25;
       when S_STAT_25 => return S_STAT_26;
       when S_STAT_26 => return S_IDLE;
       when S_DONE_0  => return S_DONE_1;
@@ -179,7 +181,8 @@ architecture rtl of boot_debug_uart is
     usb_con   : std_logic;
     usb_key   : std_logic_vector(7 downto 0);
     usb_mod   : std_logic_vector(7 downto 0);
-    usb_asc   : std_logic_vector(7 downto 0)
+    usb_asc   : std_logic_vector(7 downto 0);
+    usb_ph    : std_logic_vector(3 downto 0)
   ) return data_t is
   begin
     case s is
@@ -197,6 +200,7 @@ architecture rtl of boot_debug_uart is
       when S_STAT_20 => return hex_char(usb_mod(3 downto 0));
       when S_STAT_22 => return hex_char(usb_asc(7 downto 4));
       when S_STAT_23 => return hex_char(usb_asc(3 downto 0));
+      when S_STAT_24 => return hex_char(usb_ph);
       when others    => return msg_byte(s);
     end case;
   end function;
@@ -317,7 +321,7 @@ begin
             when others =>
               data_reg <= state_byte(state, pins_v, loader_state, sd_sec_state,
                                      sd_cmd_state, flags_v, usb_connected,
-                                     usb_keycode, usb_modif, usb_ascii);
+                                     usb_keycode, usb_modif, usb_ascii, usb_phase);
               valid_reg <= '1';
               wait_uart <= '1';
               state <= next_msg_state(state);

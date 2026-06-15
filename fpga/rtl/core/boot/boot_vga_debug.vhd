@@ -29,6 +29,7 @@ entity boot_vga_debug is
     usb_keycode     : in  std_logic_vector(7 downto 0) := (others => '0');
     usb_modif       : in  std_logic_vector(7 downto 0) := (others => '0');
     usb_ascii       : in  std_logic_vector(7 downto 0) := (others => '0');
+    usb_phase       : in  std_logic_vector(3 downto 0) := (others => '0');
     ram_test_active : in  std_logic;
     ram_test_done   : in  std_logic;
     ram_test_error  : in  std_logic;
@@ -197,7 +198,7 @@ begin
           seen_read_end, boot_done, boot_error, sd_cmd_error,
           loader_state, sd_sec_state, sd_cmd_state,
           sd_ncs, sd_dclk, sd_mosi_o, sd_miso_i,
-          usb_connected, usb_keycode, usb_modif, usb_ascii,
+          usb_connected, usb_keycode, usb_modif, usb_ascii, usb_phase,
           ram_test_active, ram_test_done, ram_test_error,
           ram_test_phase, ram_test_addr, ram_test_fail_addr,
           ram_test_expected, ram_test_actual)
@@ -361,11 +362,14 @@ begin
           ch := hex_char(usb_modif(3 downto 0));
         end if;
       when 18 =>
-        -- USB HID: ASCII=$XX
-        put_str(ch, col, 4, "USB HID: ASCII=$");
-        if col = 20 then
+        -- USB HID: PH=X ASCII=$XX  (PH=0:init 1:detect 2:rst 3:enum 4:poll F:err)
+        put_str(ch, col, 4, "USB HID: PH=");
+        put_str(ch, col, 17, "ASCII=$");
+        if col = 16 then
+          ch := hex_char(usb_phase);
+        elsif col = 24 then
           ch := hex_char(usb_ascii(7 downto 4));
-        elsif col = 21 then
+        elsif col = 25 then
           ch := hex_char(usb_ascii(3 downto 0));
         end if;
       when 19 =>

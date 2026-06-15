@@ -27,7 +27,13 @@ entity uart_debug_monitor is
     mem_ready : in  std_logic;
 
     jump_req  : out std_logic;
-    jump_addr : out addr_t
+    jump_addr : out addr_t;
+
+    usb_connected : in std_logic := '0';
+    usb_keycode   : in std_logic_vector(7 downto 0) := (others => '0');
+    usb_modif     : in std_logic_vector(7 downto 0) := (others => '0');
+    usb_ascii     : in std_logic_vector(7 downto 0) := (others => '0');
+    usb_phase     : in std_logic_vector(3 downto 0) := (others => '0')
   );
 end entity;
 
@@ -53,6 +59,7 @@ architecture rtl of uart_debug_monitor is
     S_DIS_BYTE_SP, S_DIS_BYTE_HI, S_DIS_BYTE_LO, S_DIS_BYTE_NEXT,
     S_DIS_GAP1, S_DIS_GAP2, S_DIS_MNEM, S_DIS_OPER_SP,
     S_DIS_OPER_CHAR, S_DIS_NEXT, S_DIS_END_LF,
+    S_USB_DIAG,
     S_DEACT
   );
 
@@ -105,6 +112,7 @@ architecture rtl of uart_debug_monitor is
   signal mem_wdata_reg : data_t := (others => '0');
   signal jump_req_reg  : std_logic := '0';
   signal jump_addr_reg : addr_t := (others => '0');
+  signal usb_idx       : natural range 0 to 36 := 0;
 
   constant MODE_IMP  : natural := 0;
   constant MODE_ACC  : natural := 1;
@@ -732,6 +740,9 @@ begin
                 msg_idx <= 0;
                 if msg = MSG_PROMPT or msg = MSG_GO or msg = MSG_LOAD then
                   state <= after_msg;
+                elsif msg = MSG_BANNER then
+                  usb_idx <= 0;
+                  state   <= S_USB_DIAG;
                 else
                   msg       <= MSG_PROMPT;
                   after_msg <= S_INPUT;
@@ -1182,6 +1193,63 @@ begin
               msg <= MSG_PROMPT;
               after_msg <= S_INPUT;
               state <= S_SEND_MSG;
+
+            when S_USB_DIAG =>
+              -- Print "USB CON=X PH=X KEY=XX MOD=XX ASC=XX\r\n"
+              case usb_idx is
+                when 0  => tx_data_reg <= ascii('U');
+                when 1  => tx_data_reg <= ascii('S');
+                when 2  => tx_data_reg <= ascii('B');
+                when 3  => tx_data_reg <= ascii(' ');
+                when 4  => tx_data_reg <= ascii('C');
+                when 5  => tx_data_reg <= ascii('O');
+                when 6  => tx_data_reg <= ascii('N');
+                when 7  => tx_data_reg <= ascii('=');
+                when 8  =>
+                  if usb_connected = '1' then
+                    tx_data_reg <= ascii('1');
+                  else
+                    tx_data_reg <= ascii('0');
+                  end if;
+                when 9  => tx_data_reg <= ascii(' ');
+                when 10 => tx_data_reg <= ascii('P');
+                when 11 => tx_data_reg <= ascii('H');
+                when 12 => tx_data_reg <= ascii('=');
+                when 13 => tx_data_reg <= hex_char(usb_phase);
+                when 14 => tx_data_reg <= ascii(' ');
+                when 15 => tx_data_reg <= ascii('K');
+                when 16 => tx_data_reg <= ascii('E');
+                when 17 => tx_data_reg <= ascii('Y');
+                when 18 => tx_data_reg <= ascii('=');
+                when 19 => tx_data_reg <= hex_char(usb_keycode(7 downto 4));
+                when 20 => tx_data_reg <= hex_char(usb_keycode(3 downto 0));
+                when 21 => tx_data_reg <= ascii(' ');
+                when 22 => tx_data_reg <= ascii('M');
+                when 23 => tx_data_reg <= ascii('O');
+                when 24 => tx_data_reg <= ascii('D');
+                when 25 => tx_data_reg <= ascii('=');
+                when 26 => tx_data_reg <= hex_char(usb_modif(7 downto 4));
+                when 27 => tx_data_reg <= hex_char(usb_modif(3 downto 0));
+                when 28 => tx_data_reg <= ascii(' ');
+                when 29 => tx_data_reg <= ascii('A');
+                when 30 => tx_data_reg <= ascii('S');
+                when 31 => tx_data_reg <= ascii('C');
+                when 32 => tx_data_reg <= ascii('=');
+                when 33 => tx_data_reg <= hex_char(usb_ascii(7 downto 4));
+                when 34 => tx_data_reg <= hex_char(usb_ascii(3 downto 0));
+                when 35 => tx_data_reg <= x"0D";
+                when others => tx_data_reg <= x"0A";
+              end case;
+              tx_valid_reg <= '1';
+              wait_uart    <= '1';
+              if usb_idx < 36 then
+                usb_idx <= usb_idx + 1;
+              else
+                usb_idx   <= 0;
+                msg       <= MSG_PROMPT;
+                after_msg <= S_INPUT;
+                state     <= S_SEND_MSG;
+              end if;
 
             when S_DEACT =>
               active_reg <= '0';

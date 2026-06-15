@@ -57,6 +57,7 @@ entity sbc_t65_boot_monitor_top is
     usb_keycode   : out std_logic_vector(7 downto 0);
     usb_modif     : out std_logic_vector(7 downto 0);
     usb_ascii     : out std_logic_vector(7 downto 0);
+    usb_phase     : out std_logic_vector(3 downto 0);
 
     dbg_cpu_addr : out addr_t;
     dbg_cpu_data : out data_t;
@@ -502,7 +503,7 @@ begin
   usb_hid_i : entity work.usb_hid_host
     port map (
       clk          => clk,
-      reset_n      => cpu_reset_n,
+      reset_n      => reset_n,
       ulpi_clk     => ulpi_clk,
       ulpi_dir     => ulpi_dir,
       ulpi_nxt     => ulpi_nxt,
@@ -519,7 +520,8 @@ begin
       diag_connected => usb_connected,
       diag_keycode   => usb_keycode,
       diag_modif     => usb_modif,
-      diag_ascii     => usb_ascii
+      diag_ascii     => usb_ascii,
+      diag_phase     => usb_phase
     );
 
   char_i : entity work.char_rom
