@@ -362,14 +362,14 @@ begin
           ch := hex_char(usb_modif(3 downto 0));
         end if;
       when 18 =>
-        -- USB HID: PH=X ASCII=$XX  (PH=0:init 1:detect 2:rst 3:enum 4:poll F:err)
+        -- USB HID: PH=X DATA=$XX  (PH=0:init 1:detect 2:rst 3:enum 4:poll F:err)
         put_str(ch, col, 4, "USB HID: PH=");
-        put_str(ch, col, 17, "ASCII=$");
+        put_str(ch, col, 17, "DATA=$");
         if col = 16 then
           ch := hex_char(usb_phase);
-        elsif col = 24 then
+        elsif col = 23 then
           ch := hex_char(usb_ascii(7 downto 4));
-        elsif col = 25 then
+        elsif col = 24 then
           ch := hex_char(usb_ascii(3 downto 0));
         end if;
       when 19 =>

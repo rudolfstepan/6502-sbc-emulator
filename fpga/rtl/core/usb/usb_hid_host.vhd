@@ -5,13 +5,13 @@
 -- descriptor parsing is required.
 --
 -- Clock domains:
---   ulpi_clk (60 MHz from USB3317) — all USB/ULPI state machines
---   clk      (system, e.g. 27 MHz) — register interface to 6502 bus
+--   ulpi_clk (60 MHz from USB3317) - all USB/ULPI state machines
+--   clk      (system, e.g. 27 MHz) - register interface to 6502 bus
 --
 -- Register map (relative to cs base address, 4 registers):
 --   +0  STATUS  R   [7]=connected [1]=key_ready [0]=fifo_not_empty
 --   +1  KEY     R   HID keycode of the most recent key-down (0 = none)
---   +2  MODIF   R   modifier byte (bit0=LCtrl bit1=LShift bit4=RCtrl …)
+--   +2  MODIF   R   modifier byte (bit0=LCtrl bit1=LShift bit4=RCtrl ...)
 --   +3  ASCII   R   ASCII equivalent of KEY+MODIF (0 if unmappable)
 --
 -- Reading KEY or ASCII clears key_ready and dequeues the entry.
@@ -163,6 +163,18 @@ architecture rtl of usb_hid_host is
   constant REG_USB_INT_EN: std_logic_vector(5 downto 0) := "001101"; -- 0x0D
   constant REG_SCRATCH   : std_logic_vector(5 downto 0) := "010110"; -- 0x16
 
+  -- ULPI FunctionControl bits:
+  --   bit6 SuspendM, bit5 PHY reset, bits4:3 OpMode, bit2 TermSelect,
+  --   bits1:0 XcvrSelect.  FS normal host is SuspendM=1, Reset=0,
+  --   OpMode=00, TermSelect=1, XcvrSelect=FS(01) => 0x45.
+  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"45";
+  -- USB bus reset is SE0 on the USB lines, not the ULPI PHY reset bit.
+  -- Use FS transceiver with OpMode=10 for the reset interval.
+  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"55";
+
+  -- OTGControl: DrvVbus + DpPulldown + DmPulldown for host mode.
+  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"23";
+
   -- ULPI RXCMD line states (bits[3:2])
   constant LS_SE0 : std_logic_vector(1 downto 0) := "00";
   constant LS_K   : std_logic_vector(1 downto 0) := "01";
@@ -171,11 +183,14 @@ architecture rtl of usb_hid_host is
   -- -------------------------------------------------------------------------
   -- Timing constants at 60 MHz
   -- -------------------------------------------------------------------------
-  -- PHY reset: ≥10 ms → 600 000 cycles. Use 20 ms for margin.
+  -- PHY reset: >=10 ms -> 600 000 cycles. Use 20 ms for margin.
   constant T_PHY_RESET   : natural := 1_200_000;
-  -- USB bus reset SE0: ≥50 ms → 3 000 000 cycles
+  -- PHY hardware reset from the system clock, so the PHY can be released even
+  -- if ulpi_clk is stopped while reset is asserted.
+  constant T_PHY_RESET_SYS : natural := 540_000;
+  -- USB bus reset SE0: >=50 ms -> 3 000 000 cycles
   constant T_BUS_RESET   : natural := 3_000_000;
-  -- Post-reset recovery: ≥2.5 us → 150 cycles (use 300 for margin)
+  -- Post-reset recovery: >=2.5 us -> 150 cycles (use 300 for margin)
   constant T_RESET_RECOV : natural := 300;
   -- SOF period: 1 ms = 60 000 cycles
   constant T_SOF_PERIOD  : natural := 60_000;
@@ -187,15 +202,19 @@ architecture rtl of usb_hid_host is
   constant T_NAK_RETRY   : natural := 60_000;
   -- SETUP GetDescriptor minimal wait before IN: ~50 ns = 3 cycles
   constant T_SETUP_GAP   : natural := 32;
+  -- Initial PHY RXCMDs can hold DIR for a short burst. Wait before forcing an
+  -- error so the debug screen can distinguish this from no clock/no reset.
+  constant T_REG_DIR_WAIT : natural := 60_000;
+  constant T_REG_DIR_WAIT_U : unsigned(15 downto 0) := to_unsigned(60_000, 16);
 
   -- -------------------------------------------------------------------------
-  -- TX buffer — small ROM-like array of bytes to stream
+  -- TX buffer - small ROM-like array of bytes to stream
   -- -------------------------------------------------------------------------
   constant TX_BUF_LEN : natural := 16;
   type tx_buf_t is array (0 to TX_BUF_LEN - 1) of std_logic_vector(7 downto 0);
 
   -- -------------------------------------------------------------------------
-  -- HID keycode → ASCII table (only boot protocol unshifted, no modifiers)
+  -- HID keycode -> ASCII table (only boot protocol unshifted, no modifiers)
   -- Index = USB HID Usage ID
   -- -------------------------------------------------------------------------
   type ascii_table_t is array (0 to 127) of std_logic_vector(7 downto 0);
@@ -203,11 +222,11 @@ architecture rtl of usb_hid_host is
   function make_ascii_table return ascii_table_t is
     variable t : ascii_table_t := (others => x"00");
   begin
-    -- letters a–z  (HID 0x04–0x1D)
+    -- letters a-z  (HID 0x04-0x1D)
     for i in 0 to 25 loop
       t(i + 4) := std_logic_vector(to_unsigned(97 + i, 8));
     end loop;
-    -- digits 1–9 (HID 0x1E–0x26), 0 (0x27)
+    -- digits 1-9 (HID 0x1E-0x26), 0 (0x27)
     for i in 0 to 8 loop
       t(i + 30) := std_logic_vector(to_unsigned(49 + i, 8));
     end loop;
@@ -259,7 +278,7 @@ architecture rtl of usb_hid_host is
   type host_state_t is (
     -- PHY bring-up
     H_PHY_RST, H_PHY_RST_WAIT,
-    H_REG_WRITE, H_REG_WRITE_NXT, H_REG_WRITE_STP,
+    H_REG_WRITE, H_REG_WRITE_NXT, H_REG_WRITE_STP, H_REG_DIR_BLOCKED,
     -- Line monitoring
     H_DETECT,
     -- USB bus reset
@@ -276,14 +295,72 @@ architecture rtl of usb_hid_host is
     H_ERROR
   );
 
+  function host_phase_code(s : host_state_t) return std_logic_vector is
+  begin
+    case s is
+      when H_PHY_RST | H_PHY_RST_WAIT | H_REG_WRITE | H_REG_WRITE_NXT |
+           H_REG_WRITE_STP | H_REG_DIR_BLOCKED =>
+        return x"0";
+      when H_DETECT =>
+        return x"1";
+      when H_BUS_RST | H_BUS_RST_WAIT | H_BUS_RST_RECOV =>
+        return x"2";
+      when H_ENUM_WAIT | H_SETUP_TOKEN | H_SETUP_TX | H_SETUP_DATA |
+           H_SETUP_DATA_TX | H_STATUS_IN | H_STATUS_IN_TX |
+           H_STATUS_WAIT | H_RX_ACK_TX | H_NAK_WAIT =>
+        return x"3";
+      when H_IN_TOKEN | H_IN_TX | H_RX_WAIT | H_RX_ACK =>
+        return x"4";
+      when others =>
+        return x"F";
+    end case;
+  end function;
+
+  function host_state_code(s : host_state_t) return std_logic_vector is
+  begin
+    case s is
+      when H_PHY_RST        => return x"00";
+      when H_PHY_RST_WAIT   => return x"01";
+      -- 0x8x marks the current HID-host debug build on the boot screen.
+      when H_REG_WRITE      => return x"82";
+      when H_REG_WRITE_NXT  => return x"83";
+      when H_REG_WRITE_STP  => return x"84";
+      when H_REG_DIR_BLOCKED => return x"85";
+      when H_DETECT         => return x"10";
+      when H_BUS_RST        => return x"20";
+      when H_BUS_RST_WAIT   => return x"21";
+      when H_BUS_RST_RECOV  => return x"22";
+      when H_ENUM_WAIT      => return x"30";
+      when H_SETUP_TOKEN    => return x"31";
+      when H_SETUP_TX       => return x"32";
+      when H_SETUP_DATA     => return x"33";
+      when H_SETUP_DATA_TX  => return x"34";
+      when H_STATUS_IN      => return x"35";
+      when H_STATUS_IN_TX   => return x"36";
+      when H_STATUS_WAIT    => return x"37";
+      when H_IN_TOKEN       => return x"40";
+      when H_IN_TX          => return x"41";
+      when H_RX_WAIT        => return x"42";
+      when H_RX_ACK         => return x"43";
+      when H_RX_ACK_TX      => return x"44";
+      when H_NAK_WAIT       => return x"45";
+      when H_ERROR          => return x"E0";
+      when others           => return x"F0";
+    end case;
+  end function;
+
   signal host_st     : host_state_t := H_PHY_RST;
   signal timer       : natural range 0 to T_BUS_RESET + 1 := 0;
-  signal rw_timeout  : natural range 0 to 4095 := 0;  -- separate from timer
+  signal rw_timeout  : unsigned(15 downto 0) := (others => '0');  -- separate from timer
 
   -- ULPI output registers
   signal data_o_r    : std_logic_vector(7 downto 0) := (others => '0');
   signal data_oe_r   : std_logic := '0';
   signal stp_r       : std_logic := '0';
+  signal phy_rst_release : std_logic := '0';
+  signal phy_rst_cnt : natural range 0 to T_PHY_RESET_SYS := 0;
+  signal phy_rst_rel_meta : std_logic := '0';
+  signal phy_rst_rel_sync : std_logic := '0';
 
   -- ULPI register write helpers
   signal rw_addr_r   : std_logic_vector(5 downto 0) := (others => '0');
@@ -294,8 +371,8 @@ architecture rtl of usb_hid_host is
   -- Each reg_seq entry: addr[5:0] & data[7:0] = 14 bits
   type reg_seq_t is array (0 to 3) of std_logic_vector(13 downto 0);
   constant REG_SEQ : reg_seq_t := (
-    REG_FUNC_CTRL  & x"62",   -- FunctionCtrl: XcvrSel=FS, TermSel=1, OpMode=00, Reset=0, SuspendM=1
-    REG_OTG_CTRL   & x"26",   -- OTG Ctrl: DrvVbus=1, DmPulldown=1, DpPulldown=1 (host+VBUS)
+    REG_FUNC_CTRL  & FUNC_FS_NORMAL,
+    REG_OTG_CTRL   & OTG_HOST,
     REG_USB_INT_EN & x"00",   -- disable PHY interrupts
     REG_SCRATCH    & x"A5"    -- scratch verify
   );
@@ -333,19 +410,40 @@ architecture rtl of usb_hid_host is
 
   -- Connected flag
   signal connected_u : std_logic := '0';
+  signal line_state_u : std_logic_vector(1 downto 0) := LS_SE0;
+  signal phase_u      : std_logic_vector(3 downto 0);
+  signal state_code_u : std_logic_vector(7 downto 0);
+  signal bus_debug_u  : std_logic_vector(7 downto 0);
+  signal progress_u   : std_logic_vector(7 downto 0) := (others => '0');
+  signal ulpi_beat_u  : unsigned(25 downto 0) := (others => '0');
+  signal ulpi_data_dbg_u : std_logic_vector(7 downto 0) := (others => '0');
 
   -- -------------------------------------------------------------------------
-  -- Clock domain crossing (ulpi_clk → clk)
+  -- Clock domain crossing (ulpi_clk -> clk)
   -- -------------------------------------------------------------------------
   signal key_mod_m   : std_logic_vector(7 downto 0) := (others => '0');
   signal key_code_m  : std_logic_vector(7 downto 0) := (others => '0');
   signal key_valid_m : std_logic := '0';
   signal connected_m : std_logic := '0';
+  signal rx_pid_m    : std_logic_vector(7 downto 0) := (others => '0');
+  signal line_state_m : std_logic_vector(1 downto 0) := (others => '0');
+  signal phase_m     : std_logic_vector(3 downto 0) := (others => '0');
+  signal state_code_m : std_logic_vector(7 downto 0) := (others => '0');
+  signal bus_debug_m  : std_logic_vector(7 downto 0) := (others => '0');
+  signal progress_m   : std_logic_vector(7 downto 0) := (others => '0');
+  signal ulpi_data_dbg_m : std_logic_vector(7 downto 0) := (others => '0');
 
   signal key_mod_s   : std_logic_vector(7 downto 0) := (others => '0');
   signal key_code_s  : std_logic_vector(7 downto 0) := (others => '0');
   signal key_valid_s : std_logic := '0';
   signal connected_s : std_logic := '0';
+  signal rx_pid_s    : std_logic_vector(7 downto 0) := (others => '0');
+  signal line_state_s : std_logic_vector(1 downto 0) := (others => '0');
+  signal phase_s     : std_logic_vector(3 downto 0) := (others => '0');
+  signal state_code_s : std_logic_vector(7 downto 0) := (others => '0');
+  signal bus_debug_s  : std_logic_vector(7 downto 0) := (others => '0');
+  signal progress_s   : std_logic_vector(7 downto 0) := (others => '0');
+  signal ulpi_data_dbg_s : std_logic_vector(7 downto 0) := (others => '0');
 
   -- clk-domain key FIFO (depth 8)
   type key_entry_t is record
@@ -368,7 +466,10 @@ begin
   ulpi_data_o  <= data_o_r;
   ulpi_data_oe <= data_oe_r;
   ulpi_stp     <= stp_r;
-  ulpi_rst     <= reset_n;
+  ulpi_rst     <= phy_rst_release;
+  phase_u       <= host_phase_code(host_st);
+  state_code_u  <= host_state_code(host_st);
+  bus_debug_u   <= ulpi_dir & ulpi_nxt & data_oe_r & stp_r & ulpi_data_i(3 downto 0);
 
   -- =========================================================================
   -- ULPI / USB host state machine  (ulpi_clk domain)
@@ -380,23 +481,30 @@ begin
     variable tokv   : std_logic_vector(15 downto 0);
     variable crc16v : std_logic_vector(15 downto 0);
     variable sv     : tx_buf_t;   -- local setup bytes for CRC computation
+    variable timeout_v : unsigned(15 downto 0);
 
   begin
     if rising_edge(ulpi_clk) then
       -- Default: de-assert STP; OE holds its last value
       stp_r      <= '0';
       data_oe_r  <= data_oe_r;
+      phy_rst_rel_meta <= phy_rst_release;
+      phy_rst_rel_sync <= phy_rst_rel_meta;
 
 
-      if reset_n = '0' then
+      if reset_n = '0' or phy_rst_rel_sync = '0' then
         host_st      <= H_PHY_RST;
         timer        <= 0;
-        rw_timeout   <= 0;
+        rw_timeout   <= (others => '0');
         data_o_r     <= (others => '0');
         data_oe_r    <= '0';
         stp_r        <= '0';
         enum_wait_cnt <= 0;
         connected_u  <= '0';
+        line_state_u <= LS_SE0;
+        progress_u   <= (others => '0');
+        ulpi_beat_u  <= (others => '0');
+        ulpi_data_dbg_u <= (others => '0');
         key_valid_u  <= '0';
         reg_seq_idx  <= 0;
         enum_step    <= EN_SET_ADDR;
@@ -406,14 +514,22 @@ begin
         rx_active    <= '0';
 
       else
+        ulpi_beat_u <= ulpi_beat_u + 1;
+        timeout_v := rw_timeout;
+        progress_u <= std_logic_vector(ulpi_beat_u(25 downto 22)) &
+                      std_logic_vector(timeout_v(15 downto 12));
+        ulpi_data_dbg_u <= ulpi_data_i;
+        if ulpi_dir = '1' and ulpi_nxt = '0' then
+          line_state_u <= ulpi_data_i(3 downto 2);
+        end if;
+
         case host_st is
 
           -- -------------------------------------------------------------------
           -- Phase 1: Hold PHY in reset, then release and wait for it to start
           -- -------------------------------------------------------------------
           when H_PHY_RST =>
-            -- ulpi_rst is tied to reset_n so the PHY comes out of reset when
-            -- we get here.  Just wait for the PHY 60 MHz clock to stabilise.
+            data_oe_r <= '0';
             timer   <= T_PHY_RESET;
             host_st <= H_PHY_RST_WAIT;
 
@@ -424,6 +540,7 @@ begin
               rw_addr_r   <= REG_SEQ(0)(13 downto 8);
               rw_data_r   <= REG_SEQ(0)(7 downto 0);
               rw_return_r <= H_DETECT;    -- final return after all 4 regs
+              rw_timeout  <= T_REG_DIR_WAIT_U;
               host_st     <= H_REG_WRITE;
             else
               timer <= timer - 1;
@@ -437,20 +554,51 @@ begin
           -- -------------------------------------------------------------------
           when H_REG_WRITE =>
             if ulpi_dir = '0' then
-              data_o_r   <= "10" & rw_addr_r;
-              data_oe_r  <= '1';
-              rw_timeout <= 4095;   -- use separate counter, leaves timer intact
-              host_st    <= H_REG_WRITE_NXT;
+              data_o_r  <= "10" & rw_addr_r;
+              data_oe_r <= '1';
+              rw_timeout <= T_REG_DIR_WAIT_U;
+              host_st   <= H_REG_WRITE_NXT;
+            else
+              data_oe_r <= '0';
+              host_st <= H_REG_DIR_BLOCKED;
+            end if;
+
+          when H_REG_DIR_BLOCKED =>
+            data_oe_r <= '0';
+            if ulpi_dir = '0' then
+              rw_timeout <= T_REG_DIR_WAIT_U;
+              host_st <= H_REG_WRITE;
+            elsif rw_timeout = x"0000" then
+              host_st <= H_ERROR;
+            else
+              rw_timeout <= rw_timeout - 1;
             end if;
 
           when H_REG_WRITE_NXT =>
             data_o_r  <= "10" & rw_addr_r;
-            data_oe_r <= '1';
-            if ulpi_nxt = '1' and ulpi_dir = '0' then
+            if ulpi_dir = '1' then
+              -- PHY owns the ULPI bus for an RXCMD/event. Release DATA and
+              -- retry the register write once DIR drops.
+              data_oe_r <= '0';
+              if rw_timeout = x"0000" then
+                host_st <= H_ERROR;
+              else
+                rw_timeout <= rw_timeout - 1;
+                host_st <= H_REG_WRITE;
+              end if;
+            elsif rw_timeout = T_REG_DIR_WAIT_U then
+              data_oe_r <= '1';
+              -- The command reaches the pins after this clock edge. Start
+              -- sampling NXT on the following ULPI clock.
+              rw_timeout <= rw_timeout - 1;
+            elsif ulpi_nxt = '1' then
+              data_oe_r <= '1';
               host_st <= H_REG_WRITE_STP;
-            elsif rw_timeout = 0 then
+            elsif rw_timeout = x"0000" then
+              data_oe_r <= '1';
               host_st <= H_ERROR;
             else
+              data_oe_r <= '1';
               rw_timeout <= rw_timeout - 1;
             end if;
 
@@ -463,6 +611,7 @@ begin
               -- More registers in the init sequence
               rw_addr_r   <= REG_SEQ(reg_seq_idx)(13 downto 8);
               rw_data_r   <= REG_SEQ(reg_seq_idx)(7 downto 0);
+              rw_timeout  <= T_REG_DIR_WAIT_U;
               if reg_seq_idx < 3 then
                 reg_seq_idx <= reg_seq_idx + 1;
               else
@@ -476,12 +625,12 @@ begin
 
           -- -------------------------------------------------------------------
           -- Phase 3: Monitor RXCMD for device connect
-          --   When PHY sees FS device (SE0→J) it reports LS=J in RXCMD
+          --   When PHY sees FS device (SE0->J) it reports LS=J in RXCMD
           -- -------------------------------------------------------------------
           when H_DETECT =>
             data_oe_r   <= '0';
             connected_u <= '0';
-            -- DIR=1, NXT=0 → RXCMD byte; bits[3:2] = LineState
+            -- DIR=1, NXT=0 -> RXCMD byte; bits[3:2] = LineState
             if ulpi_dir = '1' and ulpi_nxt = '0' then
               if ulpi_data_i(3 downto 2) = LS_J then
                 -- FS device attached (J = idle on FS bus)
@@ -494,21 +643,22 @@ begin
           -- Phase 4: USB bus reset (drive SE0 for 50 ms)
           -- -------------------------------------------------------------------
           when H_BUS_RST =>
-            -- Assert Reset bit (bit1) in FunctionControl → PHY drives SE0 on USB bus
             rw_addr_r   <= REG_FUNC_CTRL;
-            rw_data_r   <= x"66";    -- XcvrSel=FS, TermSel=1, OpMode=00, Reset=1, SuspendM=1
+            rw_data_r   <= FUNC_FS_SE0;
             rw_return_r <= H_BUS_RST_WAIT;
             reg_seq_idx <= 0;         -- single register write, no sequence
             timer       <= T_BUS_RESET;
+            rw_timeout  <= T_REG_DIR_WAIT_U;
             host_st     <= H_REG_WRITE;
 
           when H_BUS_RST_WAIT =>
             if timer = 0 then
               rw_addr_r   <= REG_FUNC_CTRL;
-              rw_data_r   <= x"62";    -- Clear Reset, back to normal FS (SuspendM=1)
+              rw_data_r   <= FUNC_FS_NORMAL;
               rw_return_r <= H_BUS_RST_RECOV;
               reg_seq_idx <= 0;         -- single register write, no sequence
               timer       <= T_RESET_RECOV;
+              rw_timeout  <= T_REG_DIR_WAIT_U;
               host_st     <= H_REG_WRITE;
             else
               timer <= timer - 1;
@@ -537,7 +687,7 @@ begin
             end if;
 
           -- -------------------------------------------------------------------
-          -- SETUP token → DATA0 → STATUS_IN
+          -- SETUP token -> DATA0 -> STATUS_IN
           -- -------------------------------------------------------------------
           when H_SETUP_TOKEN =>
             if ulpi_dir = '0' then
@@ -688,7 +838,7 @@ begin
               host_st <= H_NAK_WAIT;
               timer   <= T_NAK_RETRY;
             elsif ulpi_dir = '1' then
-              -- DIR=1, NXT=1 → USB packet data byte
+              -- DIR=1, NXT=1 -> USB packet data byte
               if ulpi_nxt = '1' then
                 rx_pid <= ulpi_data_i;
                 rx_len <= 1;
@@ -697,7 +847,7 @@ begin
             elsif rx_len > 0 then
               -- DIR de-asserted: packet received
               if rx_pid = PID_DATA1 or rx_pid = PID_DATA0 then
-                -- Status phase complete — send ACK then advance
+                -- Status phase complete - send ACK then advance
                 tx_buf(0) <= PID_ACK;
                 tx_len    <= 1;
                 tx_idx    <= 0;
@@ -708,7 +858,7 @@ begin
                 host_st <= H_NAK_WAIT;
                 timer   <= T_NAK_RETRY;
               else
-                -- STALL or other — skip this step
+                -- STALL or other - skip this step
                 host_st <= H_NAK_WAIT;
                 timer   <= T_NAK_RETRY;
               end if;
@@ -750,7 +900,7 @@ begin
             end if;
 
           -- -------------------------------------------------------------------
-          -- Phase 6: HID polling — send IN to endpoint 1
+          -- Phase 6: HID polling - send IN to endpoint 1
           -- -------------------------------------------------------------------
           when H_IN_TOKEN =>
             if ulpi_dir = '0' then
@@ -793,11 +943,11 @@ begin
           when H_RX_WAIT =>
             data_oe_r <= '0';
             if rx_timeout = 0 then
-              -- Device not responding — poll again after NAK delay
+              -- Device not responding - poll again after NAK delay
               host_st <= H_NAK_WAIT;
               timer   <= T_NAK_RETRY;
             elsif ulpi_dir = '1' then
-              -- DIR=1, NXT=1 → USB receive data byte (not RXCMD)
+              -- DIR=1, NXT=1 -> USB receive data byte (not RXCMD)
               if ulpi_nxt = '1' then
                 if rx_len = 0 then
                   rx_pid <= ulpi_data_i;
@@ -883,21 +1033,45 @@ begin
   end process;
 
   -- =========================================================================
-  -- Clock domain crossing: ulpi_clk → clk (2-FF synchroniser on each signal)
+  -- Clock domain crossing: ulpi_clk -> clk (2-FF synchroniser on each signal)
   -- =========================================================================
   process(clk)
   begin
     if rising_edge(clk) then
+      if reset_n = '0' then
+        phy_rst_release <= '0';
+        phy_rst_cnt <= 0;
+      elsif phy_rst_cnt = T_PHY_RESET_SYS then
+        phy_rst_release <= '1';
+      else
+        phy_rst_cnt <= phy_rst_cnt + 1;
+        phy_rst_release <= '0';
+      end if;
+
       -- Meta
       key_mod_m   <= key_mod_u;
       key_code_m  <= key_code_u;
       key_valid_m <= key_valid_u;
       connected_m <= connected_u;
+      rx_pid_m    <= rx_pid;
+      line_state_m <= line_state_u;
+      phase_m     <= phase_u;
+      state_code_m <= state_code_u;
+      bus_debug_m <= bus_debug_u;
+      progress_m <= progress_u;
+      ulpi_data_dbg_m <= ulpi_data_dbg_u;
       -- Sync
       key_mod_s   <= key_mod_m;
       key_code_s  <= key_code_m;
       key_valid_s <= key_valid_m;
       connected_s <= connected_m;
+      rx_pid_s    <= rx_pid_m;
+      line_state_s <= line_state_m;
+      phase_s     <= phase_m;
+      state_code_s <= state_code_m;
+      bus_debug_s <= bus_debug_m;
+      progress_s <= progress_m;
+      ulpi_data_dbg_s <= ulpi_data_dbg_m;
     end if;
   end process;
 
@@ -976,29 +1150,18 @@ begin
 
   irq <= not fifo_empty;
 
-  -- Diagnostic phase: encode host state as 4-bit nibble for display
-  diag_phase <= x"0" when host_st = H_PHY_RST or host_st = H_PHY_RST_WAIT
-                         or host_st = H_REG_WRITE or host_st = H_REG_WRITE_NXT
-                         or host_st = H_REG_WRITE_STP else
-                x"1" when host_st = H_DETECT else
-                x"2" when host_st = H_BUS_RST or host_st = H_BUS_RST_WAIT
-                         or host_st = H_BUS_RST_RECOV else
-                x"3" when host_st = H_ENUM_WAIT or host_st = H_SETUP_TOKEN
-                         or host_st = H_SETUP_TX or host_st = H_SETUP_DATA
-                         or host_st = H_SETUP_DATA_TX or host_st = H_STATUS_IN
-                         or host_st = H_STATUS_IN_TX or host_st = H_STATUS_WAIT
-                         or host_st = H_RX_ACK_TX or host_st = H_NAK_WAIT else
-                x"4" when host_st = H_IN_TOKEN or host_st = H_IN_TX
-                         or host_st = H_RX_WAIT or host_st = H_RX_ACK else
-                x"F";
+  -- Diagnostic phase: encode host state as 4-bit nibble for display.
+  diag_phase <= phase_s;
 
-  -- Diagnostic outputs: head of FIFO (or zeros when empty)
+  -- Diagnostic outputs: head of FIFO once keys arrive.  Before that, expose
+  -- host debug breadcrumbs on the boot screen:
+  --   KEY=state code, MOD=DIR/NXT/OE/STP/RXCMD-low, ASCII=raw ULPI DATA.
   diag_connected <= connected_s;
-  diag_keycode   <= fifo(to_integer(fifo_rp(2 downto 0))).code  when fifo_empty = '0' else x"00";
-  diag_modif     <= fifo(to_integer(fifo_rp(2 downto 0))).modif when fifo_empty = '0' else x"00";
+  diag_keycode   <= fifo(to_integer(fifo_rp(2 downto 0))).code  when fifo_empty = '0' else state_code_s;
+  diag_modif     <= fifo(to_integer(fifo_rp(2 downto 0))).modif when fifo_empty = '0' else bus_debug_s;
   diag_ascii     <= keycode_to_ascii(
                       fifo(to_integer(fifo_rp(2 downto 0))).code,
                       fifo(to_integer(fifo_rp(2 downto 0))).modif)
-                    when fifo_empty = '0' else x"00";
+                    when fifo_empty = '0' else ulpi_data_dbg_s;
 
 end architecture;

@@ -5,17 +5,17 @@
 .PARAMETER Program
     After a successful build, flash the bitstream to the board via openFPGALoader.
 
-.PARAMETER Clean
-    Delete impl/ and tmp/ before building (forces full resynthesis).
+.PARAMETER NoClean
+    Skip the default clean step and allow Gowin to reuse existing build output.
 
 .EXAMPLE
     .\make_tang20k.ps1
-    .\make_tang20k.ps1 -Clean
+    .\make_tang20k.ps1 -NoClean
     .\make_tang20k.ps1 -Program
 #>
 param(
     [switch]$Program,
-    [switch]$Clean
+    [switch]$NoClean
 )
 
 $ErrorActionPreference = 'Stop'
@@ -34,10 +34,28 @@ if (-not $GwSh) {
     }
 }
 
-if ($Clean) {
-    Write-Host "Cleaning impl/ and tmp/ ..."
-    Remove-Item -Recurse -Force (Join-Path $ProjectDir 'impl') -ErrorAction SilentlyContinue
-    Remove-Item -Recurse -Force (Join-Path $ProjectDir 'tmp')  -ErrorAction SilentlyContinue
+if (-not $NoClean) {
+    Write-Host "Cleaning Gowin build outputs ..."
+    $CleanPaths = @(
+        (Join-Path $ProjectDir 'impl'),
+        (Join-Path $ProjectDir 'tmp'),
+        (Join-Path $ProjectDir '.cache')
+    )
+    foreach ($Path in $CleanPaths) {
+        if (Test-Path $Path) {
+            Remove-Item -LiteralPath $Path -Recurse -Force
+        }
+    }
+    Get-ChildItem -LiteralPath $ProjectDir -Force -File -ErrorAction SilentlyContinue |
+        Where-Object {
+            $_.Name -like '*.log' -or
+            $_.Name -like '*.jou' -or
+            $_.Name -like '*.rpt' -or
+            $_.Name -like '*.html'
+        } |
+        Remove-Item -Force
+} else {
+    Write-Host "Skipping clean step (-NoClean)."
 }
 
 Write-Host "Building Tang Primer 20K bitstream ..."
