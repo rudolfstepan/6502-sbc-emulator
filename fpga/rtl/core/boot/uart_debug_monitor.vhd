@@ -35,7 +35,12 @@ entity uart_debug_monitor is
     usb_ascii     : in std_logic_vector(7 downto 0) := (others => '0');
     usb_phase     : in std_logic_vector(3 downto 0) := (others => '0');
     usb_key_event : in std_logic := '0';
-    usb_polling   : in std_logic := '0'
+    usb_polling   : in std_logic := '0';
+
+    -- ULPI bus capture readout (for the 'B' command hex dump)
+    usb_cap_addr  : out std_logic_vector(6 downto 0);
+    usb_cap_data  : in  std_logic_vector(15 downto 0) := (others => '0');
+    usb_cap_ready : in  std_logic := '0'
   );
 end entity;
 
@@ -62,6 +67,8 @@ architecture rtl of uart_debug_monitor is
     S_DIS_GAP1, S_DIS_GAP2, S_DIS_MNEM, S_DIS_OPER_SP,
     S_DIS_OPER_CHAR, S_DIS_NEXT, S_DIS_END_LF,
     S_USB_DIAG,
+    S_USB_KEY,
+    S_USB_CAP,
     S_DEACT
   );
 
@@ -115,6 +122,14 @@ architecture rtl of uart_debug_monitor is
   signal jump_req_reg  : std_logic := '0';
   signal jump_addr_reg : addr_t := (others => '0');
   signal usb_idx       : natural range 0 to 48 := 0;
+  -- Continuous USB key echo: latch each usb_key_event toggle so the pressed
+  -- key's ASCII is printed from the idle prompt even if it arrives while busy.
+  signal usb_ev_prev    : std_logic := '0';
+  signal usb_key_pending : std_logic := '0';
+  signal usb_key_char    : data_t := (others => '0');
+  -- ULPI capture dump: cap_rd_idx selects the entry; cap_cidx the char in line.
+  signal cap_rd_idx     : natural range 0 to 128 := 0;
+  signal cap_cidx       : natural range 0 to 9 := 0;
 
   constant MODE_IMP  : natural := 0;
   constant MODE_ACC  : natural := 1;
@@ -652,6 +667,7 @@ begin
   tx_data  <= tx_data_reg;
   tx_valid <= tx_valid_reg;
   active   <= active_reg;
+  usb_cap_addr <= std_logic_vector(to_unsigned(cap_rd_idx, 7));
 
   mem_req   <= mem_req_reg;
   mem_we    <= mem_we_reg;
@@ -663,6 +679,7 @@ begin
   process(clk)
     variable ch : data_t;
     variable hn : std_logic_vector(3 downto 0);
+    variable cap_idx_v : std_logic_vector(7 downto 0);
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
@@ -708,11 +725,25 @@ begin
         mem_wdata_reg <= (others => '0');
         jump_req_reg  <= '0';
         jump_addr_reg <= (others => '0');
+        usb_ev_prev     <= usb_key_event;
+        usb_key_pending <= '0';
+        usb_key_char    <= (others => '0');
       else
         tx_valid_reg <= '0';
         mem_req_reg  <= '0';
         jump_req_reg <= '0';
         btn_d        <= enter_btn;
+
+        -- Latch USB keyboard key events (toggle of usb_key_event). Capturing
+        -- here, outside the tx-gated case, ensures no keypress is missed while
+        -- the monitor is busy emitting other output.
+        if usb_key_event /= usb_ev_prev then
+          usb_ev_prev <= usb_key_event;
+          if usb_connected = '1' and usb_ascii /= x"00" then
+            usb_key_pending <= '1';
+            usb_key_char    <= usb_ascii;
+          end if;
+        end if;
 
         if active_reg = '0' and enter_btn = '1' and btn_d = '0' then
           active_reg <= '1';
@@ -755,7 +786,11 @@ begin
               end if;
 
             when S_INPUT =>
-              if rx_valid = '1' then
+              if usb_key_pending = '1' then
+                -- A USB keyboard key was pressed: echo its ASCII to the UART.
+                usb_key_pending <= '0';
+                state <= S_USB_KEY;
+              elsif rx_valid = '1' then
                 ch := upper(rx_data);
                 if is_eol(ch) then
                   state <= S_EXEC;
@@ -855,6 +890,11 @@ begin
                 msg <= MSG_GO;
                 after_msg <= S_DEACT;
                 state <= S_SEND_MSG;
+              elsif cmd = ascii('B') then
+                -- Dump the in-system ULPI bus capture as hex.
+                cap_rd_idx <= 0;
+                cap_cidx   <= 0;
+                state      <= S_USB_CAP;
               else
                 msg <= MSG_ERR;
                 after_msg <= S_INPUT;
@@ -1274,6 +1314,45 @@ begin
                 msg       <= MSG_PROMPT;
                 after_msg <= S_INPUT;
                 state     <= S_SEND_MSG;
+              end if;
+
+            when S_USB_KEY =>
+              -- Echo one pressed USB-keyboard character to the UART.
+              tx_data_reg  <= usb_key_char;
+              tx_valid_reg <= '1';
+              wait_uart    <= '1';
+              state        <= S_INPUT;
+
+            when S_USB_CAP =>
+              -- Dump ULPI capture entry: "II=DDDD\r\n" per line, 128 entries.
+              -- II = entry index, DDDD = 16-bit sample
+              -- ([15]dir [14]nxt [13]oe [12]stp [11:8]phase [7:0]bus-byte).
+              cap_idx_v := std_logic_vector(to_unsigned(cap_rd_idx, 8));
+              case cap_cidx is
+                when 0 => tx_data_reg <= hex_char(cap_idx_v(7 downto 4));
+                when 1 => tx_data_reg <= hex_char(cap_idx_v(3 downto 0));
+                when 2 => tx_data_reg <= ascii('=');
+                when 3 => tx_data_reg <= hex_char(usb_cap_data(15 downto 12));
+                when 4 => tx_data_reg <= hex_char(usb_cap_data(11 downto 8));
+                when 5 => tx_data_reg <= hex_char(usb_cap_data(7 downto 4));
+                when 6 => tx_data_reg <= hex_char(usb_cap_data(3 downto 0));
+                when 7 => tx_data_reg <= x"0D";
+                when others => tx_data_reg <= x"0A";
+              end case;
+              tx_valid_reg <= '1';
+              wait_uart    <= '1';
+              if cap_cidx < 8 then
+                cap_cidx <= cap_cidx + 1;
+              else
+                cap_cidx <= 0;
+                if cap_rd_idx >= 127 then
+                  cap_rd_idx <= 0;
+                  msg       <= MSG_PROMPT;
+                  after_msg <= S_INPUT;
+                  state     <= S_SEND_MSG;
+                else
+                  cap_rd_idx <= cap_rd_idx + 1;
+                end if;
               end if;
 
             when S_DEACT =>

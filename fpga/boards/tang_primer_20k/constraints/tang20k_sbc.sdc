@@ -1,4 +1,7 @@
 create_clock -name ulpi_clk -period 16.667 -waveform {0 5.75} [get_ports {ulpi_clk}]
+# Source-clock latency models the PHY->FPGA clock arrival delay.  Value taken
+# from the proven Sipeed Tang Primer 20K usb_example.sdc reference design.
+set_clock_latency -source 0.4 [get_clocks {ulpi_clk}]
 
 # ULPI is a source-synchronous interface: the PHY drives ulpi_clk and all signals
 # change relative to its rising edge.

@@ -21,6 +21,12 @@ use ieee.std_logic_1164.all;
 use ieee.numeric_std.all;
 
 entity usb_hid_host is
+  generic (
+    -- Divides the large millisecond-scale timing constants so a testbench can
+    -- exercise PHY init / bus reset / enumeration in a feasible sim time.
+    -- Defaults to 1 (real hardware timing); set large (e.g. 1000) in simulation.
+    SIM_SCALE : positive := 1
+  );
   port (
     clk          : in  std_logic;
     reset_n      : in  std_logic;
@@ -50,7 +56,14 @@ entity usb_hid_host is
     -- Key event signal: toggles when new key is received
     diag_key_event : out std_logic;
     -- Polling active flag: '1' when in EN_POLL state
-    diag_polling   : out std_logic
+    diag_polling   : out std_logic;
+
+    -- In-system ULPI bus capture (logic-analyzer): records {dir,nxt,oe,stp,
+    -- phase,bus-byte} for 128 ulpi_clk cycles starting when the host issues the
+    -- GET_DESCRIPTOR IN token.  Read out (clk domain) for a UART hex dump.
+    diag_cap_addr  : in  std_logic_vector(6 downto 0) := (others => '0');
+    diag_cap_data  : out std_logic_vector(15 downto 0);
+    diag_cap_ready : out std_logic
   );
 end entity;
 
@@ -79,11 +92,21 @@ architecture rtl of usb_hid_host is
   function crc5_11(field : std_logic_vector(10 downto 0))
     return std_logic_vector is
     variable crc : std_logic_vector(4 downto 0) := "11111";
+    variable res : std_logic_vector(4 downto 0);
+    variable rev : std_logic_vector(4 downto 0);
   begin
     for i in 0 to 10 loop
       crc := crc5_bit(crc, field(i));
     end loop;
-    return not crc;
+    res := not crc;
+    -- USB transmits the CRC residual MSB-first (crc(4) first on the wire).
+    -- The byte serialiser sends bits LSB-first, so bit-reverse the residual
+    -- here; otherwise the device sees a bad CRC5 and silently drops the token.
+    -- Verified against the canonical addr0/ep0 token 2D 00 10.
+    for i in 0 to 4 loop
+      rev(i) := res(4 - i);
+    end loop;
+    return rev;
   end function;
 
   -- CRC5 over token {EP[3:0], ADDR[6:0]} sent LSB-first.
@@ -167,23 +190,30 @@ architecture rtl of usb_hid_host is
   constant REG_USB_INT_EN: std_logic_vector(5 downto 0) := "001101"; -- 0x0D
   constant REG_SCRATCH   : std_logic_vector(5 downto 0) := "010110"; -- 0x16
 
-  -- ULPI FunctionControl (addr 0x04) in common USB3317 implementations:
-  --   bit7=Reserved, bit6=SuspendM, bit5=Reset,
-  --   bits[4:3]=OpMode, bit2=TermSelect, bits[1:0]=XcvrSelect.
-  -- FS normal: SuspendM=1, OpMode=00, TermSelect=1, XcvrSelect=01.
-  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"45";
-  -- LS normal: SuspendM=1, OpMode=00, TermSelect=1, XcvrSelect=10.
-  constant FUNC_LS_NORMAL : std_logic_vector(7 downto 0) := x"46";
-  -- USB bus reset: drive SE0 via OpMode=10 (Reset bit remains 0).
-  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"55";
-  constant FUNC_LS_SE0    : std_logic_vector(7 downto 0) := x"56";
+  -- ULPI FunctionControl register (addr 0x04).
+  -- IMPORTANT EMPIRICAL FINDING: the standard ULPI 1.1 layout (bit6=SuspendM,
+  -- bits[1:0]=XcvrSelect) predicts 0x45 for active-FS, but on THIS board 0x45
+  -- consistently regresses (PH stuck at 2, device classified LS) while 0x86
+  -- consistently reaches enumeration (PH=3).  That is only self-consistent if
+  -- this PHY/data path uses the REVERSED bit order, under which:
+  --   bit7=SuspendM, bit6=Reset, bits[5:4]=OpMode, bits[3:2]=XcvrSelect, bit1=TermSelect
+  --   0x86 = 1000_0110 = SuspendM=1, Reset=0, OpMode=00, XcvrSelect=01(FS), TermSelect=1
+  --   0x45 = 0100_0101 = SuspendM=0, Reset=1 (constant PHY reset!) -> worse
+  -- The reversed interpretation MATCHES the hardware behaviour, so we use 0x86.
+  -- (This strongly suggests the ulpi_data byte lane is bit-reversed in this
+  --  design -- see the bit-reverse experiment in the top-level wrapper.)
+  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"86";
+  constant FUNC_LS_NORMAL : std_logic_vector(7 downto 0) := x"8A";
+  -- USB bus reset: drive SE0 (reversed layout: bits[5:4]=OpMode=10).
+  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"A6";
+  constant FUNC_LS_SE0    : std_logic_vector(7 downto 0) := x"AA";
 
-  -- OTGControl for FS host: DmPulldown(2)+DpPulldown(1), no IdPullup.
+  -- OTGControl for FS host: DmPulldown(bit2)+DpPulldown(bit1)+IdPullup(bit0).
   -- DrvVbusExternal(5) and DrvVbus(6) are intentionally NOT set: on the Tang
   -- Primer 20K the USB3317 DRV_VBUS output drives a PMOS gate directly (no
   -- inverter), so DRV_VBUS=LOW (bits 5:6 = 0) turns the PMOS ON and supplies
   -- VBUS to the USB-A host connector.  Setting either bit would de-assert VBUS.
-  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"06";
+  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"07";
 
   -- ULPI RXCMD line states (bits[5:4], per ULPI 1.1 spec)
   constant LS_SE0 : std_logic_vector(1 downto 0) := "00";
@@ -194,25 +224,25 @@ architecture rtl of usb_hid_host is
   -- Timing constants at 60 MHz
   -- -------------------------------------------------------------------------
   -- PHY reset: >=10 ms -> 600 000 cycles. Use 20 ms for margin.
-  constant T_PHY_RESET   : natural := 1_200_000;
+  constant T_PHY_RESET   : natural := 1_200_000 / SIM_SCALE;
   -- PHY hardware reset from the system clock, so the PHY can be released even
   -- if ulpi_clk is stopped while reset is asserted.
-  constant T_PHY_RESET_SYS : natural := 540_000;
+  constant T_PHY_RESET_SYS : natural := 540_000 / SIM_SCALE;
   -- USB bus reset SE0: >=50 ms -> 3 000 000 cycles
-  constant T_BUS_RESET   : natural := 3_000_000;
+  constant T_BUS_RESET   : natural := 3_000_000 / SIM_SCALE;
   -- Post-reset recovery: >=2.5 us -> 150 cycles (use 300 for margin)
   constant T_RESET_RECOV : natural := 300;
   -- SOF period: 1 ms = 60 000 cycles
-  constant T_SOF_PERIOD  : natural := 60_000;
+  constant T_SOF_PERIOD  : natural := 60_000 / SIM_SCALE;
   -- Time after BUS_RESET before starting enumeration: 10 ms
-  constant T_ENUM_WAIT   : natural := 600_000;
+  constant T_ENUM_WAIT   : natural := 600_000 / SIM_SCALE;
   -- Response timeout: ~18 bit times + packet = ~200 cycles enough for HS
   constant T_RX_TIMEOUT  : natural := 3_000;
   -- NAK retry delay: ~1 ms
-  constant T_NAK_RETRY   : natural := 60_000;
+  constant T_NAK_RETRY   : natural := 60_000 / SIM_SCALE;
   -- Detect fallback: if no reliable RXCMD line-state is observed, force an
   -- FS reset probe and continue enumeration instead of stalling in detect.
-  constant T_DETECT_FALLBACK : natural := 120_000;
+  constant T_DETECT_FALLBACK : natural := 120_000 / SIM_SCALE;
   -- SETUP GetDescriptor minimal wait before IN: ~50 ns = 3 cycles
   constant T_SETUP_GAP   : natural := 32;
   -- Initial PHY RXCMDs can hold DIR for a short burst. Wait before forcing an
@@ -291,7 +321,7 @@ architecture rtl of usb_hid_host is
   type host_state_t is (
     -- PHY bring-up
     H_PHY_RST, H_PHY_RST_WAIT,
-    H_REG_WRITE, H_REG_WRITE_NXT, H_REG_WRITE_STP, H_REG_DIR_BLOCKED,
+    H_REG_WRITE, H_REG_WRITE_NXT, H_REG_WRITE_DATA, H_REG_WRITE_STP, H_REG_DIR_BLOCKED,
     -- Line monitoring
     H_DETECT,
     -- USB bus reset
@@ -317,7 +347,7 @@ architecture rtl of usb_hid_host is
   begin
     case s is
       when H_PHY_RST | H_PHY_RST_WAIT | H_REG_WRITE | H_REG_WRITE_NXT |
-           H_REG_WRITE_STP | H_REG_DIR_BLOCKED =>
+           H_REG_WRITE_DATA | H_REG_WRITE_STP | H_REG_DIR_BLOCKED =>
         return x"0";
       when H_DETECT =>
         return x"1";
@@ -345,6 +375,7 @@ architecture rtl of usb_hid_host is
       -- 0x8x marks the current HID-host debug build on the boot screen.
       when H_REG_WRITE      => return x"82";
       when H_REG_WRITE_NXT  => return x"83";
+      when H_REG_WRITE_DATA => return x"86";
       when H_REG_WRITE_STP  => return x"84";
       when H_REG_DIR_BLOCKED => return x"85";
       when H_DETECT         => return x"10";
@@ -411,10 +442,10 @@ architecture rtl of usb_hid_host is
   -- Each reg_seq entry: addr[5:0] & data[7:0] = 14 bits
   type reg_seq_t is array (0 to 3) of std_logic_vector(13 downto 0);
   constant REG_SEQ : reg_seq_t := (
-    REG_FUNC_CTRL  & FUNC_FS_NORMAL,
-    REG_OTG_CTRL   & OTG_HOST,
-    REG_USB_INT_EN & x"00",   -- disable PHY interrupts
-    REG_SCRATCH    & x"A5"    -- scratch verify
+    std_logic_vector'(REG_FUNC_CTRL  & FUNC_FS_NORMAL),
+    std_logic_vector'(REG_OTG_CTRL   & OTG_HOST),
+    std_logic_vector'(REG_USB_INT_EN & x"00"),   -- disable PHY interrupts
+    std_logic_vector'(REG_SCRATCH    & x"A5")    -- scratch verify
   );
   signal reg_seq_idx : natural range 0 to 4 := 0;
 
@@ -425,6 +456,10 @@ architecture rtl of usb_hid_host is
 
   -- SOF / enumeration counters
   signal enum_wait_cnt : natural range 0 to T_ENUM_WAIT := 0;
+  -- Count failed early-enumeration attempts.  If the first descriptor never
+  -- responds, the detected bus speed is likely wrong, so after a few tries we
+  -- flip the speed and re-run the USB bus reset (robust to J/K polarity).
+  signal enum_retry  : unsigned(4 downto 0) := (others => '0');
 
   -- Enumeration step
   type enum_step_t is (
@@ -432,6 +467,19 @@ architecture rtl of usb_hid_host is
     EN_SET_CFG, EN_SET_IDLE, EN_SET_PROTO, EN_POLL
   );
   signal enum_step   : enum_step_t := EN_SET_ADDR;
+
+  -- 3-bit code for the enumeration step, for the UART diagnostic.
+  function enum_step_code(s : enum_step_t) return std_logic_vector is
+  begin
+    case s is
+      when EN_GET_DEV_DESC => return "000";
+      when EN_SET_ADDR     => return "001";
+      when EN_SET_CFG      => return "010";
+      when EN_SET_IDLE     => return "011";
+      when EN_SET_PROTO    => return "100";
+      when EN_POLL         => return "101";
+    end case;
+  end function;
   signal dev_addr    : std_logic_vector(6 downto 0) := (others => '0');
   signal ctrl_toggle : std_logic := '0';
   signal hid_toggle  : std_logic := '0';
@@ -464,6 +512,11 @@ architecture rtl of usb_hid_host is
   signal progress_u   : std_logic_vector(7 downto 0) := (others => '0');
   signal ulpi_beat_u  : unsigned(25 downto 0) := (others => '0');
   signal ulpi_data_dbg_u : std_logic_vector(7 downto 0) := (others => '0');
+  -- Sticky diagnostic facts captured in the ulpi_clk domain since reset:
+  --   bit7 dir_high_seen, bit6 dir_low_seen, bit5 reg_done_seen,
+  --   bit4 detect_seen.  Bits[3:0] mirror the same so a single hex byte
+  --   (high nibble) tells the whole story even from one UART line.
+  signal diag_sticky_u : std_logic_vector(7 downto 0) := (others => '0');
 
   -- -------------------------------------------------------------------------
   -- Clock domain crossing (ulpi_clk -> clk)
@@ -479,6 +532,7 @@ architecture rtl of usb_hid_host is
   signal bus_debug_m  : std_logic_vector(7 downto 0) := (others => '0');
   signal progress_m   : std_logic_vector(7 downto 0) := (others => '0');
   signal ulpi_data_dbg_m : std_logic_vector(7 downto 0) := (others => '0');
+  signal diag_sticky_m : std_logic_vector(7 downto 0) := (others => '0');
 
   signal key_mod_s   : std_logic_vector(7 downto 0) := (others => '0');
   signal key_code_s  : std_logic_vector(7 downto 0) := (others => '0');
@@ -491,6 +545,13 @@ architecture rtl of usb_hid_host is
   signal bus_debug_s  : std_logic_vector(7 downto 0) := (others => '0');
   signal progress_s   : std_logic_vector(7 downto 0) := (others => '0');
   signal ulpi_data_dbg_s : std_logic_vector(7 downto 0) := (others => '0');
+  signal diag_sticky_s : std_logic_vector(7 downto 0) := (others => '0');
+  -- Clock-alive flag derived from the 27 MHz watchdog (1 = ulpi_clk beating).
+  signal ulpi_clk_alive_s : std_logic := '0';
+  -- Enumeration-step + speed snapshot for the UART diagnostic (MOD field).
+  signal enum_dbg_u : std_logic_vector(7 downto 0) := (others => '0');
+  signal enum_dbg_m : std_logic_vector(7 downto 0) := (others => '0');
+  signal enum_dbg_s : std_logic_vector(7 downto 0) := (others => '0');
 
   -- clk-domain key FIFO (depth 8)
   type key_entry_t is record
@@ -508,16 +569,41 @@ architecture rtl of usb_hid_host is
   signal key_valid_prev : std_logic := '0';
   signal key_ready_s    : std_logic := '0';
 
+  -- ULPI bus capture buffer (logic-analyzer-in-FPGA).  Written in ulpi_clk
+  -- domain; frozen after one capture so the clk-domain read port is stable.
+  -- Entry: [15]=dir [14]=nxt [13]=oe [12]=stp [11:8]=phase [7:0]=bus byte.
+  type cap_mem_t is array (0 to 127) of std_logic_vector(15 downto 0);
+  signal cap_mem   : cap_mem_t := (others => (others => '0'));
+  signal cap_idx   : natural range 0 to 128 := 128;  -- 128 = idle/done
+  signal cap_armed : std_logic := '1';                -- one-shot trigger
+  signal cap_done_u: std_logic := '0';
+  signal cap_done_m: std_logic := '0';
+  signal cap_done_s: std_logic := '0';
+
+  -- STP wake: when ulpi_clk is detected stopped (USB3317 entered low-power and
+  -- halted CLKOUT), the link must assert STP to wake the PHY and restart the
+  -- clock.  Driven from the always-running 27 MHz domain because the ULPI FSM
+  -- is frozen while the clock is down.  ULPI low-power exit per USB3317 spec.
+  signal stp_wake_s     : std_logic := '0';
+  -- Free-running divider to shape STP wake into periodic pulses (assert then
+  -- release so CLKOUT can come up between pulses).
+  signal wake_div       : unsigned(16 downto 0) := (others => '0');
+
 begin
 
   ulpi_data_o  <= data_o_r;
   ulpi_data_oe <= data_oe_r;
-  ulpi_stp     <= stp_r;
-  -- Board wiring may invert/reset-buffer ULPI reset semantics; drive the
-  -- opposite of internal release so PHY is not held in reset.
-  ulpi_rst     <= not phy_rst_release;
+  -- STP is normally driven by the ULPI FSM (stp_r).  When the clock has stopped
+  -- the FSM is frozen, so stp_wake_s (27 MHz domain) pulses STP to wake the PHY.
+  ulpi_stp     <= stp_r or stp_wake_s;
+  -- USB3317 RESET# is active-LOW. phy_rst_release='1' means run, '0' means reset.
+  ulpi_rst     <= phy_rst_release;
   phase_u       <= host_phase_code(host_st);
   state_code_u  <= host_state_code(host_st);
+  -- MOD diagnostic: bit7 = low-speed device, bit6 = connected,
+  -- bits[2:0] = enumeration step (0 GET_DEV_DESC,1 SET_ADDR,2 SET_CFG,
+  -- 3 SET_IDLE,4 SET_PROTO,5 POLL).
+  enum_dbg_u    <= low_speed_u & connected_u & "000" & enum_step_code(enum_step);
   -- bus_debug_u is now a register updated inside the ulpi_clk process.
 
   -- =========================================================================
@@ -529,12 +615,14 @@ begin
     variable crc5v  : std_logic_vector(4 downto 0);
     variable tokv   : std_logic_vector(15 downto 0);
     variable crc16v : std_logic_vector(15 downto 0);
+    variable crc16r : std_logic_vector(15 downto 0);   -- bit-reversed CRC16
     variable sv     : tx_buf_t;   -- local setup bytes for CRC computation
     variable timeout_v : unsigned(15 downto 0);
     variable payload_len_v : natural;
     variable key_std_v : std_logic_vector(7 downto 0);
     variable key_rid_v : std_logic_vector(7 downto 0);
     variable mod_v     : std_logic_vector(7 downto 0);
+    variable cap_byte_v : std_logic_vector(7 downto 0);
 
   begin
     if rising_edge(ulpi_clk) then
@@ -561,9 +649,11 @@ begin
         ulpi_beat_u  <= (others => '0');
         ulpi_data_dbg_u <= (others => '0');
         bus_debug_u  <= (others => '0');
+        diag_sticky_u <= (others => '0');
         key_valid_u  <= '0';
         reg_seq_idx  <= 0;
         enum_step    <= EN_GET_DEV_DESC;
+        enum_retry   <= (others => '0');
         dev_addr     <= (others => '0');
         ctrl_toggle  <= '0';
         hid_toggle   <= '0';
@@ -572,13 +662,28 @@ begin
         ctrl_need    <= 0;
         ctrl_count   <= 0;
         ctrl_last_pkt_len <= 0;
+        cap_idx      <= 128;
+        cap_armed    <= '1';
+        cap_done_u   <= '0';
 
       else
         ulpi_beat_u <= ulpi_beat_u + 1;
         timeout_v := rw_timeout;
-        progress_u <= std_logic_vector(ulpi_beat_u(25 downto 22)) &
+        -- ASC[7:4] = ulpi_beat[19:16]: a FAST ulpi-clk heartbeat (the nibble
+        -- cycles every ~16 ms while ulpi_clk runs). If this digit is frozen
+        -- across consecutive UART lines, ulpi_clk has stopped.
+        -- ASC[3:0] = rw_timeout[15:12] (FSM countdown).
+        progress_u <= std_logic_vector(ulpi_beat_u(19 downto 16)) &
                       std_logic_vector(timeout_v(15 downto 12));
         ulpi_data_dbg_u <= ulpi_data_i;
+        -- Track DIR activity (sticky) so a single UART line proves whether the
+        -- PHY ever releases the bus.  diag_sticky_u(7)=DIR high seen,
+        -- (6)=DIR low seen.
+        if ulpi_dir = '1' then
+          diag_sticky_u(7) <= '1';
+        else
+          diag_sticky_u(6) <= '1';
+        end if;
         if ulpi_dir = '1' and ulpi_nxt = '0' then
           -- ULPI RXCMD line state is commonly in bits[1:0]; some designs
           -- historically used bits[5:4]. Prefer [1:0] when it carries J/K.
@@ -588,6 +693,33 @@ begin
             line_state_u <= ulpi_data_i(5 downto 4);
           end if;
           bus_debug_u  <= ulpi_data_i;   -- latch last RXCMD for diagnostic
+        end if;
+
+        -- ---------------------------------------------------------------
+        -- In-system ULPI bus capture.  Arm once; start recording when the
+        -- host enters H_DETECT (where it samples the PHY RXCMD line state to
+        -- decide FS vs LS).  Records 128 consecutive ulpi_clk cycles spanning
+        -- detect + the start of bus reset, so we can see the actual RXCMD bytes
+        -- the PHY reports (the speed decision was observed flip-flopping).
+        -- ---------------------------------------------------------------
+        if cap_idx < 128 then
+          if ulpi_dir = '1' then
+            cap_byte_v := ulpi_data_i;
+          elsif data_oe_r = '1' then
+            cap_byte_v := data_o_r;
+          else
+            cap_byte_v := x"00";
+          end if;
+          cap_mem(cap_idx) <=
+            ulpi_dir & ulpi_nxt & data_oe_r & stp_r &
+            host_phase_code(host_st) & cap_byte_v;
+          if cap_idx = 127 then
+            cap_done_u <= '1';
+          end if;
+          cap_idx <= cap_idx + 1;
+        elsif cap_armed = '1' and host_st = H_DETECT then
+          cap_idx   <= 0;
+          cap_armed <= '0';
         end if;
 
         case host_st is
@@ -664,8 +796,12 @@ begin
               rw_first  <= '0';
               rw_timeout <= rw_timeout - 1;
             elsif ulpi_nxt = '1' then
+              -- PHY accepted the TX CMD byte. Drive the write-data byte for
+              -- exactly one ULPI cycle (NO STP yet), per the ULPI register-
+              -- write protocol, then terminate with STP+0x00.
+              data_o_r  <= rw_data_r;
               data_oe_r <= '1';
-              host_st <= H_REG_WRITE_STP;
+              host_st   <= H_REG_WRITE_DATA;
             elsif rw_timeout = x"0000" then
               data_oe_r <= '0';
               timer <= T_NAK_RETRY;
@@ -675,11 +811,20 @@ begin
               rw_timeout <= rw_timeout - 1;
             end if;
 
-          when H_REG_WRITE_STP =>
-            -- DATA + STP simultaneously (ULPI register write completes here)
-            data_o_r  <= rw_data_r;
+          when H_REG_WRITE_DATA =>
+            -- The write-data byte is on the bus this cycle. On the next cycle
+            -- drive 0x00 and assert STP to terminate the write. ULPI requires
+            -- STP to coincide with a NOP/00 byte, never with the data byte.
+            data_o_r  <= (others => '0');
             data_oe_r <= '1';
             stp_r     <= '1';
+            host_st   <= H_REG_WRITE_STP;
+
+          when H_REG_WRITE_STP =>
+            -- STP + 0x00 are on the bus this cycle; the register write
+            -- completes. Keep driving the bus (NOP/00) and sequence onward.
+            data_oe_r <= '1';
+            diag_sticky_u(5) <= '1';   -- a register write completed at least once
             if reg_seq_idx > 0 and reg_seq_idx <= 3 then
               -- More registers in the init sequence
               rw_addr_r   <= REG_SEQ(reg_seq_idx)(13 downto 8);
@@ -706,25 +851,28 @@ begin
           when H_DETECT =>
             data_oe_r   <= '0';
             connected_u <= '0';
-            -- Detect idle line state from either ULPI RXCMD encoding variant.
-            -- Accept DIR=1 regardless of NXT to avoid missing short RXCMD windows.
+            diag_sticky_u(4) <= '1';   -- init register sequence completed
+            -- ULPI RXCMD LineState[0]=D+, LineState[1]=D-.
+            --   FS device idle (J) = D+ high  = LineState "01" -> full speed
+            --   LS device idle (J) = D- high  = LineState "10" -> low speed
+            -- (Simulation confirmed the old LS_J/LS_K constants inverted this,
+            --  misclassifying a full-speed keyboard as low-speed.)
+            -- Accept DIR=1 regardless of NXT to catch short RXCMD windows.
             if ulpi_dir = '1' then
-              if ulpi_data_i(1 downto 0) = LS_J or ulpi_data_i(5 downto 4) = LS_J then
-                -- FS device attached (J = idle on FS bus)
-                low_speed_u <= '0';
+              if ulpi_data_i(1 downto 0) = "01" or ulpi_data_i(5 downto 4) = "01" then
+                low_speed_u <= '0';          -- D+ high -> full speed
                 timer   <= T_BUS_RESET;
                 host_st <= H_BUS_RST;
-              elsif ulpi_data_i(1 downto 0) = LS_K or ulpi_data_i(5 downto 4) = LS_K then
-                -- LS device attached (K = idle on LS bus)
-                low_speed_u <= '1';
+              elsif ulpi_data_i(1 downto 0) = "10" or ulpi_data_i(5 downto 4) = "10" then
+                low_speed_u <= '1';          -- D- high -> low speed
                 timer   <= T_BUS_RESET;
                 host_st <= H_BUS_RST;
               end if;
-            elsif line_state_u = LS_J then
+            elsif line_state_u = "01" then
               low_speed_u <= '0';
               timer   <= T_BUS_RESET;
               host_st <= H_BUS_RST;
-            elsif line_state_u = LS_K then
+            elsif line_state_u = "10" then
               low_speed_u <= '1';
               timer   <= T_BUS_RESET;
               host_st <= H_BUS_RST;
@@ -774,6 +922,7 @@ begin
             if timer = 0 then
               enum_step     <= EN_SET_ADDR;
               enum_step     <= EN_GET_DEV_DESC;
+              enum_retry    <= (others => '0');
               dev_addr      <= (others => '0');
               ctrl_toggle   <= '0';
               hid_toggle    <= '0';
@@ -806,8 +955,8 @@ begin
               tx_buf(1) <= tokv(7 downto 0);
               tx_buf(2) <= tokv(15 downto 8);
               tx_len    <= 3;
-              tx_idx    <= 0;
-              data_o_r  <= ULPI_TXCMD_FS;
+              tx_idx    <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r  <= "0100" & PID_SETUP(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r <= '1';
 
               host_st   <= H_SETUP_TX;
@@ -883,15 +1032,21 @@ begin
                 crc16v := crc16_byte(crc16v, sv(bi));
               end loop;
               crc16v := not crc16v;
-              sv(9)  := crc16v(7 downto 0);
-              sv(10) := crc16v(15 downto 8);
+              -- USB transmits the CRC16 residual MSB-first (crc(15) first on the
+              -- wire); the byte serialiser is LSB-first, so bit-reverse before
+              -- splitting into the two CRC bytes.  Same convention as CRC5.
+              for bi in 0 to 15 loop
+                crc16r(bi) := crc16v(15 - bi);
+              end loop;
+              sv(9)  := crc16r(7 downto 0);
+              sv(10) := crc16r(15 downto 8);
               -- Now copy all to tx_buf signals
               for bi in 0 to 10 loop
                 tx_buf(bi) <= sv(bi);
               end loop;
               tx_len     <= 11;
-              tx_idx     <= 0;
-              data_o_r   <= ULPI_TXCMD_FS;
+              tx_idx     <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r   <= "0100" & PID_DATA0(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r  <= '1';
 
               host_st    <= H_SETUP_DATA_TX;
@@ -933,8 +1088,8 @@ begin
               tx_buf(1) <= tokv(7 downto 0);
               tx_buf(2) <= tokv(15 downto 8);
               tx_len    <= 3;
-              tx_idx    <= 0;
-              data_o_r  <= ULPI_TXCMD_FS;
+              tx_idx    <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r  <= "0100" & PID_IN(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r <= '1';
               host_st   <= H_CTRL_IN_TX;
             end if;
@@ -994,8 +1149,8 @@ begin
                 ctrl_last_pkt_len <= payload_len_v;
                 tx_buf(0) <= PID_ACK;
                 tx_len    <= 1;
-                tx_idx    <= 0;
-                data_o_r  <= ULPI_TXCMD_FS;
+                tx_idx    <= 1;   -- handshake: only the TXCMD+PID, no data
+                data_o_r  <= "0100" & PID_ACK(3 downto 0);  -- ULPI TXCMD + PID
                 data_oe_r <= '1';
                 host_st   <= H_CTRL_ACK_TX;
               elsif rx_pid = PID_NAK then
@@ -1044,8 +1199,8 @@ begin
               tx_buf(1) <= tokv(7 downto 0);
               tx_buf(2) <= tokv(15 downto 8);
               tx_len    <= 3;
-              tx_idx    <= 0;
-              data_o_r  <= ULPI_TXCMD_FS;
+              tx_idx    <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r  <= "0100" & PID_OUT(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r <= '1';
               host_st   <= H_STATUS_OUT_TX;
             end if;
@@ -1077,8 +1232,8 @@ begin
               tx_buf(1) <= x"00";
               tx_buf(2) <= x"00";
               tx_len    <= 3;
-              tx_idx    <= 0;
-              data_o_r  <= ULPI_TXCMD_FS;
+              tx_idx    <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r  <= "0100" & PID_DATA1(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r <= '1';
               host_st   <= H_STATUS_OUT_DATA_TX;
             end if;
@@ -1154,8 +1309,8 @@ begin
               tx_buf(1) <= tokv(7 downto 0);
               tx_buf(2) <= tokv(15 downto 8);
               tx_len    <= 3;
-              tx_idx    <= 0;
-              data_o_r  <= ULPI_TXCMD_FS;
+              tx_idx    <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r  <= "0100" & PID_IN(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r <= '1';
 
               host_st   <= H_STATUS_IN_TX;
@@ -1191,10 +1346,16 @@ begin
               host_st <= H_NAK_WAIT;
               timer   <= T_NAK_RETRY;
             elsif ulpi_dir = '1' then
-              -- DIR=1, NXT=1 -> USB packet data byte
+              -- DIR=1, NXT=1 -> USB packet data byte.  Latch the PID from the
+              -- FIRST byte only; later bytes (CRC) must not overwrite it, or a
+              -- zero-length DATA1 status (PID + 00 00 CRC) is misread as 0x00.
               if ulpi_nxt = '1' then
-                rx_pid <= ulpi_data_i;
-                rx_len <= 1;
+                if rx_len = 0 then
+                  rx_pid <= ulpi_data_i;
+                end if;
+                if rx_len <= RX_BUF_BYTES then
+                  rx_len <= rx_len + 1;
+                end if;
               end if;
               rx_timeout <= rx_timeout - 1;
             elsif rx_len > 0 then
@@ -1203,8 +1364,8 @@ begin
                 -- Status phase complete - send ACK then advance
                 tx_buf(0) <= PID_ACK;
                 tx_len    <= 1;
-                tx_idx    <= 0;
-                data_o_r  <= ULPI_TXCMD_FS;
+                tx_idx    <= 1;   -- handshake: only the TXCMD+PID, no data
+                data_o_r  <= "0100" & PID_ACK(3 downto 0);  -- ULPI TXCMD + PID
                 data_oe_r <= '1';
                 host_st   <= H_RX_ACK_TX;
               elsif rx_pid = PID_NAK then
@@ -1267,8 +1428,8 @@ begin
               tx_buf(1) <= tokv(7 downto 0);
               tx_buf(2) <= tokv(15 downto 8);
               tx_len    <= 3;
-              tx_idx    <= 0;
-              data_o_r  <= ULPI_TXCMD_FS;
+              tx_idx    <= 1;   -- skip tx_buf(0): PID is carried in the TXCMD
+              data_o_r  <= "0100" & PID_IN(3 downto 0);  -- ULPI TXCMD + PID
               data_oe_r <= '1';
 
               host_st   <= H_IN_TX;
@@ -1373,8 +1534,8 @@ begin
                 -- Send ACK
                 tx_buf(0) <= PID_ACK;
                 tx_len    <= 1;
-                tx_idx    <= 0;
-                data_o_r  <= ULPI_TXCMD_FS;
+                tx_idx    <= 1;   -- handshake: only the TXCMD+PID, no data
+                data_o_r  <= "0100" & PID_ACK(3 downto 0);  -- ULPI TXCMD + PID
                 data_oe_r <= '1';
                 host_st   <= H_RX_ACK;
               elsif rx_pid = PID_NAK then
@@ -1411,9 +1572,20 @@ begin
           when H_NAK_WAIT =>
             data_oe_r <= '0';
             if timer = 0 then
-              if enum_step = EN_POLL then
+              -- If we are still on the very first descriptor read and it keeps
+              -- failing, the detected bus speed is probably wrong.  Flip the
+              -- speed and re-run bus reset to reconfigure the PHY transceiver.
+              if enum_step = EN_GET_DEV_DESC and enum_retry = "01111" then
+                low_speed_u <= not low_speed_u;
+                enum_retry  <= (others => '0');
+                timer       <= T_BUS_RESET;
+                host_st     <= H_BUS_RST;
+              elsif enum_step = EN_POLL then
                 host_st <= H_IN_TOKEN;
               else
+                if enum_step = EN_GET_DEV_DESC then
+                  enum_retry <= enum_retry + 1;
+                end if;
                 host_st <= H_SETUP_TOKEN;
               end if;
             else
@@ -1468,6 +1640,23 @@ begin
         else
           phy_clk_wdt <= phy_clk_wdt + 1;
         end if;
+        -- Clock-stop recovery: if no ULPI beat for >50 ms the USB3317 has halted
+        -- CLKOUT (low-power mode).  Pulse STP to wake it; the ULPI spec requires
+        -- the link to drive STP to bring the PHY out of low-power and restart the
+        -- clock.  A periodic pulse (~2.4 ms period) gives CLKOUT room to come up
+        -- between assertions.  Cleared once beats resume.
+        wake_div <= wake_div + 1;
+        if phy_clk_wdt >= 1_350_000 then
+          stp_wake_s <= wake_div(16);
+        else
+          stp_wake_s <= '0';
+        end if;
+        -- Clock-alive: '1' while the watchdog has not saturated (i.e. beats seen).
+        if phy_clk_wdt = 5_400_000 then
+          ulpi_clk_alive_s <= '0';
+        else
+          ulpi_clk_alive_s <= '1';
+        end if;
       end if;
 
       -- Meta
@@ -1482,6 +1671,8 @@ begin
       bus_debug_m <= bus_debug_u;
       progress_m <= progress_u;
       ulpi_data_dbg_m <= ulpi_data_dbg_u;
+      diag_sticky_m <= diag_sticky_u;
+      enum_dbg_m <= enum_dbg_u;
       -- Sync
       key_mod_s   <= key_mod_m;
       key_code_s  <= key_code_m;
@@ -1494,6 +1685,10 @@ begin
       bus_debug_s <= bus_debug_m;
       progress_s <= progress_m;
       ulpi_data_dbg_s <= ulpi_data_dbg_m;
+      diag_sticky_s <= diag_sticky_m;
+      enum_dbg_s <= enum_dbg_m;
+      cap_done_m <= cap_done_u;
+      cap_done_s <= cap_done_m;
     end if;
   end process;
 
@@ -1578,12 +1773,35 @@ begin
   -- Diagnostic outputs: always expose the latest HID report fields so debug
   -- views do not appear as synthetic counters when the FIFO is empty.
   diag_connected <= connected_s;
-  diag_keycode   <= key_code_s;
-  diag_modif     <= key_mod_s;
-  diag_ascii     <= keycode_to_ascii(key_code_s, key_mod_s);
+  -- When disconnected, surface the exact ULPI host sub-state on the KEY field so
+  -- the UART diagnostic pinpoints where bring-up stalls (82=H_REG_WRITE,
+  -- 83=H_REG_WRITE_NXT, 86=H_REG_WRITE_DATA, 84=H_REG_WRITE_STP,
+  -- 85=H_REG_DIR_BLOCKED, 10=H_DETECT, E0=H_ERROR). Show keycode when connected.
+  diag_keycode   <= key_code_s when connected_s = '1' else state_code_s;
+  -- When disconnected, MOD shows the enumeration step + speed so a single line
+  -- reveals where enumeration stalls:
+  --   MOD[7]=low-speed device, MOD[2:0]=enum step
+  --   (0 GET_DEV_DESC,1 SET_ADDR,2 SET_CFG,3 SET_IDLE,4 SET_PROTO,5 POLL)
+  diag_modif     <= key_mod_s when connected_s = '1' else enum_dbg_s;
+  -- When a key is in the FIFO, show ASCII. When idle and PHY init is complete
+  -- (we are past bring-up, at PH=3 enumeration), ASC shows the LAST received PID
+  -- so a single line reveals why a transfer fails:
+  --   00 = no response (token timed out / device never answered)
+  --   5A = NAK (device alive but not ready)
+  --   1E = STALL (request unsupported)
+  --   C3/4B = DATA0/DATA1 (descriptor data actually arrived!)
+  --   D2 = ACK
+  diag_ascii     <= keycode_to_ascii(key_code_s, key_mod_s) when connected_s = '1'
+                    else rx_pid_s;
 
   -- Key event toggle signal and polling status
   diag_key_event <= key_valid_s;
   diag_polling   <= '1' when enum_step = EN_POLL else '0';
+
+  -- ULPI capture read port (clk domain).  cap_mem is frozen after one capture,
+  -- so an asynchronous read from the clk domain is stable.  cap_done is 2-FF
+  -- synchronised below into cap_done_s.
+  diag_cap_data  <= cap_mem(to_integer(unsigned(diag_cap_addr)));
+  diag_cap_ready <= cap_done_s;
 
 end architecture;

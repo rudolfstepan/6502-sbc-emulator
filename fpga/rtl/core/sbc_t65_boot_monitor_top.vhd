@@ -61,6 +61,11 @@ entity sbc_t65_boot_monitor_top is
     usb_key_event : out std_logic;
     usb_polling   : out std_logic;
 
+    -- ULPI bus capture readout
+    usb_cap_addr  : in  std_logic_vector(6 downto 0) := (others => '0');
+    usb_cap_data  : out std_logic_vector(15 downto 0);
+    usb_cap_ready : out std_logic;
+
     dbg_cpu_addr : out addr_t;
     dbg_cpu_data : out data_t;
     dbg_cpu_din  : out data_t;
@@ -525,7 +530,10 @@ begin
       diag_ascii     => usb_ascii,
       diag_phase     => usb_phase,
       diag_key_event => usb_key_event,
-      diag_polling   => usb_polling
+      diag_polling   => usb_polling,
+      diag_cap_addr  => usb_cap_addr,
+      diag_cap_data  => usb_cap_data,
+      diag_cap_ready => usb_cap_ready
     );
 
   char_i : entity work.char_rom

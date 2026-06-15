@@ -168,6 +168,9 @@ architecture rtl of tang20k_sbc_top is
   signal usb_phase          : std_logic_vector(3 downto 0);
   signal usb_key_event      : std_logic;
   signal usb_polling        : std_logic;
+  signal usb_cap_addr       : std_logic_vector(6 downto 0);
+  signal usb_cap_data       : std_logic_vector(15 downto 0);
+  signal usb_cap_ready      : std_logic;
 begin
   -- Hold reset until PLL has locked
   reset_n <= key(0) and pll_lock;
@@ -308,7 +311,10 @@ begin
       usb_ascii     => usb_ascii,
       usb_phase     => usb_phase,
       usb_key_event => usb_key_event,
-      usb_polling   => usb_polling
+      usb_polling   => usb_polling,
+      usb_cap_addr  => usb_cap_addr,
+      usb_cap_data  => usb_cap_data,
+      usb_cap_ready => usb_cap_ready
     );
 
   sbc_i : entity work.sbc_t65_boot_monitor_top
@@ -355,6 +361,9 @@ begin
       usb_phase     => usb_phase,
       usb_key_event => usb_key_event,
       usb_polling   => usb_polling,
+      usb_cap_addr  => usb_cap_addr,
+      usb_cap_data  => usb_cap_data,
+      usb_cap_ready => usb_cap_ready,
       dbg_cpu_addr  => open,
       dbg_cpu_data  => open,
       dbg_cpu_din   => open,
