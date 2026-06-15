@@ -80,13 +80,39 @@ Write-Host "Bitstream: $Bitstream"
 
 if ($Program) {
     $Loader = (Get-Command openFPGALoader -ErrorAction SilentlyContinue)?.Source
-    if (-not $Loader) {
-        Write-Error "openFPGALoader not found on PATH."
+    if ($Loader) {
+        Write-Host "Programming board with openFPGALoader ..."
+        & $Loader -b tang_primer_20k $Bitstream
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error "openFPGALoader exited with code $LASTEXITCODE"
+        }
+        Write-Host "Done."
+    } else {
+        $ProgrammerCli = 'C:\Gowin\Gowin_V1.9.8.08\Programmer\bin\programmer_cli.exe'
+        if (-not (Test-Path $ProgrammerCli)) {
+            Write-Error "Neither openFPGALoader nor Gowin programmer_cli found. Install openFPGALoader or Gowin Programmer CLI."
+        }
+
+        Write-Host "openFPGALoader not found; falling back to Gowin programmer_cli ..."
+
+        # Try common cable selections for Tang Primer users:
+        # 1 = Gowin USB Cable(FT2CH), 0 = Gowin USB Cable(GWU2X)
+        $CableIndices = @(1, 0)
+        $Programmed = $false
+
+        foreach ($CableIndex in $CableIndices) {
+            Write-Host "  Trying programmer_cli with cable-index $CableIndex ..."
+            & $ProgrammerCli --device GW2A-18C --run 2 --fs $Bitstream --cable-index $CableIndex
+            if ($LASTEXITCODE -eq 0) {
+                $Programmed = $true
+                break
+            }
+        }
+
+        if (-not $Programmed) {
+            Write-Error "programmer_cli failed to program the board. Check USB cable/driver and board connection."
+        }
+
+        Write-Host "Done."
     }
-    Write-Host "Programming board ..."
-    & $Loader -b tang_primer_20k $Bitstream
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "openFPGALoader exited with code $LASTEXITCODE"
-    }
-    Write-Host "Done."
 }

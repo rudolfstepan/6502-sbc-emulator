@@ -13,3 +13,4 @@ set_input_delay -clock ulpi_clk -min 2.0 [get_ports {ulpi_dir ulpi_nxt ulpi_data
 # set_output_delay -max N means the data must arrive N ns before the clock edge.
 set_output_delay -clock ulpi_clk -max 3.0 [get_ports {ulpi_data[*] ulpi_stp}]
 set_output_delay -clock ulpi_clk -min -2.0 [get_ports {ulpi_data[*] ulpi_stp}]
+

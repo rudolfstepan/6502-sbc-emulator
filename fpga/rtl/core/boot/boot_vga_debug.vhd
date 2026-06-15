@@ -30,6 +30,8 @@ entity boot_vga_debug is
     usb_modif       : in  std_logic_vector(7 downto 0) := (others => '0');
     usb_ascii       : in  std_logic_vector(7 downto 0) := (others => '0');
     usb_phase       : in  std_logic_vector(3 downto 0) := (others => '0');
+    usb_key_event   : in  std_logic := '0';
+    usb_polling     : in  std_logic := '0';
     ram_test_active : in  std_logic;
     ram_test_done   : in  std_logic;
     ram_test_error  : in  std_logic;
@@ -199,6 +201,7 @@ begin
           loader_state, sd_sec_state, sd_cmd_state,
           sd_ncs, sd_dclk, sd_mosi_o, sd_miso_i,
           usb_connected, usb_keycode, usb_modif, usb_ascii, usb_phase,
+          usb_key_event, usb_polling,
           ram_test_active, ram_test_done, ram_test_error,
           ram_test_phase, ram_test_addr, ram_test_fail_addr,
           ram_test_expected, ram_test_actual)
@@ -362,15 +365,23 @@ begin
           ch := hex_char(usb_modif(3 downto 0));
         end if;
       when 18 =>
-        -- USB HID: PH=X DATA=$XX  (PH=0:init 1:detect 2:rst 3:enum 4:poll F:err)
+        -- USB HID: PH=X DATA=$XX POLL=X EV=X
+        -- PH=0:init 1:detect 2:rst 3:enum 4:poll F:err
+        -- POLL=1 means actively polling, EV toggles when key received
         put_str(ch, col, 4, "USB HID: PH=");
         put_str(ch, col, 17, "DATA=$");
+        put_str(ch, col, 28, "POLL=");
+        put_str(ch, col, 37, "EV=");
         if col = 16 then
           ch := hex_char(usb_phase);
         elsif col = 23 then
           ch := hex_char(usb_ascii(7 downto 4));
         elsif col = 24 then
           ch := hex_char(usb_ascii(3 downto 0));
+        elsif col = 33 then
+          ch := bit_char(usb_polling);
+        elsif col = 39 then
+          ch := bit_char(usb_key_event);
         end if;
       when 19 =>
         put_str(ch, col, 6, "UART DEBUG STILL ACTIVE");

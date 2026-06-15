@@ -58,6 +58,8 @@ entity sbc_t65_boot_monitor_top is
     usb_modif     : out std_logic_vector(7 downto 0);
     usb_ascii     : out std_logic_vector(7 downto 0);
     usb_phase     : out std_logic_vector(3 downto 0);
+    usb_key_event : out std_logic;
+    usb_polling   : out std_logic;
 
     dbg_cpu_addr : out addr_t;
     dbg_cpu_data : out data_t;
@@ -521,7 +523,9 @@ begin
       diag_keycode   => usb_keycode,
       diag_modif     => usb_modif,
       diag_ascii     => usb_ascii,
-      diag_phase     => usb_phase
+      diag_phase     => usb_phase,
+      diag_key_event => usb_key_event,
+      diag_polling   => usb_polling
     );
 
   char_i : entity work.char_rom

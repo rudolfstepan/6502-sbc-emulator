@@ -33,7 +33,9 @@ entity uart_debug_monitor is
     usb_keycode   : in std_logic_vector(7 downto 0) := (others => '0');
     usb_modif     : in std_logic_vector(7 downto 0) := (others => '0');
     usb_ascii     : in std_logic_vector(7 downto 0) := (others => '0');
-    usb_phase     : in std_logic_vector(3 downto 0) := (others => '0')
+    usb_phase     : in std_logic_vector(3 downto 0) := (others => '0');
+    usb_key_event : in std_logic := '0';
+    usb_polling   : in std_logic := '0'
   );
 end entity;
 
@@ -112,7 +114,7 @@ architecture rtl of uart_debug_monitor is
   signal mem_wdata_reg : data_t := (others => '0');
   signal jump_req_reg  : std_logic := '0';
   signal jump_addr_reg : addr_t := (others => '0');
-  signal usb_idx       : natural range 0 to 36 := 0;
+  signal usb_idx       : natural range 0 to 48 := 0;
 
   constant MODE_IMP  : natural := 0;
   constant MODE_ACC  : natural := 1;
@@ -1195,7 +1197,8 @@ begin
               state <= S_SEND_MSG;
 
             when S_USB_DIAG =>
-              -- Print "USB CON=X PH=X KEY=XX MOD=XX ASC=XX\r\n"
+              -- Print "USB CON=X PH=X KEY=XX MOD=XX ASC=XX POLL=X EV=X\r\n"
+              -- POLL=1 means actively polling for keys, EV toggles on each key press
               case usb_idx is
                 when 0  => tx_data_reg <= ascii('U');
                 when 1  => tx_data_reg <= ascii('S');
@@ -1237,12 +1240,34 @@ begin
                 when 32 => tx_data_reg <= ascii('=');
                 when 33 => tx_data_reg <= hex_char(usb_ascii(7 downto 4));
                 when 34 => tx_data_reg <= hex_char(usb_ascii(3 downto 0));
-                when 35 => tx_data_reg <= x"0D";
+                when 35 => tx_data_reg <= ascii(' ');
+                when 36 => tx_data_reg <= ascii('P');
+                when 37 => tx_data_reg <= ascii('O');
+                when 38 => tx_data_reg <= ascii('L');
+                when 39 => tx_data_reg <= ascii('L');
+                when 40 => tx_data_reg <= ascii('=');
+                when 41 =>
+                  if usb_polling = '1' then
+                    tx_data_reg <= ascii('1');
+                  else
+                    tx_data_reg <= ascii('0');
+                  end if;
+                when 42 => tx_data_reg <= ascii(' ');
+                when 43 => tx_data_reg <= ascii('E');
+                when 44 => tx_data_reg <= ascii('V');
+                when 45 => tx_data_reg <= ascii('=');
+                when 46 =>
+                  if usb_key_event = '1' then
+                    tx_data_reg <= ascii('1');
+                  else
+                    tx_data_reg <= ascii('0');
+                  end if;
+                when 47 => tx_data_reg <= x"0D";
                 when others => tx_data_reg <= x"0A";
               end case;
               tx_valid_reg <= '1';
               wait_uart    <= '1';
-              if usb_idx < 36 then
+              if usb_idx < 48 then
                 usb_idx <= usb_idx + 1;
               else
                 usb_idx   <= 0;

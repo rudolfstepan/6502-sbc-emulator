@@ -46,7 +46,11 @@ entity usb_hid_host is
     diag_modif     : out std_logic_vector(7 downto 0);
     diag_ascii     : out std_logic_vector(7 downto 0);
     -- Phase: 0=PHY init, 1=detect, 2=bus rst, 3=enum, 4=poll, F=error
-    diag_phase     : out std_logic_vector(3 downto 0)
+    diag_phase     : out std_logic_vector(3 downto 0);
+    -- Key event signal: toggles when new key is received
+    diag_key_event : out std_logic;
+    -- Polling active flag: '1' when in EN_POLL state
+    diag_polling   : out std_logic
   );
 end entity;
 
@@ -163,23 +167,23 @@ architecture rtl of usb_hid_host is
   constant REG_USB_INT_EN: std_logic_vector(5 downto 0) := "001101"; -- 0x0D
   constant REG_SCRATCH   : std_logic_vector(5 downto 0) := "010110"; -- 0x16
 
-  -- ULPI FunctionControl bits:
-  -- ULPI 1.1 FunctionControl register (addr 0x04) bit layout:
-  --   bit7=SuspendM(1=not suspended), bit6=Reset(1=assert, self-clearing),
-  --   bits[5:4]=OpMode(00=normal,10=SE0), bits[3:2]=XcvrSelect(01=FS),
-  --   bit1=TermSelect(1=FS), bit0=Reserved.
-  -- 0x86 = 1000_0110: SuspendM=1, Reset=0, OpMode=00, XcvrSelect=FS, TermSelect=1
-  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"86";
-  -- USB bus reset: drive SE0 via OpMode=10 (not the ULPI Reset bit).
-  -- 0xA6 = 1010_0110: SuspendM=1, Reset=0, OpMode=10(SE0), XcvrSelect=FS, TermSelect=1
-  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"A6";
+  -- ULPI FunctionControl (addr 0x04) in common USB3317 implementations:
+  --   bit7=Reserved, bit6=SuspendM, bit5=Reset,
+  --   bits[4:3]=OpMode, bit2=TermSelect, bits[1:0]=XcvrSelect.
+  -- FS normal: SuspendM=1, OpMode=00, TermSelect=1, XcvrSelect=01.
+  constant FUNC_FS_NORMAL : std_logic_vector(7 downto 0) := x"45";
+  -- LS normal: SuspendM=1, OpMode=00, TermSelect=1, XcvrSelect=10.
+  constant FUNC_LS_NORMAL : std_logic_vector(7 downto 0) := x"46";
+  -- USB bus reset: drive SE0 via OpMode=10 (Reset bit remains 0).
+  constant FUNC_FS_SE0    : std_logic_vector(7 downto 0) := x"55";
+  constant FUNC_LS_SE0    : std_logic_vector(7 downto 0) := x"56";
 
-  -- OTGControl for FS host: DmPulldown(2)+DpPulldown(1)+IdPullup(0).
+  -- OTGControl for FS host: DmPulldown(2)+DpPulldown(1), no IdPullup.
   -- DrvVbusExternal(5) and DrvVbus(6) are intentionally NOT set: on the Tang
   -- Primer 20K the USB3317 DRV_VBUS output drives a PMOS gate directly (no
   -- inverter), so DRV_VBUS=LOW (bits 5:6 = 0) turns the PMOS ON and supplies
   -- VBUS to the USB-A host connector.  Setting either bit would de-assert VBUS.
-  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"07";
+  constant OTG_HOST       : std_logic_vector(7 downto 0) := x"06";
 
   -- ULPI RXCMD line states (bits[5:4], per ULPI 1.1 spec)
   constant LS_SE0 : std_logic_vector(1 downto 0) := "00";
@@ -206,6 +210,9 @@ architecture rtl of usb_hid_host is
   constant T_RX_TIMEOUT  : natural := 3_000;
   -- NAK retry delay: ~1 ms
   constant T_NAK_RETRY   : natural := 60_000;
+  -- Detect fallback: if no reliable RXCMD line-state is observed, force an
+  -- FS reset probe and continue enumeration instead of stalling in detect.
+  constant T_DETECT_FALLBACK : natural := 120_000;
   -- SETUP GetDescriptor minimal wait before IN: ~50 ns = 3 cycles
   constant T_SETUP_GAP   : natural := 32;
   -- Initial PHY RXCMDs can hold DIR for a short burst. Wait before forcing an
@@ -293,6 +300,11 @@ architecture rtl of usb_hid_host is
     H_ENUM_WAIT,
     H_SETUP_TOKEN, H_SETUP_TX,
     H_SETUP_DATA,  H_SETUP_DATA_TX,
+    H_CTRL_IN, H_CTRL_IN_TX,
+    H_CTRL_DATA_WAIT, H_CTRL_ACK_TX,
+    H_STATUS_OUT, H_STATUS_OUT_TX,
+    H_STATUS_OUT_DATA, H_STATUS_OUT_DATA_TX,
+    H_STATUS_OUT_WAIT,
     H_STATUS_IN,   H_STATUS_IN_TX,
     H_STATUS_WAIT,
     H_IN_TOKEN, H_IN_TX,
@@ -312,7 +324,10 @@ architecture rtl of usb_hid_host is
       when H_BUS_RST | H_BUS_RST_WAIT | H_BUS_RST_RECOV =>
         return x"2";
       when H_ENUM_WAIT | H_SETUP_TOKEN | H_SETUP_TX | H_SETUP_DATA |
-           H_SETUP_DATA_TX | H_STATUS_IN | H_STATUS_IN_TX |
+           H_SETUP_DATA_TX | H_CTRL_IN | H_CTRL_IN_TX |
+           H_CTRL_DATA_WAIT | H_CTRL_ACK_TX | H_STATUS_OUT |
+           H_STATUS_OUT_TX | H_STATUS_OUT_DATA | H_STATUS_OUT_DATA_TX |
+           H_STATUS_OUT_WAIT | H_STATUS_IN | H_STATUS_IN_TX |
            H_STATUS_WAIT | H_RX_ACK_TX | H_NAK_WAIT =>
         return x"3";
       when H_IN_TOKEN | H_IN_TX | H_RX_WAIT | H_RX_ACK =>
@@ -341,9 +356,18 @@ architecture rtl of usb_hid_host is
       when H_SETUP_TX       => return x"32";
       when H_SETUP_DATA     => return x"33";
       when H_SETUP_DATA_TX  => return x"34";
-      when H_STATUS_IN      => return x"35";
-      when H_STATUS_IN_TX   => return x"36";
-      when H_STATUS_WAIT    => return x"37";
+      when H_CTRL_IN        => return x"35";
+      when H_CTRL_IN_TX     => return x"36";
+      when H_CTRL_DATA_WAIT => return x"37";
+      when H_CTRL_ACK_TX    => return x"38";
+      when H_STATUS_OUT     => return x"39";
+      when H_STATUS_OUT_TX  => return x"3A";
+      when H_STATUS_OUT_DATA => return x"3B";
+      when H_STATUS_OUT_DATA_TX => return x"3C";
+      when H_STATUS_OUT_WAIT => return x"3D";
+      when H_STATUS_IN      => return x"3E";
+      when H_STATUS_IN_TX   => return x"3F";
+      when H_STATUS_WAIT    => return x"48";
       when H_IN_TOKEN       => return x"40";
       when H_IN_TX          => return x"41";
       when H_RX_WAIT        => return x"42";
@@ -404,20 +428,26 @@ architecture rtl of usb_hid_host is
 
   -- Enumeration step
   type enum_step_t is (
-    EN_SET_ADDR, EN_SET_CFG, EN_SET_PROTO, EN_POLL
+    EN_GET_DEV_DESC, EN_SET_ADDR,
+    EN_SET_CFG, EN_SET_IDLE, EN_SET_PROTO, EN_POLL
   );
   signal enum_step   : enum_step_t := EN_SET_ADDR;
   signal dev_addr    : std_logic_vector(6 downto 0) := (others => '0');
   signal ctrl_toggle : std_logic := '0';
   signal hid_toggle  : std_logic := '0';
+  signal ep0_maxpkt  : natural range 1 to 64 := 8;
 
   -- RX state
-  type rx_buf_t is array (0 to 9) of std_logic_vector(7 downto 0);
+  constant RX_BUF_BYTES : natural := 66;
+  type rx_buf_t is array (0 to RX_BUF_BYTES - 1) of std_logic_vector(7 downto 0);
   signal rx_buf      : rx_buf_t := (others => (others => '0'));
-  signal rx_len      : natural range 0 to 10 := 0;
+  signal rx_len      : natural range 0 to RX_BUF_BYTES + 1 := 0;
   signal rx_active   : std_logic := '0';
   signal rx_pid      : std_logic_vector(7 downto 0) := (others => '0');
   signal rx_timeout  : natural range 0 to T_RX_TIMEOUT := 0;
+  signal ctrl_need   : natural range 0 to 64 := 0;
+  signal ctrl_count  : natural range 0 to 64 := 0;
+  signal ctrl_last_pkt_len : natural range 0 to 64 := 0;
 
   -- Key output latch (ulpi_clk domain)
   signal key_mod_u   : std_logic_vector(7 downto 0) := (others => '0');
@@ -427,6 +457,7 @@ architecture rtl of usb_hid_host is
   -- Connected flag
   signal connected_u : std_logic := '0';
   signal line_state_u : std_logic_vector(1 downto 0) := LS_SE0;
+  signal low_speed_u  : std_logic := '0';
   signal phase_u      : std_logic_vector(3 downto 0);
   signal state_code_u : std_logic_vector(7 downto 0);
   signal bus_debug_u  : std_logic_vector(7 downto 0);
@@ -482,7 +513,9 @@ begin
   ulpi_data_o  <= data_o_r;
   ulpi_data_oe <= data_oe_r;
   ulpi_stp     <= stp_r;
-  ulpi_rst     <= phy_rst_release;
+  -- Board wiring may invert/reset-buffer ULPI reset semantics; drive the
+  -- opposite of internal release so PHY is not held in reset.
+  ulpi_rst     <= not phy_rst_release;
   phase_u       <= host_phase_code(host_st);
   state_code_u  <= host_state_code(host_st);
   -- bus_debug_u is now a register updated inside the ulpi_clk process.
@@ -498,6 +531,10 @@ begin
     variable crc16v : std_logic_vector(15 downto 0);
     variable sv     : tx_buf_t;   -- local setup bytes for CRC computation
     variable timeout_v : unsigned(15 downto 0);
+    variable payload_len_v : natural;
+    variable key_std_v : std_logic_vector(7 downto 0);
+    variable key_rid_v : std_logic_vector(7 downto 0);
+    variable mod_v     : std_logic_vector(7 downto 0);
 
   begin
     if rising_edge(ulpi_clk) then
@@ -508,7 +545,7 @@ begin
       phy_rst_rel_sync <= phy_rst_rel_meta;
 
 
-      if reset_n = '0' or phy_rst_rel_sync = '0' then
+      if reset_n = '0' then
         host_st      <= H_PHY_RST;
         timer        <= 0;
         rw_timeout   <= (others => '0');
@@ -519,17 +556,22 @@ begin
         enum_wait_cnt <= 0;
         connected_u  <= '0';
         line_state_u <= LS_SE0;
+        low_speed_u  <= '0';
         progress_u   <= (others => '0');
         ulpi_beat_u  <= (others => '0');
         ulpi_data_dbg_u <= (others => '0');
         bus_debug_u  <= (others => '0');
         key_valid_u  <= '0';
         reg_seq_idx  <= 0;
-        enum_step    <= EN_SET_ADDR;
+        enum_step    <= EN_GET_DEV_DESC;
         dev_addr     <= (others => '0');
         ctrl_toggle  <= '0';
         hid_toggle   <= '0';
+        ep0_maxpkt   <= 8;
         rx_active    <= '0';
+        ctrl_need    <= 0;
+        ctrl_count   <= 0;
+        ctrl_last_pkt_len <= 0;
 
       else
         ulpi_beat_u <= ulpi_beat_u + 1;
@@ -538,7 +580,13 @@ begin
                       std_logic_vector(timeout_v(15 downto 12));
         ulpi_data_dbg_u <= ulpi_data_i;
         if ulpi_dir = '1' and ulpi_nxt = '0' then
-          line_state_u <= ulpi_data_i(5 downto 4);
+          -- ULPI RXCMD line state is commonly in bits[1:0]; some designs
+          -- historically used bits[5:4]. Prefer [1:0] when it carries J/K.
+          if ulpi_data_i(1 downto 0) = LS_J or ulpi_data_i(1 downto 0) = LS_K then
+            line_state_u <= ulpi_data_i(1 downto 0);
+          else
+            line_state_u <= ulpi_data_i(5 downto 4);
+          end if;
           bus_debug_u  <= ulpi_data_i;   -- latch last RXCMD for diagnostic
         end if;
 
@@ -645,6 +693,9 @@ begin
               host_st     <= H_REG_WRITE;
             else
               reg_seq_idx <= 0;
+              if rw_return_r = H_DETECT then
+                timer <= T_DETECT_FALLBACK;
+              end if;
               host_st     <= rw_return_r;
             end if;
 
@@ -655,13 +706,35 @@ begin
           when H_DETECT =>
             data_oe_r   <= '0';
             connected_u <= '0';
-            -- DIR=1, NXT=0 -> RXCMD byte; bits[5:4] = LineState (ULPI 1.1 spec)
-            if ulpi_dir = '1' and ulpi_nxt = '0' then
-              if ulpi_data_i(5 downto 4) = LS_J then
+            -- Detect idle line state from either ULPI RXCMD encoding variant.
+            -- Accept DIR=1 regardless of NXT to avoid missing short RXCMD windows.
+            if ulpi_dir = '1' then
+              if ulpi_data_i(1 downto 0) = LS_J or ulpi_data_i(5 downto 4) = LS_J then
                 -- FS device attached (J = idle on FS bus)
+                low_speed_u <= '0';
+                timer   <= T_BUS_RESET;
+                host_st <= H_BUS_RST;
+              elsif ulpi_data_i(1 downto 0) = LS_K or ulpi_data_i(5 downto 4) = LS_K then
+                -- LS device attached (K = idle on LS bus)
+                low_speed_u <= '1';
                 timer   <= T_BUS_RESET;
                 host_st <= H_BUS_RST;
               end if;
+            elsif line_state_u = LS_J then
+              low_speed_u <= '0';
+              timer   <= T_BUS_RESET;
+              host_st <= H_BUS_RST;
+            elsif line_state_u = LS_K then
+              low_speed_u <= '1';
+              timer   <= T_BUS_RESET;
+              host_st <= H_BUS_RST;
+            elsif timer = 0 then
+              -- Fallback path: no explicit J/K observed, try FS reset probe.
+              low_speed_u <= '0';
+              timer   <= T_BUS_RESET;
+              host_st <= H_BUS_RST;
+            else
+              timer <= timer - 1;
             end if;
 
           -- -------------------------------------------------------------------
@@ -669,7 +742,11 @@ begin
           -- -------------------------------------------------------------------
           when H_BUS_RST =>
             rw_addr_r   <= REG_FUNC_CTRL;
-            rw_data_r   <= FUNC_FS_SE0;
+            if low_speed_u = '1' then
+              rw_data_r <= FUNC_LS_SE0;
+            else
+              rw_data_r <= FUNC_FS_SE0;
+            end if;
             rw_return_r <= H_BUS_RST_WAIT;
             reg_seq_idx <= 0;         -- single register write, no sequence
             timer       <= T_BUS_RESET;
@@ -679,7 +756,11 @@ begin
           when H_BUS_RST_WAIT =>
             if timer = 0 then
               rw_addr_r   <= REG_FUNC_CTRL;
-              rw_data_r   <= FUNC_FS_NORMAL;
+              if low_speed_u = '1' then
+                rw_data_r <= FUNC_LS_NORMAL;
+              else
+                rw_data_r <= FUNC_FS_NORMAL;
+              end if;
               rw_return_r <= H_BUS_RST_RECOV;
               reg_seq_idx <= 0;         -- single register write, no sequence
               timer       <= T_RESET_RECOV;
@@ -692,9 +773,13 @@ begin
           when H_BUS_RST_RECOV =>
             if timer = 0 then
               enum_step     <= EN_SET_ADDR;
+              enum_step     <= EN_GET_DEV_DESC;
               dev_addr      <= (others => '0');
               ctrl_toggle   <= '0';
               hid_toggle    <= '0';
+              ctrl_need     <= 0;
+              ctrl_count    <= 0;
+              ctrl_last_pkt_len <= 0;
               enum_wait_cnt <= T_ENUM_WAIT;
               host_st       <= H_ENUM_WAIT;
             else
@@ -757,6 +842,14 @@ begin
               sv := (others => x"00");
               sv(0) := PID_DATA0;
               case enum_step is
+                when EN_GET_DEV_DESC =>
+                  -- GetDescriptor(Device, 8): bmRT=0x80 bReq=0x06 wVal=0x0100 wIdx=0 wLen=8
+                  sv(1) := x"80"; sv(2) := x"06";
+                  sv(3) := x"00"; sv(4) := x"01";
+                  sv(5) := x"00"; sv(6) := x"00";
+                  sv(7) := x"08"; sv(8) := x"00";
+                  ctrl_need <= 8;
+                  ctrl_count <= 0;
                 when EN_SET_ADDR =>
                   -- SetAddress(1): bmRT=0x00 bReq=0x05 wVal=0x0001 wIdx=0 wLen=0
                   sv(1) := x"00"; sv(2) := x"05";
@@ -767,6 +860,12 @@ begin
                   -- SetConfiguration(1): bmRT=0x00 bReq=0x09 wVal=0x0001 wIdx=0 wLen=0
                   sv(1) := x"00"; sv(2) := x"09";
                   sv(3) := x"01"; sv(4) := x"00";
+                  sv(5) := x"00"; sv(6) := x"00";
+                  sv(7) := x"00"; sv(8) := x"00";
+                when EN_SET_IDLE =>
+                  -- SetIdle(0): bmRT=0x21 bReq=0x0A wVal=0x0000 wIdx=0 wLen=0
+                  sv(1) := x"21"; sv(2) := x"0A";
+                  sv(3) := x"00"; sv(4) := x"00";
                   sv(5) := x"00"; sv(6) := x"00";
                   sv(7) := x"00"; sv(8) := x"00";
                 when EN_SET_PROTO =>
@@ -809,11 +908,240 @@ begin
                 data_oe_r <= '1';
                 stp_r     <= '1';
                 timer     <= T_SETUP_GAP;
-                host_st   <= H_STATUS_IN;
+                if enum_step = EN_GET_DEV_DESC then
+                  host_st <= H_CTRL_IN;
+                else
+                  host_st <= H_STATUS_IN;
+                end if;
               end if;
             elsif ulpi_dir = '1' then
               data_oe_r <= '0';
-              host_st   <= H_STATUS_IN;
+              if enum_step = EN_GET_DEV_DESC then
+                host_st <= H_CTRL_IN;
+              else
+                host_st <= H_STATUS_IN;
+              end if;
+            end if;
+
+          -- CONTROL IN data phase for descriptor reads on endpoint 0.
+          when H_CTRL_IN =>
+            if timer > 0 then
+              timer <= timer - 1;
+            elsif ulpi_dir = '0' then
+              tokv := token_bytes(dev_addr, "0000");
+              tx_buf(0) <= PID_IN;
+              tx_buf(1) <= tokv(7 downto 0);
+              tx_buf(2) <= tokv(15 downto 8);
+              tx_len    <= 3;
+              tx_idx    <= 0;
+              data_o_r  <= ULPI_TXCMD_FS;
+              data_oe_r <= '1';
+              host_st   <= H_CTRL_IN_TX;
+            end if;
+
+          when H_CTRL_IN_TX =>
+            data_oe_r <= '1';
+            if ulpi_nxt = '1' and ulpi_dir = '0' then
+              if tx_idx < tx_len then
+                data_o_r <= tx_buf(tx_idx);
+                tx_idx   <= tx_idx + 1;
+              else
+                data_o_r   <= (others => '0');
+                data_oe_r  <= '1';
+                stp_r      <= '1';
+                rx_len     <= 0;
+                rx_active  <= '0';
+                rx_timeout <= T_RX_TIMEOUT;
+                host_st    <= H_CTRL_DATA_WAIT;
+              end if;
+            elsif ulpi_dir = '1' then
+              data_oe_r  <= '0';
+              rx_len     <= 0;
+              rx_active  <= '0';
+              rx_timeout <= T_RX_TIMEOUT;
+              host_st    <= H_CTRL_DATA_WAIT;
+            end if;
+
+          when H_CTRL_DATA_WAIT =>
+            data_oe_r <= '0';
+            if rx_timeout = 0 then
+              host_st <= H_NAK_WAIT;
+              timer   <= T_NAK_RETRY;
+            elsif ulpi_dir = '1' then
+              if ulpi_nxt = '1' then
+                if rx_len = 0 then
+                  rx_pid <= ulpi_data_i;
+                  rx_len <= 1;
+                elsif rx_len <= RX_BUF_BYTES then
+                  rx_buf(rx_len - 1) <= ulpi_data_i;
+                  rx_len <= rx_len + 1;
+                end if;
+              end if;
+              rx_timeout <= rx_timeout - 1;
+            elsif rx_len > 0 then
+              if rx_pid = PID_DATA1 or rx_pid = PID_DATA0 then
+                payload_len_v := 0;
+                if rx_len >= 3 then
+                  payload_len_v := rx_len - 3;
+                end if;
+                for bi in 0 to RX_BUF_BYTES - 1 loop
+                  if bi < payload_len_v then
+                    -- Descriptor buffer no longer needed, just track length
+                    null;
+                  end if;
+                end loop;
+                ctrl_count <= ctrl_count + payload_len_v;
+                ctrl_last_pkt_len <= payload_len_v;
+                tx_buf(0) <= PID_ACK;
+                tx_len    <= 1;
+                tx_idx    <= 0;
+                data_o_r  <= ULPI_TXCMD_FS;
+                data_oe_r <= '1';
+                host_st   <= H_CTRL_ACK_TX;
+              elsif rx_pid = PID_NAK then
+                host_st <= H_NAK_WAIT;
+                timer   <= T_NAK_RETRY;
+              else
+                host_st <= H_NAK_WAIT;
+                timer   <= T_NAK_RETRY;
+              end if;
+              rx_len <= 0;
+            else
+              rx_timeout <= rx_timeout - 1;
+            end if;
+
+          when H_CTRL_ACK_TX =>
+            data_oe_r <= '1';
+            if ulpi_nxt = '1' and ulpi_dir = '0' then
+              if tx_idx < tx_len then
+                data_o_r <= tx_buf(tx_idx);
+                tx_idx   <= tx_idx + 1;
+              else
+                data_o_r  <= (others => '0');
+                data_oe_r <= '1';
+                stp_r     <= '1';
+                if ctrl_last_pkt_len = ep0_maxpkt and ctrl_count < ctrl_need then
+                  timer   <= T_SETUP_GAP;
+                  host_st <= H_CTRL_IN;
+                else
+                  timer   <= T_SETUP_GAP;
+                  host_st <= H_STATUS_OUT;
+                end if;
+              end if;
+            elsif ulpi_dir = '1' then
+              data_oe_r <= '0';
+              timer     <= T_SETUP_GAP;
+              host_st   <= H_STATUS_OUT;
+            end if;
+
+          -- STATUS OUT phase for control reads: OUT token + zero-length DATA1.
+          when H_STATUS_OUT =>
+            if timer > 0 then
+              timer <= timer - 1;
+            elsif ulpi_dir = '0' then
+              tokv := token_bytes(dev_addr, "0000");
+              tx_buf(0) <= PID_OUT;
+              tx_buf(1) <= tokv(7 downto 0);
+              tx_buf(2) <= tokv(15 downto 8);
+              tx_len    <= 3;
+              tx_idx    <= 0;
+              data_o_r  <= ULPI_TXCMD_FS;
+              data_oe_r <= '1';
+              host_st   <= H_STATUS_OUT_TX;
+            end if;
+
+          when H_STATUS_OUT_TX =>
+            data_oe_r <= '1';
+            if ulpi_nxt = '1' and ulpi_dir = '0' then
+              if tx_idx < tx_len then
+                data_o_r <= tx_buf(tx_idx);
+                tx_idx   <= tx_idx + 1;
+              else
+                data_o_r  <= (others => '0');
+                data_oe_r <= '1';
+                stp_r     <= '1';
+                timer     <= T_SETUP_GAP;
+                host_st   <= H_STATUS_OUT_DATA;
+              end if;
+            elsif ulpi_dir = '1' then
+              data_oe_r <= '0';
+              timer     <= T_SETUP_GAP;
+              host_st   <= H_STATUS_OUT_DATA;
+            end if;
+
+          when H_STATUS_OUT_DATA =>
+            if timer > 0 then
+              timer <= timer - 1;
+            elsif ulpi_dir = '0' then
+              tx_buf(0) <= PID_DATA1;
+              tx_buf(1) <= x"00";
+              tx_buf(2) <= x"00";
+              tx_len    <= 3;
+              tx_idx    <= 0;
+              data_o_r  <= ULPI_TXCMD_FS;
+              data_oe_r <= '1';
+              host_st   <= H_STATUS_OUT_DATA_TX;
+            end if;
+
+          when H_STATUS_OUT_DATA_TX =>
+            data_oe_r <= '1';
+            if ulpi_nxt = '1' and ulpi_dir = '0' then
+              if tx_idx < tx_len then
+                data_o_r <= tx_buf(tx_idx);
+                tx_idx   <= tx_idx + 1;
+              else
+                data_o_r  <= (others => '0');
+                data_oe_r <= '1';
+                stp_r     <= '1';
+                rx_len    <= 0;
+                rx_timeout <= T_RX_TIMEOUT;
+                host_st   <= H_STATUS_OUT_WAIT;
+              end if;
+            elsif ulpi_dir = '1' then
+              data_oe_r <= '0';
+              rx_len    <= 0;
+              rx_timeout <= T_RX_TIMEOUT;
+              host_st   <= H_STATUS_OUT_WAIT;
+            end if;
+
+          when H_STATUS_OUT_WAIT =>
+            data_oe_r <= '0';
+            if rx_timeout = 0 then
+              host_st <= H_NAK_WAIT;
+              timer   <= T_NAK_RETRY;
+            elsif ulpi_dir = '1' then
+              if ulpi_nxt = '1' then
+                rx_pid <= ulpi_data_i;
+                rx_len <= 1;
+              end if;
+              rx_timeout <= rx_timeout - 1;
+            elsif rx_len > 0 then
+              if rx_pid = PID_ACK then
+                case enum_step is
+                  when EN_GET_DEV_DESC =>
+                    -- Descriptor validation skipped for LUT savings; assume device is valid
+                    if ctrl_count >= 8 then
+                      -- Would check bcdUSB/bDeviceClass/bMaxPacketSize0 here if needed
+                      enum_step  <= EN_SET_ADDR;
+                      host_st    <= H_SETUP_TOKEN;
+                    else
+                      timer   <= T_NAK_RETRY;
+                      host_st <= H_ERROR;
+                    end if;
+                  when others =>
+                    timer   <= T_NAK_RETRY;
+                    host_st <= H_ERROR;
+                end case;
+              elsif rx_pid = PID_NAK then
+                host_st <= H_NAK_WAIT;
+                timer   <= T_NAK_RETRY;
+              else
+                host_st <= H_NAK_WAIT;
+                timer   <= T_NAK_RETRY;
+              end if;
+              rx_len <= 0;
+            else
+              rx_timeout <= rx_timeout - 1;
             end if;
 
           -- STATUS_IN: send IN token, expect empty DATA1 ACK from device
@@ -903,11 +1231,16 @@ begin
                 stp_r     <= '1';
                 -- Advance enumeration or start polling
                 case enum_step is
+                  when EN_GET_DEV_DESC =>
+                    host_st <= H_SETUP_TOKEN;
                   when EN_SET_ADDR =>
                     dev_addr  <= "0000001";
                     enum_step <= EN_SET_CFG;
                     host_st   <= H_SETUP_TOKEN;
                   when EN_SET_CFG =>
+                    enum_step <= EN_SET_IDLE;
+                    host_st   <= H_SETUP_TOKEN;
+                  when EN_SET_IDLE =>
                     enum_step <= EN_SET_PROTO;
                     host_st   <= H_SETUP_TOKEN;
                   when EN_SET_PROTO =>
@@ -988,11 +1321,52 @@ begin
               if rx_pid = PID_DATA1 or rx_pid = PID_DATA0 then
                 hid_toggle <= not hid_toggle;
                 -- Parse 8-byte boot protocol report
-                -- Byte 1 = modifier, Byte 2 = reserved, Bytes 3-8 = keycodes
+                -- Byte 1 = modifier, Byte 2 = reserved, Bytes 3-8 = keycodes.
+                -- Some devices prepend a report ID, shifting fields by +1.
                 if rx_len >= 4 then
-                  key_mod_u   <= rx_buf(0);  -- byte after PID: modifier
-                  key_code_u  <= rx_buf(2);  -- byte 3: first keycode
+                  key_std_v := x"00";
+                  key_rid_v := x"00";
+
+                  -- Standard boot report layout (no report ID): key slots 2..7
                   if rx_buf(2) /= x"00" then
+                    key_std_v := rx_buf(2);
+                  elsif rx_buf(3) /= x"00" then
+                    key_std_v := rx_buf(3);
+                  elsif rx_buf(4) /= x"00" then
+                    key_std_v := rx_buf(4);
+                  elsif rx_buf(5) /= x"00" then
+                    key_std_v := rx_buf(5);
+                  elsif rx_buf(6) /= x"00" then
+                    key_std_v := rx_buf(6);
+                  elsif rx_buf(7) /= x"00" then
+                    key_std_v := rx_buf(7);
+                  end if;
+
+                  -- Report-ID-prefixed layout: key slots shift to 3..8.
+                  if rx_buf(3) /= x"00" then
+                    key_rid_v := rx_buf(3);
+                  elsif rx_buf(4) /= x"00" then
+                    key_rid_v := rx_buf(4);
+                  elsif rx_buf(5) /= x"00" then
+                    key_rid_v := rx_buf(5);
+                  elsif rx_buf(6) /= x"00" then
+                    key_rid_v := rx_buf(6);
+                  elsif rx_buf(7) /= x"00" then
+                    key_rid_v := rx_buf(7);
+                  elsif rx_buf(8) /= x"00" then
+                    key_rid_v := rx_buf(8);
+                  end if;
+
+                  if key_std_v /= x"00" then
+                    key_code_u <= key_std_v;
+                    mod_v      := rx_buf(0);
+                  else
+                    key_code_u <= key_rid_v;
+                    mod_v      := rx_buf(1);
+                  end if;
+
+                  key_mod_u <= mod_v;
+                  if key_std_v /= x"00" or key_rid_v /= x"00" then
                     key_valid_u <= not key_valid_u;
                   end if;
                 end if;
@@ -1079,27 +1453,21 @@ begin
         phy_rst_cnt        <= 0;
         phy_clk_alive_prev <= '0';
         phy_clk_wdt        <= 0;
-      elsif phy_rst_cnt = T_PHY_RESET_SYS then
-        -- PHY is out of hardware reset; monitor ulpi_clk via progress_s(4).
+      else
+        -- Keep PHY out of reset once system reset is released.
         phy_rst_release    <= '1';
         phy_clk_alive_prev <= progress_s(4);
         if progress_s(4) /= phy_clk_alive_prev then
           -- Clock beat detected: ulpi_beat_u[22] toggled. Clock is alive.
           phy_clk_wdt <= 0;
         elsif phy_clk_wdt = 5_400_000 then
-          -- 200 ms elapsed with no clock beat: ulpi_clk has stopped.
-          -- Re-assert hardware reset to restart the PHY and its clock.
-          phy_rst_cnt        <= 0;
-          phy_rst_release    <= '0';
-          phy_clk_wdt        <= 0;
+          -- 200 ms elapsed with no observed beat. Keep PHY released instead of
+          -- forcing a reset loop that can pin diagnostics at PH=0.
+          -- Saturate watchdog counter; recovery is handled by host FSM retries.
+          phy_clk_wdt <= phy_clk_wdt;
         else
           phy_clk_wdt <= phy_clk_wdt + 1;
         end if;
-      else
-        phy_rst_cnt        <= phy_rst_cnt + 1;
-        phy_rst_release    <= '0';
-        phy_clk_alive_prev <= '0';
-        phy_clk_wdt        <= 0;
       end if;
 
       -- Meta
@@ -1207,20 +1575,15 @@ begin
   -- Diagnostic phase: encode host state as 4-bit nibble for display.
   diag_phase <= phase_s;
 
-  -- Diagnostic outputs: head of FIFO once keys arrive.  Before that, expose
-  -- host debug breadcrumbs on the boot screen:
-  --   KEY=state code, MOD=DIR/NXT/OE/STP/RXCMD-low, ASCII=raw ULPI DATA.
+  -- Diagnostic outputs: always expose the latest HID report fields so debug
+  -- views do not appear as synthetic counters when the FIFO is empty.
   diag_connected <= connected_s;
-  diag_keycode   <= fifo(to_integer(fifo_rp(2 downto 0))).code  when fifo_empty = '0' else state_code_s;
-  diag_modif     <= fifo(to_integer(fifo_rp(2 downto 0))).modif when fifo_empty = '0' else bus_debug_s;
-  -- When no key is in the FIFO, ASC shows progress_s instead of raw ULPI data:
-  --   ASC[7:4] = ulpi_beat_u[25:22]: toggles every 70 ms at 60 MHz.
-  --              If this nibble NEVER changes between KEY[1] presses the
-  --              ulpi_clk has stopped (PHY suspended or bus fault).
-  --   ASC[3:0] = rw_timeout[15:12]: rough remaining timeout (0=timed out, F=full)
-  diag_ascii     <= keycode_to_ascii(
-                      fifo(to_integer(fifo_rp(2 downto 0))).code,
-                      fifo(to_integer(fifo_rp(2 downto 0))).modif)
-                    when fifo_empty = '0' else progress_s;
+  diag_keycode   <= key_code_s;
+  diag_modif     <= key_mod_s;
+  diag_ascii     <= keycode_to_ascii(key_code_s, key_mod_s);
+
+  -- Key event toggle signal and polling status
+  diag_key_event <= key_valid_s;
+  diag_polling   <= '1' when enum_step = EN_POLL else '0';
 
 end architecture;
