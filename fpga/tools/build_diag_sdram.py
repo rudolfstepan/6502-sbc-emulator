@@ -10,11 +10,11 @@ EhBASIC '?SYNTAX ERROR on all commands' issue.
 See fpga/docs/EHBASIC_SYNTAX_ERROR_ANALYSIS.md for details.
 
 Usage:
-  python tools/build_diag_sdram.py
-  python tools/build_diag_sdram.py --upload --port COM15
+  python fpga/tools/build_diag_sdram.py
+  python fpga/tools/build_diag_sdram.py --upload --port COM15
 
 Upload manually:
-  python tools/upload_monitor_hex.py tools/roms/diag_sdram.rom \\
+  python fpga/tools/upload_monitor_hex.py fpga/roms/diag_sdram.rom \\
       --port COM15 --address 0xC000 --run --verbose
 """
 from __future__ import annotations
@@ -26,10 +26,10 @@ import sys
 import tempfile
 from pathlib import Path
 
-ROOT       = Path(__file__).resolve().parent.parent
+ROOT       = Path(__file__).resolve().parent.parent.parent
 DIAG_S     = ROOT / "fpga" / "asm" / "diag_sdram.s"
 DIAG_CFG   = ROOT / "fpga" / "asm" / "diag_sdram.cfg"
-OUT_DIR    = ROOT / "tools" / "roms"
+OUT_DIR    = ROOT / "fpga" / "roms"
 OUT_ROM    = OUT_DIR / "diag_sdram.rom"
 
 ROM_SIZE   = 0x4000     # 16 KB ($C000-$FFFF)
@@ -133,13 +133,13 @@ def main() -> None:
 
     print("\nUpload command:")
     print(
-        f"  python tools/upload_monitor_hex.py {OUT_ROM.name} "
+        f"  python fpga/tools/upload_monitor_hex.py {OUT_ROM.name} "
         f"--port COM15 --address 0xC000 --run --verbose"
     )
     print("  (press KEY0 on the board first to enter monitor mode)")
 
     if args.upload:
-        uploader = ROOT / "tools" / "upload_monitor_hex.py"
+        uploader = ROOT / "fpga" / "tools" / "upload_monitor_hex.py"
         cmd = [
             sys.executable, str(uploader),
             str(OUT_ROM),

@@ -44,7 +44,7 @@ For fast iteration, press the monitor button and upload a ROM over UART without
 rewriting the SD card:
 
 ```sh
-python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+python fpga/tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
 ```
 
 See `docs/UART_MONITOR.md` for monitor commands, memory ranges, and ROM upload

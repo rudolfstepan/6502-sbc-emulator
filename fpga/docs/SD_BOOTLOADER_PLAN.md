@@ -108,8 +108,8 @@ reset_n low/high
 | `rtl/boot/boot_vga_debug.vhd` | VGA boot/status screen for SD, loader, and RAM-test state |
 | `rtl/boot/boot_sdram_test.vhd` | SDRAM self-test before CPU release |
 | `rtl/boot/uart_debug_monitor.vhd` | Hardware monitor that can patch the loaded shadow ROM after boot |
-| `tools/make_sd_boot_image.py` | Creates raw SD boot image from `kernel.rom + ehbasic.rom` |
-| `tools/upload_monitor_hex.py` | Streams a binary into shadow ROM through the UART monitor |
+| `fpga/tools/make_sd_boot_image.py` | Creates raw SD boot image from `kernel.rom + ehbasic.rom` |
+| `fpga/tools/upload_monitor_hex.py` | Streams a binary into shadow ROM through the UART monitor |
 
 ## Integration Notes
 
@@ -144,7 +144,7 @@ For fast development, the same shadow-ROM RAM can be rewritten after boot throug
 the UART monitor:
 
 ```sh
-python tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
+python fpga/tools/upload_monitor_hex.py --build-demo --port COM15 --run --verbose
 ```
 
 This upload path is volatile: reset or reprogramming reloads the SD-card image.

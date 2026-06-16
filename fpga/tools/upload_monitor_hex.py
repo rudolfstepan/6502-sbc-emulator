@@ -4,7 +4,7 @@ Upload a binary image through the FPGA UART monitor hex loader.
 
 Default workflow:
   1. Press the hardware monitor button on the board.
-  2. Run: python tools/upload_monitor_hex.py --build-demo --run
+  2. Run: python fpga/tools/upload_monitor_hex.py --build-demo --run
 
 The monitor command used is:
   L <address>
@@ -20,10 +20,10 @@ import sys
 import time
 from pathlib import Path
 
-DEFAULT_PORT = "COM15"
-DEFAULT_BAUD = 230400
+DEFAULT_PORT = "COM12"
+DEFAULT_BAUD = 115200
 DEFAULT_ADDR = 0xC000
-DEFAULT_IMAGE = Path(__file__).resolve().parent / "roms" / "upload_demo.rom"
+DEFAULT_IMAGE = Path(__file__).resolve().parent.parent / "roms" / "upload_demo.rom"
 
 
 def require_pyserial():

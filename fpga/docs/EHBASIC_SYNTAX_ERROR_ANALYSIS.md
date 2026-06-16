@@ -434,7 +434,7 @@ EhBASIC memory-map perspective, but it is SDRAM in the FPGA design. Moving it
 to `$E0/$E1` also collided with EhBASIC's IRQ metadata area. The final `$EC/$ED`
 placement avoids both problems.
 
-1. **Upload the rebuilt `tools/roms/fpga_ehbasic_16kb.rom`** containing the fixed kernel and retest `LIST`, `PRINT 1+1`, and `10 REM`.
+1. **Upload the rebuilt `fpga/roms/fpga_ehbasic_16kb.rom`** containing the fixed kernel and retest `LIST`, `PRINT 1+1`, and `10 REM`.
 
 2. **If Syntax Error persists**: add an input-buffer/crunch diagnostic to dump `$0221+` before and after `LAB_13A6`, then confirm whether `PRINT` becomes `TK_PRINT`.
 
@@ -454,7 +454,7 @@ placement avoids both problems.
 | UART: missing LF in echo | Rapid scroll loop disrupted the CR+LF send sequence |
 | FOR loop prints 1,1,1,…,1099 | Scroll loop between PRINT calls corrupted float-to-decimal timing |
 
-All three were caused by a **single bug in `roms/kernel.rom`**: the pre-built binary was stale — it predated the SCROLL and STRPTR fixes that existed only in the `tools/kernel/kernel.s` working copy. The build script (`tools/build_fpga_ehbasic.py`) consumes `roms/kernel.rom` directly without checking whether `kernel.s` has changed.
+All three were caused by a **single bug in `roms/kernel.rom`**: the pre-built binary was stale — it predated the SCROLL and STRPTR fixes that existed only in the `tools/kernel/kernel.s` working copy. The build script (`fpga/tools/build_fpga_ehbasic.py`) consumes `roms/kernel.rom` directly without checking whether `kernel.s` has changed.
 
 ### The SCROLL infinite-loop mechanism
 

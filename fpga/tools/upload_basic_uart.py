@@ -3,7 +3,7 @@
 Send an EhBASIC .bas program line-by-line over UART.
 
 Usage:
-  python tools/upload_basic_uart.py mandelbrot.bas --port COM15
+  python fpga/tools/upload_basic_uart.py mandelbrot.bas --port COM15
 
 Assumption:
   EhBASIC is already running on the FPGA and waiting at its prompt.
@@ -17,8 +17,8 @@ import time
 from pathlib import Path
 
 
-DEFAULT_PORT = "COM15"
-DEFAULT_BAUD = 230400
+DEFAULT_PORT = "COM12"
+DEFAULT_BAUD = 115200
 
 
 def require_pyserial():

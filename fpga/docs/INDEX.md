@@ -14,6 +14,7 @@ Welcome to the 6502 SBC FPGA documentation. This directory contains comprehensiv
 - **[Development Guide](./07_DEVELOPMENT.md)** - Contributing and development workflow
 - **[UART Monitor](./UART_MONITOR.md)** - Hardware monitor commands and live ROM upload over UART
 - **[SD Bootloader](./SD_BOOTLOADER_PLAN.md)** - SD-card shadow-ROM boot flow
+- **[FPGA Tools GUI](./FPGA_TOOLS_GUI.md)** - Graphical launcher for all Python build/upload/utility tools
 - **[Roadmap](./roadmap.md)** - Project roadmap and milestones
 - **[PIX16 Build Guide](../boards/pix16/README.md)** - Xilinx ISE build and programming guide for the PIX16 Spartan-6 board
 - **[Tang Primer 20K Guide](../boards/tang_primer_20k/README.md)** - Gowin build notes, CH340 UART, HDMI boot screen, and on-board microSD wiring
@@ -34,6 +35,7 @@ fpga/
 │   ├── 07_DEVELOPMENT.md   Development guide
 │   ├── UART_MONITOR.md     UART hardware monitor and ROM upload
 │   ├── SD_BOOTLOADER_PLAN.md SD-card shadow-ROM boot flow
+│   ├── FPGA_TOOLS_GUI.md   Graphical launcher for Python tools
 │   └── roadmap.md          Project roadmap
 ├── boards/
 │   ├── pix16/              PIX16 Spartan-6 (constraints, scripts, project, bitstreams)

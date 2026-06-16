@@ -108,7 +108,7 @@ hand.
 
 ## Python Upload Tool
 
-The helper script `tools/upload_monitor_hex.py` automates `L`, streams the image
+The helper script `fpga/tools/upload_monitor_hex.py` automates `L`, streams the image
 as hex lines, sends `.`, and optionally starts the CPU with `G`.
 
 Default settings:
@@ -118,24 +118,24 @@ Default settings:
 | Port | `COM15` on PIX16 examples; Tang has been tested as `COM12` |
 | Baud | `230400` on PIX16 and Tang |
 | Load address | `$C000` |
-| Image | `tools/roms/upload_demo.rom` |
+| Image | `fpga/roms/upload_demo.rom` |
 
 Common workflow:
 
 ```sh
-python tools/upload_monitor_hex.py --port COM15 --baud 230400 --run --verbose
+python fpga/tools/upload_monitor_hex.py --port COM15 --baud 230400 --run --verbose
 ```
 
 Regenerate the bundled demo ROM first:
 
 ```sh
-python tools/upload_monitor_hex.py --build-demo --port COM15 --baud 230400 --run --verbose
+python fpga/tools/upload_monitor_hex.py --build-demo --port COM15 --baud 230400 --run --verbose
 ```
 
 Upload a custom binary:
 
 ```sh
-python tools/upload_monitor_hex.py path/to/my.rom --port COM15 --baud 230400 --address 0xC000 --run
+python fpga/tools/upload_monitor_hex.py path/to/my.rom --port COM15 --baud 230400 --address 0xC000 --run
 ```
 
 If the upload fails with an access error, another serial terminal still has the
@@ -143,8 +143,8 @@ COM port open. Close the terminal and run the command again.
 
 ## Demo ROM Generator
 
-`tools/make_upload_demo_rom.py` creates a simple 16 KB ROM at
-`tools/roms/upload_demo.rom`. It is hand-assembled by a tiny Python builder so it
+`fpga/tools/make_upload_demo_rom.py` creates a simple 16 KB ROM at
+`fpga/roms/upload_demo.rom`. It is hand-assembled by a tiny Python builder so it
 has no cc65 dependency.
 
 The ROM is mapped for CPU addresses `$C000-$FFFF` and does the following:
@@ -158,7 +158,7 @@ The ROM is mapped for CPU addresses `$C000-$FFFF` and does the following:
 Generate it explicitly:
 
 ```sh
-python tools/make_upload_demo_rom.py
+python fpga/tools/make_upload_demo_rom.py
 ```
 
 The reset, NMI, and IRQ vectors at `$FFFA-$FFFF` all point to `$C000`, so

@@ -5,8 +5,8 @@ PYTHON = python
 ROM_BIN = rom_demo.bin
 ROM_HEX = ../sim/hex/rom_welcome.hex
 
-FPGA_EHBASIC_ROM = ../../tools/roms/fpga_ehbasic_16kb.rom
-FPGA_EHBASIC_IMG = ../../tools/roms/fpga_ehbasic_16kb.img
+FPGA_EHBASIC_ROM = ../roms/fpga_ehbasic_16kb.rom
+FPGA_EHBASIC_IMG = ../roms/fpga_ehbasic_16kb.img
 KERNEL_S   = ../../tools/kernel/kernel.s
 KERNEL_CFG = ../../tools/kernel/kernel.cfg
 KERNEL_O   = ../../tools/kernel/kernel.o
@@ -38,16 +38,16 @@ $(KERNEL_ROM): $(KERNEL_O) $(KERNEL_CFG)
 
 # Build the FPGA EhBASIC 16 KB ROM (kernel + EhBASIC, UART I/O)
 fpga-ehbasic: $(KERNEL_ROM)
-	$(PYTHON) ../../tools/build_fpga_ehbasic.py
+	$(PYTHON) ../tools/build_fpga_ehbasic.py
 	@echo "ROM ready: $(FPGA_EHBASIC_ROM)"
 
 # Build and immediately upload via UART monitor (board must be in monitor mode)
 upload-ehbasic: $(KERNEL_ROM)
-	$(PYTHON) ../../tools/build_fpga_ehbasic.py --upload --run --verbose
+	$(PYTHON) ../tools/build_fpga_ehbasic.py --upload --run --verbose
 
 # Build 16 KB ROM + raw SD card boot image (.img)
 sd-ehbasic: $(KERNEL_ROM)
-	$(PYTHON) ../../tools/build_fpga_ehbasic.py --sd-image
+	$(PYTHON) ../tools/build_fpga_ehbasic.py --sd-image
 	@echo "SD image ready: $(FPGA_EHBASIC_IMG)"
 
 # Build and upload rom_demo via UART monitor (board must be in monitor mode)

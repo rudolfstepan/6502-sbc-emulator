@@ -11,7 +11,7 @@ from pathlib import Path
 
 ROM_BASE = 0xC000
 ROM_SIZE = 0x4000
-OUT = Path(__file__).resolve().parent / "roms" / "upload_demo.rom"
+OUT = Path(__file__).resolve().parent.parent / "roms" / "upload_demo.rom"
 
 VIC_BASE = 0x8000
 VIA_ORB = 0x8800
@@ -232,7 +232,7 @@ def main() -> None:
     OUT.write_bytes(rom)
     print(f"wrote {len(rom)} bytes -> {OUT}")
     print("entry/reset: $C000")
-    print("upload with: python tools/upload_monitor_hex.py --run")
+    print("upload with: python fpga/tools/upload_monitor_hex.py --run")
 
 
 if __name__ == "__main__":

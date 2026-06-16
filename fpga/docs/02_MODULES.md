@@ -92,12 +92,14 @@ fpga/sw/
 ### EhBASIC ROM toolchain
 
 ```text
-tools/
+fpga/tools/
 ├── build_fpga_ehbasic.py         — patches + assembles EhBASIC; links with kernel
 │                                   --sd-image  also produces SD card boot image
-├── upload_monitor_hex.py         — UART monitor upload for any .rom file
-├── roms/fpga_ehbasic_16kb.rom    — 16 KB output: kernel ($C000) + EhBASIC ($D000)
-└── roms/fpga_ehbasic_16kb.img    — raw SD boot image (512 B header + 16 KB payload)
+└── upload_monitor_hex.py         — UART monitor upload for any .rom file
+
+fpga/roms/
+├── fpga_ehbasic_16kb.rom         — 16 KB output: kernel ($C000) + EhBASIC ($D000)
+└── fpga_ehbasic_16kb.img         — raw SD boot image (512 B header + 16 KB payload)
 
 tools/kernel/
 └── kernel.s                      — 4 KB kernel ROM ($C000-$CFFF)
@@ -108,10 +110,10 @@ tools/kernel/
 Build commands (from project root):
 
 ```bash
-python tools/build_fpga_ehbasic.py            # ROM only
-python tools/build_fpga_ehbasic.py --sd-image # ROM + SD boot image
-python tools/build_fpga_ehbasic.py --upload --run --verbose  # ROM + UART upload
-make -C fpga/sw sd-ehbasic                    # same as --sd-image via make
+python fpga/tools/build_fpga_ehbasic.py            # ROM only
+python fpga/tools/build_fpga_ehbasic.py --sd-image # ROM + SD boot image
+python fpga/tools/build_fpga_ehbasic.py --upload --run --verbose  # ROM + UART upload
+make -C fpga/sw sd-ehbasic                         # same as --sd-image via make
 ```
 
 ### Character ROM generator

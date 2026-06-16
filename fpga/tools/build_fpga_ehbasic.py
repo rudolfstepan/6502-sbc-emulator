@@ -16,7 +16,7 @@ Pipeline:
   4. Link to a 12 KB binary (ehbasic ROM at $D000-$FFFF).
   5. Load roms/kernel.rom (4 KB, $C000-$CFFF).
   6. Combine: kernel (4 KB) || ehbasic (12 KB) -> 16 KB image.
-  7. Write tools/roms/fpga_ehbasic_16kb.rom.
+  7. Write fpga/roms/fpga_ehbasic_16kb.rom.
 
 Optional flags:
   --upload          upload via UART monitor after building
@@ -25,8 +25,8 @@ Optional flags:
   --run             send G C000 after upload to start CPU
 
 Usage:
-  python tools/build_fpga_ehbasic.py
-  python tools/build_fpga_ehbasic.py --upload --port COM15 --baud 230400 --run --verbose
+  python fpga/tools/build_fpga_ehbasic.py
+  python fpga/tools/build_fpga_ehbasic.py --upload --port COM15 --baud 230400 --run --verbose
 """
 from __future__ import annotations
 
@@ -41,12 +41,12 @@ from pathlib import Path
 # ---------------------------------------------------------------------------
 # Paths
 # ---------------------------------------------------------------------------
-ROOT        = Path(__file__).resolve().parent.parent
+ROOT        = Path(__file__).resolve().parent.parent.parent
 CACHE_ASM   = ROOT / "tools" / "ehbasic_port" / ".cache" / "basic.asm"
 KERNEL_ROM  = ROOT / "roms" / "kernel.rom"
 WRAPPER_S   = ROOT / "fpga" / "sw" / "ehbasic_fpga.s"
 LINKER_CFG  = ROOT / "fpga" / "sw" / "ehbasic_fpga.cfg"
-OUT_DIR     = ROOT / "tools" / "roms"
+OUT_DIR     = ROOT / "fpga" / "roms"
 OUT_ROM     = OUT_DIR / "fpga_ehbasic_16kb.rom"
 OUT_IMG     = OUT_DIR / "fpga_ehbasic_16kb.img"
 SD_IMG_TOOL = ROOT / "fpga" / "tools" / "make_sd_boot_image.py"
@@ -316,13 +316,13 @@ def main() -> None:
 
     print("\nUpload command (UART monitor):")
     print(
-        f"  python tools/upload_monitor_hex.py {OUT_ROM.name} "
+        f"  python fpga/tools/upload_monitor_hex.py {OUT_ROM.name} "
         f"--port COM15 --baud 230400 --address 0xC000 --run --verbose"
     )
     print("  (run from the project root; press KEY0 on the board first)")
 
     if args.upload:
-        uploader = ROOT / "tools" / "upload_monitor_hex.py"
+        uploader = ROOT / "fpga" / "tools" / "upload_monitor_hex.py"
         cmd = [
             sys.executable, str(uploader),
             str(OUT_ROM),
