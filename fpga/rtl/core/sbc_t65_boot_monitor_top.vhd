@@ -42,12 +42,11 @@ entity sbc_t65_boot_monitor_top is
 
     via_portb   : out data_t;
 
-    -- USB HID host (nand2mario bit-bang over PMOD GPIO)
-    usb_clk : in  std_logic := '0';
-    usb_dm  : inout std_logic;
-    usb_dp  : inout std_logic;
+    -- PS/2 keyboard (directly on PMOD GPIO pins)
+    ps2_clk  : in std_logic;
+    ps2_data : in std_logic;
 
-    -- USB HID diagnostic outputs (for boot debug display)
+    -- Keyboard diagnostic outputs (for boot debug display)
     usb_connected : out std_logic;
     usb_keycode   : out std_logic_vector(7 downto 0);
     usb_modif     : out std_logic_vector(7 downto 0);
@@ -136,7 +135,15 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal usb_dout    : data_t;
   signal uart_rx_data  : data_t;
   signal uart_rx_valid : std_logic;
-  signal uart_rx_valid_cpu : std_logic;
+
+  -- PS/2 -> UART injection
+  signal kbd_ascii_i     : data_t := (others => '0');
+  signal kbd_event_tog_i : std_logic := '0';
+  signal kbd_event_prev  : std_logic := '0';
+  signal kbd_inject      : std_logic := '0';
+  signal merged_rx_data      : data_t;
+  signal merged_rx_valid     : std_logic;
+  signal merged_rx_valid_cpu : std_logic;
   signal mon_jump_vector        : addr_t := (others => '0');
   signal mon_jump_reset_cnt     : natural range 0 to 31 := 0;
   signal mon_jump_vector_active : std_logic := '0';
@@ -231,7 +238,7 @@ begin
 
   monitor_mem_rdata <= mon_rdata_reg;
   monitor_mem_ready <= mon_ready_reg;
-  uart_rx_valid_cpu <= uart_rx_valid when monitor_hold = '0' else '0';
+  merged_rx_valid_cpu <= merged_rx_valid when monitor_hold = '0' else '0';
 
   process(dev_sel, zp_cs, zp_dout, sram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout,
           uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr)
@@ -391,8 +398,8 @@ begin
       addr     => uart_addr_mux,
       din      => uart_din_mux,
       dout     => uart_dout,
-      rx_data  => uart_rx_data,
-      rx_valid => uart_rx_valid_cpu,
+      rx_data  => merged_rx_data,
+      rx_valid => merged_rx_valid_cpu,
       tx_data  => uart_tx_data,
       tx_valid => uart_tx_valid,
       tx_busy  => uart_tx_busy,
@@ -408,6 +415,23 @@ begin
       data    => uart_rx_data,
       valid   => uart_rx_valid
     );
+
+  -- PS/2 keyboard -> UART injection: detect new keypress and inject ASCII
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      kbd_inject    <= '0';
+      kbd_event_prev <= kbd_event_tog_i;
+      if reset_n = '0' then
+        kbd_event_prev <= '0';
+      elsif kbd_event_tog_i /= kbd_event_prev and kbd_ascii_i /= x"00" then
+        kbd_inject <= '1';
+      end if;
+    end if;
+  end process;
+
+  merged_rx_data  <= kbd_ascii_i when kbd_inject = '1' else uart_rx_data;
+  merged_rx_valid <= kbd_inject or uart_rx_valid;
 
   process(clk)
   begin
@@ -502,13 +526,15 @@ begin
     end if;
   end process;
 
-  usb_hid_i : entity work.usb_hid_host
+  ps2_kbd_i : entity work.ps2_keyboard
+    generic map (
+      CLK_HZ => CLK_HZ
+    )
     port map (
       clk            => clk,
       reset_n        => reset_n,
-      usb_clk        => usb_clk,
-      usb_dm         => usb_dm,
-      usb_dp         => usb_dp,
+      ps2_clk        => ps2_clk,
+      ps2_data       => ps2_data,
       cs             => usb_cs,
       we             => cpu_bus_we,
       addr           => cpu_addr(1 downto 0),
@@ -517,11 +543,14 @@ begin
       diag_connected => usb_connected,
       diag_keycode   => usb_keycode,
       diag_modif     => usb_modif,
-      diag_ascii     => usb_ascii,
+      diag_ascii     => kbd_ascii_i,
       diag_phase     => usb_phase,
-      diag_key_event => usb_key_event,
+      diag_key_event => kbd_event_tog_i,
       diag_polling   => usb_polling
     );
+
+  usb_ascii     <= kbd_ascii_i;
+  usb_key_event <= kbd_event_tog_i;
 
   -- Bus-capture feature removed (was ULPI-specific); tie off outputs.
   usb_cap_data  <= (others => '0');

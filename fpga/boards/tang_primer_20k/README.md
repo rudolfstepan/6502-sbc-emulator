@@ -46,6 +46,8 @@ Current bring-up status:
 - KEY1 enters the FPGA monitor and holds the 6502 CPU.
 - Without a card in the on-board microSD slot, the boot debug output correctly
   reports that the SD card cannot be initialized/read.
+- PS/2 keyboard input works via PMOD 0 — keystrokes are injected into the
+  UART receive path so EhBASIC and the monitor see them without software changes.
 
 The Tang boot core currently uses internal BSRAM for main RAM instead of the
 on-board SDRAM. Pressing KEY1 enters the FPGA UART monitor, holds the 6502 CPU,
@@ -73,6 +75,45 @@ On-board microSD slot wiring in SPI mode:
 
 The slot also exposes `DAT1=M7`, `DAT2=M10`, and card-detect `DET_A=D15`; those
 are not used by the current SPI-mode boot path.
+
+### PS/2 keyboard on PMOD 0
+
+The SBC accepts keyboard input via a PS/2 keyboard connected to the Dock board's
+PMOD 0 connector (top-left, near the MIC ARRAY silkscreen).  Keystrokes are
+automatically injected into the UART 6551 receive path so EhBASIC and the UART
+monitor see them without any software changes.
+
+| PS/2 signal | FPGA pin | PMOD 0 pin | Notes                    |
+|-------------|----------|------------|--------------------------|
+| `ps2_clk`   | `T7`     | signal     | Internal pull-up enabled |
+| `ps2_data`  | `T8`     | signal     | Internal pull-up enabled |
+| VCC         | —        | 5 V        | From board 5 V rail      |
+| GND         | —        | GND        |                          |
+
+No external pull-up resistors are needed; the FPGA internal pull-ups are
+sufficient for the PS/2 open-collector bus.
+
+The boot diagnostic screen (HDMI rows 17–18) shows real-time keyboard status:
+
+```text
+USB HID: CON=1  KEY=$xx  MOD=$xx
+USB HID: PH=4 DATA=$xx POLL=1 EV=x
+```
+
+`CON=1` indicates the keyboard is detected (PS/2 clock activity), `PH=4` means
+connected and active, and `KEY`/`DATA` update live as keys are pressed.
+
+#### Why PS/2 instead of USB HID
+
+An earlier version used the nand2mario `usb_hid_host` core for direct USB
+low-speed bit-bang on D+/D−.  While the core detected connected keyboards
+(boot screen showed `PH` cycling between `3` and `F`), USB enumeration never
+completed successfully.  The root cause was not identified — possible
+contributors include keyboard compatibility (hub-based or USB 2.0-only
+keyboards), signal integrity on the PMOD wiring, or timing sensitivity in
+the bit-bang protocol.  The nand2mario third-party source is still present
+under `third_party/usb_hid_host/` for future investigation.  PS/2 works
+reliably and was adopted as the primary keyboard interface.
 
 The on-board SDIO slot uses pins M8 (sd_miso / DAT0) and M10 (unused) which are
 dual-purpose SSPI pins on the GW2A-18C. The build uses a Tcl script

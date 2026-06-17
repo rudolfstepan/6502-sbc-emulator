@@ -72,6 +72,8 @@ Current verified bring-up:
 - HDMI boot/status output works.
 - CH340 UART works from the PC as the board serial port, tested as `COM12`.
 - KEY1 enters the FPGA UART monitor and holds the 6502 CPU.
+- PS/2 keyboard on PMOD 0 (`T7`/`T8`) works — keystrokes are injected into the
+  UART receive path so EhBASIC sees them as serial input.
 - Without a card in the on-board microSD slot, boot debug output correctly
   reports that SD initialization/read cannot complete.
 
@@ -79,6 +81,10 @@ The Tang path currently uses internal BSRAM for main RAM instead of the on-board
 SDRAM. The CH340 UART runs at `230400 8N1`; the USB-OTG connector is separate and
 is not the SBC UART. The on-board microSD slot is used in SPI mode on
 `N10/N11/R14/M8` as documented in `boards/tang_primer_20k/README.md`.
+
+USB HID keyboard input via the nand2mario `usb_hid_host` bit-bang core was
+attempted but USB enumeration did not complete reliably (see
+`boards/tang_primer_20k/README.md` for details). PS/2 was adopted instead.
 
 ## Current Tests
 

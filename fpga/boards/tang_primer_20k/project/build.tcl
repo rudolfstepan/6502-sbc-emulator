@@ -14,9 +14,7 @@ add_file -type vhdl {../../../rtl/core/mem/sync_ram.vhd}
 add_file -type vhdl {../../../rtl/core/mem/char_rom.vhd}
 add_file -type vhdl {../../../rtl/core/mem/boot_shadow_rom.vhd}
 add_file -type verilog {../../../rtl/core/boot/sd_rom_loader.v}
-add_file -type vhdl {../../../rtl/core/usb/usb_hid_host.vhd}
-add_file -type verilog {../../../third_party/usb_hid_host/usb_hid_host_nm.v}
-add_file -type verilog {../../../third_party/usb_hid_host/usb_hid_host_rom.v}
+add_file -type vhdl {../../../rtl/core/ps2/ps2_keyboard.vhd}
 add_file -type vhdl {../../../rtl/core/boot/boot_debug_uart.vhd}
 add_file -type vhdl {../../../rtl/core/boot/boot_vga_debug.vhd}
 add_file -type vhdl {../../../rtl/core/boot/uart_debug_monitor.vhd}

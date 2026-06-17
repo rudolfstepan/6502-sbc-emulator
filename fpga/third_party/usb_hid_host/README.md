@@ -18,12 +18,23 @@ and a 12 MHz clock are required; no PHY chip needed.
 | `usb_hid_host_rom.hex` | nand2mario `src/usb_hid_host_rom.hex` | UKP microprocessor ROM; must stay in same directory as usb_hid_host_rom.v (`$readmemh` relative path) |
 | `LICENSE` | nand2mario repo root | Apache 2.0 |
 
-## Usage in this project
+## Status in this project
+
+**Not currently active.**  The Tang Primer 20K build uses PS/2 keyboard input
+instead (`rtl/core/ps2/ps2_keyboard.vhd`).
+
+USB HID via this core was attempted on the Tang Primer 20K Dock board (PMOD 0,
+pins T7/T8, with 15 kΩ pull-downs and 5 V VBUS).  The core detected connected
+keyboards (boot diagnostic showed `PH` cycling between `3` and `F`), but USB
+enumeration never completed.  Possible causes include keyboard compatibility
+(hub-based or USB 2.0-only devices), signal integrity on PMOD wiring, or timing
+sensitivity in the bit-bang protocol.  The source is retained here for future
+investigation.
 
 The VHDL wrapper at `fpga/rtl/core/usb/usb_hid_host.vhd` instantiates
 `usb_hid_host_nm` and provides the system-bus register interface (4 registers:
 STATUS, KEY, MODIF, ASCII) and clock-domain crossing (12 MHz USB → 27 MHz
-system clock).
+system clock).  It is not included in the current build.
 
 ## Attribution notice (Apache 2.0 §4d)
 

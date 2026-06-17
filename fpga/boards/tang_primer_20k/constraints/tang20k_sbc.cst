@@ -17,23 +17,21 @@
 // Video: HDMI TMDS via on-board connector (no GPIO VGA breakout needed).
 
 // -------------------------------------------------------------------------
-// USB HID host via PMOD GPIO (nand2mario bit-bang, low-speed 1.5 Mbps).
+// PS/2 keyboard on PMOD 0 (active-low open-collector, directly from keyboard).
 //
-// Physical wiring (USB-A or USB-B mini connector on PMOD breakout):
-//   usb_dm (D-)  -> USB pin 2  + 15 kΩ pull-down to GND
-//   usb_dp (D+)  -> USB pin 3  + 15 kΩ pull-down to GND
-//   VBUS (5 V)   -> USB pin 1  (supply from PMOD 5 V rail or external)
-//   GND          -> USB pin 4
+// Physical wiring (directly from PS/2 connector or PS/2-to-DuPont adapter):
+//   ps2_clk   -> PS/2 pin 5 (clock)
+//   ps2_data  -> PS/2 pin 1 (data)
+//   VCC (5 V) -> PS/2 pin 4
+//   GND       -> PS/2 pin 3
 //
-// FIXME: Replace the pin locations below with the two actual PMOD header pins
-// you have wired.  Verify against the Tang Primer 20K schematic before building.
-// The pins shown here (A14, B14) are placeholders for PMOD connector J3 pins
-// 1 and 2 (signal side).  Check that they are LVCMOS33 I/O banks.
+// Dock board PMOD 0 (top-left, near MIC ARRAY), Bank 7 / LVCMOS33.
+// Internal pull-ups enabled (open-collector bus).
 // -------------------------------------------------------------------------
-IO_LOC "usb_dm" A14;
-IO_PORT "usb_dm" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "usb_dp" B14;
-IO_PORT "usb_dp" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "ps2_clk" T7;
+IO_PORT "ps2_clk" IO_TYPE=LVCMOS33 PULL_MODE=UP;
+IO_LOC "ps2_data" T8;
+IO_PORT "ps2_data" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
 // Clock
