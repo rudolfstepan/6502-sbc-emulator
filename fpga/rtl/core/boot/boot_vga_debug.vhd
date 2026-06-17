@@ -50,10 +50,11 @@ entity boot_vga_debug is
 end entity;
 
 architecture rtl of boot_vga_debug is
+  -- 640x480 @ 59.94 Hz (27 MHz pixel clock, CEA-861 480p total timing)
   constant H_VIS : natural := 640;
-  constant H_TOT : natural := 800;
-  constant H_SS  : natural := 656;
-  constant H_SE  : natural := 752;
+  constant H_TOT : natural := 858;
+  constant H_SS  : natural := 671;
+  constant H_SE  : natural := 767;
 
   constant V_VIS : natural := 480;
   constant V_TOT : natural := 525;

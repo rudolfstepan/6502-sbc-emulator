@@ -3,8 +3,8 @@
 -- Clock: 27 MHz on-board oscillator -> rPLL in tang20k_hdmi_tx generates
 --   135 MHz (TMDS bit clock) and 27 MHz (PLL-synchronised system clock).
 --
--- Video: vic_vga runs at CLK_DIV=1 (27 MHz pixel), giving 640x480
---   @ 33.75 kHz H / 64.3 Hz V.  Encoded to DVI TMDS over the HDMI connector.
+-- Video: vic_vga runs at CLK_DIV=1 (27 MHz pixel), 858x525 total (CEA 480p),
+--   giving 640x480 @ 31.47 kHz H / 59.94 Hz V.  Encoded to DVI TMDS over HDMI.
 --
 -- KEY[0] = T5  (LVCMOS33, active-low reset)
 -- KEY[1] = T3  (LVCMOS15, active-low UART monitor enter / CPU hold)

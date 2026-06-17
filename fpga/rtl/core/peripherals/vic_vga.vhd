@@ -10,7 +10,9 @@
 --   zeigt Zeichen aus dem 40-Byte Zeilenpuffer mit kombinatorischer
 --   Char-ROM-Ausgabe.
 --
--- Timing: 640x480 @ ~60Hz, Pixel-Takt 25MHz (50MHz / 2)
+-- Timing: 640x480 @ 59.94 Hz, CEA-861 480p totals (858x525).
+--   CLK_DIV=2 with 50 MHz -> 25 MHz pixel clock (PIX16 board).
+--   CLK_DIV=1 with 27 MHz -> 27 MHz pixel clock (Tang Primer 20K).
 -- Textmodus: 40x25 Zeichen, 2x skaliert (16x16 Bildschirmpixel pro Zeichen)
 -- Randhoehe oben/unten: 40 Pixel
 library ieee;
@@ -57,16 +59,17 @@ entity vic_vga is
 end entity;
 
 architecture rtl of vic_vga is
-  -- 640x480 @ 60Hz VGA-Timing (Pixel-Takt 25MHz = 50MHz / 2)
+  -- 640x480 @ 59.94 Hz (27 MHz pixel clock, CEA-861 480p total timing)
+  -- H_freq = 27 MHz / 858 = 31.47 kHz,  V_freq = 31468 / 525 = 59.94 Hz
   constant H_VIS  : natural := 640;
-  constant H_TOT  : natural := 800;
-  constant H_SS   : natural := 656;   -- H-Sync-Start  (656 = 640+16)
-  constant H_SE   : natural := 752;   -- H-Sync-Ende   (752 = 656+96)
+  constant H_TOT  : natural := 858;
+  constant H_SS   : natural := 671;   -- H-Sync-Start  (640 + 31 front porch)
+  constant H_SE   : natural := 767;   -- H-Sync-Ende   (671 + 96 sync width)
 
   constant V_VIS  : natural := 480;
   constant V_TOT  : natural := 525;
-  constant V_SS   : natural := 490;   -- V-Sync-Start
-  constant V_SE   : natural := 492;   -- V-Sync-Ende
+  constant V_SS   : natural := 490;   -- V-Sync-Start  (480 + 10 front porch)
+  constant V_SE   : natural := 492;   -- V-Sync-Ende   (490 + 2 sync width)
 
   -- Textbereich: 40px Rand oben, 25 Zeilen * 16 Pixel = 400px, 40px Rand unten
   constant V_BORD : natural := 40;

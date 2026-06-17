@@ -62,10 +62,11 @@ fpga/boards/tang_primer_20k/project/tang_sbc.gprj
 ```
 
 It targets the Sipeed Tang Primer 20K / Gowin GW2A-18. The current board top is
-`boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd`. It brings up HDMI through the
-Tang TMDS wrapper, displays the boot/status diagnostic screen first, initializes
-the on-board microSD/SDIO slot in SPI mode, loads the 16 KB `$C000-$FFFF` ROM
-image into shadow ROM, and releases the T65 CPU after a successful load.
+`boards/tang_primer_20k/rtl/tang20k_sbc_top.vhd`. It brings up HDMI (DVI-style
+TMDS, 27 MHz pixel clock, CEA-861 480p timing for standard 640×480 @ 59.94 Hz),
+displays the boot/status diagnostic screen first, initializes the on-board
+microSD/SDIO slot in SPI mode, loads the 16 KB `$C000-$FFFF` ROM image into
+shadow ROM, and releases the T65 CPU after a successful load.
 
 Current verified bring-up:
 

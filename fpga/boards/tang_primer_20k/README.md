@@ -33,10 +33,15 @@ Target: Sipeed Tang Primer 20K (Gowin GW2A-LV18PG256C8/I7)
 ## Status
 
 HDMI bring-up is implemented with a Tang-specific top-level wrapper and DVI-style
-TMDS output. On reset the FPGA shows the boot/status diagnostic screen while it
-initializes the on-board microSD/SDIO slot in SPI mode and loads the 16 KB ROM
-image into shadow ROM. After a successful load the CPU is released and HDMI
-switches to the SBC VIC output.
+TMDS output at 27 MHz pixel clock with CEA-861 480p total timing (858×525),
+giving standard 640×480 @ 59.94 Hz (31.47 kHz H-sync).  An earlier version used
+800×525 totals which produced non-standard 33.75 kHz / 64.3 Hz timing that some
+monitors could not sync to.
+
+On reset the FPGA shows the boot/status diagnostic screen while it initializes
+the on-board microSD/SDIO slot in SPI mode and loads the 16 KB ROM image into
+shadow ROM. After a successful load the CPU is released and HDMI switches to the
+SBC VIC output.
 
 Current bring-up status:
 
