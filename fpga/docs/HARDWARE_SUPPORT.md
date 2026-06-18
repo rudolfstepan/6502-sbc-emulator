@@ -73,6 +73,10 @@ This document describes the hardware support infrastructure created for deployin
 
 #### 4. VIC Display
 - **vic_vga.vhd**: Combined bus-stealing VIC and VGA signal generator. 40×25 chars, 640×480 @ 60 Hz.
+- **VRAM write arbitration**: Active SD boot cores defer one CPU write that overlaps
+  `vic_stealing` and commit it immediately after the VIC prefetch. This prevents
+  lost `$8000-$87FF` writes and random stale characters during BASIC/firmware text
+  redraws.
 - **char_rom.vhd**: 128-character 8×8 pixel ROM.
   - `$00–$1F`: PETSCII screen-code letters
   - `$20–$5F`: ASCII punctuation, digits, uppercase
@@ -152,6 +156,22 @@ xc3sprog -c ftdi pix16_sbc_sd_boot_top.bit
 5. After successful SD load and RAM test: T65 CPU starts from the loaded ROM; `vic_vga` takes over VGA output
 6. Pressing KEY0 at any time enters the UART machine monitor (CPU halted, VGA stays active)
 
+### PETSCII Graphics BASIC Demo
+
+`examples/petscii_gfx.bas` is the board-level regression demo for the PETSCII
+text ROM and VRAM write path. It writes directly to text VRAM at `$8000` using
+short `POKE` lines:
+
+- text labels are stored as ASCII byte pokes,
+- glyphs `$60-$7F` are poked directly into the screen,
+- the demo avoids `PRINT CHR$()` because `CHROUT` uppercases lowercase text to
+  keep EhBASIC output readable,
+- repeated `RUN`s should redraw the box without random stale characters.
+
+If random characters appear in the box or after the clear loop, rebuild and flash
+the FPGA bitstream; that symptom points to the VRAM bus-steal arbitration, not the
+BASIC program or SD/ROM image.
+
 ### Uploading the Demo ROM via UART Monitor
 ```bash
 # 1. Program the FPGA bitstream via iMPACT
@@ -197,6 +217,7 @@ Use Xilinx CoreGen to create PLL in ISE project if needed.
 
 | Date | Version | Changes |
 |------|---------|---------|
+| 2026-06-18 | 1.4 | Document PETSCII VRAM demo, CHROUT/lowercase behavior, and deferred CPU VRAM writes during VIC bus stealing |
 | 2026-06-08 | 1.3 | Reflect SD boot design as active top; ISE project cleanup (single-top); PETSCII char ROM ($60–$7F); upload_rom_demo.py; remove completed Future Enhancements |
 | 2026-06-04 | 1.2 | Updated for checked-in ISE project, XC6SLX16 target, working VGA timing |
 | 2026-06-04 | 1.0 | Initial hardware support infrastructure created |

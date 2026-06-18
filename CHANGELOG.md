@@ -4,6 +4,20 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### FPGA VIC/PETSCII graphics
+
+- Added PETSCII block/line glyph coverage for the C/SDL VIC font at `$60-$7F`,
+  matching the FPGA character ROM and making `$7F` a full block.
+- Kept kernel `CHROUT` text-safe by converting lowercase ASCII to uppercase
+  before VRAM writes; raw PETSCII graphics are produced by writing `$60-$7F`
+  directly to text VRAM.
+- Reworked `examples/petscii_gfx.bas` into a pure `$8000` VRAM `POKE` demo with
+  short upload-friendly BASIC lines and no `PRINT`, `CHR$`, `READ`, `DATA`, or
+  string functions.
+- Fixed active FPGA boot cores so CPU writes to text VRAM are no longer lost when
+  they overlap VIC bus stealing. A one-byte pending write buffer defers the write
+  until the first non-steal clock and holds `RDY` low through the commit cycle.
+
 ### EhBASIC FPGA port — SCROLL infinite-loop fix
 
 - Fixed a SCROLL infinite-loop bug that caused all three observed symptoms (VGA stop updating after ~18 rows, UART missing linefeed, FOR loop printing corrupted values). Root cause: `roms/kernel.rom` was a stale pre-built binary predating the SCROLL and STRPTR fixes in `tools/kernel/kernel.s`.

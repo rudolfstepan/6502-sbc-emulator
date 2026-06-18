@@ -151,7 +151,7 @@ IRQ_HANDLER:
     jsr calc_ptr_xy
     tsx
     lda $0105,x             ; get saved A below cursor scratch bytes
-    jsr to_upper            ; char_rom $60-$7F = PETSCII, not lowercase
+    jsr to_upper            ; lowercase ASCII overlaps PETSCII graphics
     ldy #0
     sta (SCRPTR_LO),y      ; write character
     pla

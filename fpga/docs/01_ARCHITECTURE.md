@@ -133,6 +133,14 @@ One scan line = 1600 system clock cycles (800 pixel clocks × 2)
 
 **CPU overhead:** 41 stolen out of 1600 = about 2.6% per scan line.
 
+CPU writes to `$8000-$87FF` are never discarded while the VIC owns VRAM. The
+active SD boot cores (`sbc_t65_boot_monitor_top` and `sbc_t65_sdram_boot_top`)
+latch a single pending CPU VRAM write (`vram_wr_pending`, address, data) if the
+write pulse overlaps `vic_stealing`. The CPU remains held through `RDY` until
+the pending write is committed on the first non-steal clock. This prevents
+random stale characters when BASIC or firmware rapidly `POKE`s text VRAM while
+the display is active.
+
 ### Memory Map (Minimal SBC)
 
 | Address Range | Size | Device | Notes |
@@ -162,8 +170,14 @@ bit 7 = reverse video).
 
 `char_rom` layout: `$00–$1F` PETSCII screen codes, `$20–$5F` ASCII uppercase/digits/punctuation,
 `$60–$7F` PETSCII block/line graphics. Lowercase ASCII `$61–$7A` falls in the PETSCII
-range — the kernel maps all a–z input to A–Z in `CHRIN_NB` and `CHROUT` before
-anything reaches VRAM or EhBASIC's tokenizer.
+range, so keyboard/UART input is mapped to A–Z in `CHRIN_NB` before BASIC sees it,
+and `CHROUT` also maps lowercase output to uppercase text. Programs that need raw
+PETSCII graphics write those character codes directly to VRAM.
+
+The FPGA BASIC example [examples/petscii_gfx.bas](../../examples/petscii_gfx.bas)
+is intentionally a pure VRAM `POKE` demo. It avoids `PRINT CHR$(96)` for graphics
+because `CHROUT` is kept text-safe, and it avoids dense multi-statement BASIC
+lines so it can be uploaded reliably over the UART input path.
 
 ### Kernel ROM
 

@@ -121,6 +121,9 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal vram_addr    : std_logic_vector(10 downto 0);
   signal vram_addr_mux : std_logic_vector(10 downto 0);
   signal vram_din_mux  : data_t;
+  signal vram_wr_pending : std_logic := '0';
+  signal vram_wr_addr    : std_logic_vector(10 downto 0) := (others => '0');
+  signal vram_wr_data    : data_t := (others => '0');
   signal vic_addr     : addr_t;
   signal vic_stealing : std_logic;
   signal vic_cursor_x : std_logic_vector(5 downto 0) := (others => '0');
@@ -179,7 +182,7 @@ begin
   end process;
 
   cpu_bus_we <= cpu_we and not cpu_enable;
-  cpu_rdy    <= not vic_stealing and not monitor_hold;
+  cpu_rdy    <= not vic_stealing and not vram_wr_pending and not monitor_hold;
   cpu_irq_n  <= not (via_irq or uart_irq or usb_irq);
   usb_cs     <= '1' when monitor_hold = '0' and dev_sel = DEV_USB else '0';
 
@@ -215,10 +218,33 @@ begin
   vram_addr_mux <= mon_addr_lat(10 downto 0) when monitor_hold = '1' and
                    (mon_mem_state = M_VRAM_RD_WAIT or mon_mem_state = M_VRAM_RD_READY or
                     mon_mem_state = M_VRAM_WR_WAIT) else
+                   vram_wr_addr when vram_wr_pending = '1' and vic_stealing = '0' else
                    vram_addr;
   vram_we_mux <= '1' when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT and mon_we_lat = '1' else
+                 '1' when vram_wr_pending = '1' and vic_stealing = '0' else
                  '0' when vic_stealing = '1' else vram_we;
-  vram_din_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT else cpu_dout;
+  vram_din_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT else
+                  vram_wr_data when vram_wr_pending = '1' and vic_stealing = '0' else
+                  cpu_dout;
+
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      if cpu_reset_n = '0' or monitor_hold = '1' then
+        vram_wr_pending <= '0';
+        vram_wr_addr    <= (others => '0');
+        vram_wr_data    <= (others => '0');
+      elsif vram_wr_pending = '1' and vic_stealing = '0' then
+        -- Commit the deferred write through vram_*_mux on this edge.
+        vram_wr_pending <= '0';
+      elsif vram_we = '1' and vic_stealing = '1' then
+        -- A CPU write pulse would otherwise be masked while the VIC owns VRAM.
+        vram_wr_pending <= '1';
+        vram_wr_addr    <= cpu_addr(10 downto 0);
+        vram_wr_data    <= cpu_dout;
+      end if;
+    end if;
+  end process;
 
   via_cs_mux <= '1' when monitor_hold = '1' and
                 (mon_mem_state = M_VIA_WAIT or

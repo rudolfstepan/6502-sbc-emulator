@@ -286,6 +286,8 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 
 ## Documentation Index
 
+- [fpga/docs/INDEX.md](fpga/docs/INDEX.md) — FPGA documentation index for architecture, builds, board support, and real hardware HDMI captures
+- [fpga/docs/images/README.md](fpga/docs/images/README.md) — Tang Primer 20K HDMI screenshots captured from FPGA hardware through a video grabber
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, device map, audio model
 - [docs/VIC.md](docs/VIC.md) — video chip registers and rendering modes
 - [docs/KEYBOARD.md](docs/KEYBOARD.md) — keyboard mapping
