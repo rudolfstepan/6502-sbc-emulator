@@ -72,9 +72,8 @@ static bool inject_current_screen_line(VIA6522 *via) {
     size_t trimmed_len;
 
     vic_get_cursor(&cursor_x, &cursor_y);
-    (void)cursor_x;
 
-    for (int col = 0; col < SCREEN_COLS; col++) {
+    for (int col = 0; col < cursor_x && col < SCREEN_COLS; col++) {
         line[len++] = vic_read_video_ram((uint16_t)(cursor_y * SCREEN_COLS + col));
     }
 
@@ -88,16 +87,74 @@ static bool inject_current_screen_line(VIA6522 *via) {
         return push_key_sequence(via, &cr, 1);
     }
 
-    /* Move to a fresh input line first, then retype the recalled line and execute it. */
+    /* Retype the recalled line and execute it. Screen-edit characters were
+       written directly to video RAM and are not already in BASIC's input buffer. */
     line[trimmed_len++] = '\r';
-    if (!push_key_sequence(via, line + (trimmed_len - 1), 1)) {
-        return false;
+    return push_key_sequence(via, line, trimmed_len);
+}
+
+static void move_cursor_left(void) {
+    uint8_t x = 0;
+    uint8_t y = 0;
+    vic_get_cursor(&x, &y);
+    if (x > 0) {
+        x--;
+    } else if (y > 0) {
+        x = SCREEN_COLS - 1;
+        y--;
     }
-    if (!push_key_sequence(via, line, trimmed_len - 1)) {
-        return false;
+    vic_set_cursor(x, y);
+}
+
+static void move_cursor_right(void) {
+    uint8_t x = 0;
+    uint8_t y = 0;
+    vic_get_cursor(&x, &y);
+    if (x + 1 < SCREEN_COLS) {
+        x++;
+    } else if (y + 1 < SCREEN_ROWS) {
+        x = 0;
+        y++;
     }
-    line[0] = '\r';
-    return push_key_sequence(via, line, 1);
+    vic_set_cursor(x, y);
+}
+
+static void move_cursor_up(void) {
+    uint8_t x = 0;
+    uint8_t y = 0;
+    vic_get_cursor(&x, &y);
+    if (y > 0) {
+        y--;
+    }
+    vic_set_cursor(x, y);
+}
+
+static void move_cursor_down(void) {
+    uint8_t x = 0;
+    uint8_t y = 0;
+    vic_get_cursor(&x, &y);
+    if (y + 1 < SCREEN_ROWS) {
+        y++;
+    }
+    vic_set_cursor(x, y);
+}
+
+static void edit_backspace_at_cursor(void) {
+    uint8_t x = 0;
+    uint8_t y = 0;
+    vic_get_cursor(&x, &y);
+
+    if (x > 0) {
+        x--;
+    } else if (y > 0) {
+        x = SCREEN_COLS - 1;
+        y--;
+    } else {
+        return;
+    }
+
+    vic_set_cursor(x, y);
+    vic_write_video_ram((uint16_t)(y * SCREEN_COLS + x), ' ');
 }
 
 // Initialize SDL2 rendering
@@ -472,50 +529,27 @@ bool vic_sdl_handle_events(void) {
                 VIA6522 *via = get_keyboard_via();
                 if (via) {
                     SDL_Keycode key = event.key.keysym.sym;
+                    SDL_Keymod mod = SDL_GetModState();
                     uint8_t ascii = 0;
 
                     // Only handle non-printable keys here
                     switch (key) {
-                        case SDLK_LEFT: {
-                            uint8_t cursor_x;
-                            uint8_t cursor_y;
-                            vic_get_cursor(&cursor_x, &cursor_y);
-                            if (cursor_x > 0) {
-                                vic_set_cursor((uint8_t)(cursor_x - 1), cursor_y);
-                                screen_edit_mode = true;
-                            }
+                        case SDLK_LEFT:
+                            move_cursor_left();
+                            screen_edit_mode = true;
                             break;
-                        }
-                        case SDLK_RIGHT: {
-                            uint8_t cursor_x;
-                            uint8_t cursor_y;
-                            vic_get_cursor(&cursor_x, &cursor_y);
-                            if (cursor_x + 1 < SCREEN_COLS) {
-                                vic_set_cursor((uint8_t)(cursor_x + 1), cursor_y);
-                                screen_edit_mode = true;
-                            }
+                        case SDLK_RIGHT:
+                            move_cursor_right();
+                            screen_edit_mode = true;
                             break;
-                        }
-                        case SDLK_UP: {
-                            uint8_t cursor_x;
-                            uint8_t cursor_y;
-                            vic_get_cursor(&cursor_x, &cursor_y);
-                            if (cursor_y > 0) {
-                                vic_set_cursor(cursor_x, (uint8_t)(cursor_y - 1));
-                                screen_edit_mode = true;
-                            }
+                        case SDLK_UP:
+                            move_cursor_up();
+                            screen_edit_mode = true;
                             break;
-                        }
-                        case SDLK_DOWN: {
-                            uint8_t cursor_x;
-                            uint8_t cursor_y;
-                            vic_get_cursor(&cursor_x, &cursor_y);
-                            if (cursor_y + 1 < SCREEN_ROWS) {
-                                vic_set_cursor(cursor_x, (uint8_t)(cursor_y + 1));
-                                screen_edit_mode = true;
-                            }
+                        case SDLK_DOWN:
+                            move_cursor_down();
+                            screen_edit_mode = true;
                             break;
-                        }
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER:
                             if (screen_edit_mode) {
@@ -527,10 +561,33 @@ bool vic_sdl_handle_events(void) {
                             break;
                         case SDLK_BACKSPACE:
                             if (screen_edit_mode) {
-                                vic_write_char('\b');
+                                edit_backspace_at_cursor();
                             } else {
                                 ascii = '\b';  // Backspace
                             }
+                            break;
+                        case SDLK_HOME:
+                            if (mod & KMOD_SHIFT) {
+                                vic_clear_screen();
+                            } else {
+                                vic_set_cursor(0, 0);
+                            }
+                            screen_edit_mode = true;
+                            break;
+                        case SDLK_l:
+                            if (mod & KMOD_CTRL) {
+                                vic_clear_screen();
+                                screen_edit_mode = true;
+                            }
+                            break;
+                        case SDLK_c:
+                            if (mod & KMOD_CTRL) {
+                                ascii = 0x03;  // BASIC STOP / Ctrl-C
+                            }
+                            break;
+                        case SDLK_PAUSE:
+                        case SDLK_CANCEL:
+                            ascii = 0x03;      // Pause/Break as RUN-STOP
                             break;
                         default:
                             break;

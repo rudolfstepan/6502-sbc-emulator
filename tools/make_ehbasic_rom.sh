@@ -7,7 +7,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PORT_DIR="$ROOT_DIR/tools/ehbasic_port"
-WORK_DIR="/tmp/ehbasic_build_$$"
+WORK_DIR="$ROOT_DIR/tmp/ehbasic_build_$$"
 OUT_ROM="$ROOT_DIR/roms/ehbasic.rom"
 CACHE_DIR="$ROOT_DIR/tools/ehbasic_port/.cache"
 
@@ -116,6 +116,19 @@ else:
 # Convert EhBASIC's immediate #[expr] syntax to ca65's #(expr).
 text, immediate_fix_count = re.subn(r'#\[([^\]]+)\]', r'#(\1)', text)
 print(f"  Converted {immediate_fix_count} bracketed immediate expressions")
+
+# Route EhBASIC's STOP/Ctrl-C vector through the wrapper. The stock CTRLC
+# routine consumes ordinary keyboard bytes while BASIC polls for Ctrl-C.
+text, ctrlc_patch_count = re.subn(
+    r'(\.word\s+)CTRLC(\s*;\s*ctrl c check vector)',
+    r'\1EHB_CTRLC\2',
+    text,
+    count=1,
+)
+if ctrlc_patch_count != 1:
+    print("ERROR: could not patch CTRLC vector to EHB_CTRLC", file=sys.stderr)
+    sys.exit(1)
+print("  Patched Ctrl-C vector -> EHB_CTRLC")
 
 # ca65 requires labels to end with ':'. EhBASIC uses bare label lines
 # starting in column 1, while opcodes are indented.

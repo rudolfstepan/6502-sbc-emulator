@@ -88,6 +88,15 @@ PMOD 0 connector (top-left, near the MIC ARRAY silkscreen).  Keystrokes are
 automatically injected into the UART 6551 receive path so EhBASIC and the UART
 monitor see them without any software changes.
 
+Supported editing keys in BASIC:
+
+- Arrow keys move the VIC hardware cursor across the 40x25 text screen.
+- Enter after cursor movement reads the full screen line (C64-style), trims
+  trailing spaces, and replays it to BASIC with echo suppressed.
+- Home moves the cursor to the top-left cell.
+- Shift+Home or Ctrl+L clears the text screen and homes the cursor.
+- Ctrl+C sends BASIC STOP/RUN-STOP (`$03`).
+
 | PS/2 signal | FPGA pin | PMOD 0 pin | Notes                    |
 |-------------|----------|------------|--------------------------|
 | `ps2_clk`   | `T7`     | signal     | Internal pull-up enabled |

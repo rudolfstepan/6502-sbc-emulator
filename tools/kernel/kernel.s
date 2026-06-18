@@ -72,6 +72,30 @@ STRPTR_HI   = $EE
 CMD_BUF     = $0200     ; command line buffer in page 2 (64 bytes)
 CMD_MAX     = 38        ; max usable chars per command line
 
+; Screen editor replay buffer.  Used by FPGA keyboard cursor editing: when
+; Enter is pressed after moving the hardware cursor, the full screen line
+; is read (C64-style), trailing spaces trimmed, and replayed to BASIC one
+; character per CHRIN call.  CHROUT suppresses echo while POS < LEN so the
+; line is not duplicated on screen.
+SCREEN_REPLAY_BUF  = $02C0
+SCREEN_EDIT_ACTIVE = $02F0
+SCREEN_REPLAY_POS  = $02F1
+SCREEN_REPLAY_LEN  = $02F2
+SCREEN_REPLAY_CHAR = $02F3
+SCREEN_SAVED_X     = $02F4
+SCREEN_SAVED_Y     = $02F5
+SCREEN_RETURN_CHAR = $02F6
+SCREEN_PENDING_CHAR = $02F7
+SCREEN_PENDING_FLAG = $02F8
+
+KEY_CRSR_DOWN  = $11
+KEY_HOME       = $13
+KEY_CRSR_RIGHT = $1D
+KEY_CRSR_UP    = $91
+KEY_CLEAR      = $93
+KEY_CRSR_LEFT  = $9D
+KEY_BACKSPACE  = $08
+
 BASIC_ENTRY = $D000     ; BASIC ROM entry point
 
 ; ============================================================
@@ -122,6 +146,15 @@ IRQ_HANDLER:
 ; Preserves: X, Y registers (required for MS BASIC and kernel compatibility)
 ; ------------------------------------------------------------
 .proc CHROUT
+    ; Suppress echo while screen replay is active (POS < LEN).
+    ; The final CR has POS == LEN so it passes through normally.
+    pha
+    lda SCREEN_REPLAY_POS
+    cmp SCREEN_REPLAY_LEN
+    pla
+    bcs no_suppress
+    rts
+no_suppress:
     ; Save registers at entry
     pha                     ; save A
     txa
@@ -218,9 +251,19 @@ restore:
 loop:
     jsr CHRIN_NB
     bcc loop
+    pha
+    lda SCREEN_REPLAY_CHAR
+    beq echo
+    lda #0
+    sta SCREEN_REPLAY_CHAR
+    pla
+    jmp convert
+echo:
+    pla
     pha             ; save the character (CHROUT will clobber A)
     jsr CHROUT      ; echo
     pla             ; restore original character into A
+convert:
     ; convert lowercase to uppercase (a-z -> A-Z)
     cmp #'a'
     bcc done
@@ -236,23 +279,304 @@ done:
 ;             A = char, C = 1 if a key was available
 ; ------------------------------------------------------------
 .proc CHRIN_NB
+    txa
+    pha
+    tya
+    pha
+
+    lda SCREEN_PENDING_FLAG
+    beq no_pending
+    lda #0
+    sta SCREEN_PENDING_FLAG
+    lda SCREEN_PENDING_CHAR
+    jmp got_char
+
+no_pending:
+    jsr replay_next
+    bcs got_char
+
     lda UART_SR             ; check UART RX first
     and #UART_RDRF
     beq try_via
     lda UART_DATA           ; read byte (clears RDRF)
+    jsr handle_screen_key
+    bcc nothing
     jsr to_upper
-    sec
-    rts
+    jmp got_char
 try_via:
     lda VIA_IFR
     and #CA1_BIT
     beq nothing
     lda VIA_ORA
+    jsr handle_screen_key
+    bcc nothing
     jsr to_upper
+got_char:
+    sta SCREEN_RETURN_CHAR
+    pla
+    tay
+    pla
+    tax
+    lda SCREEN_RETURN_CHAR
     sec
     rts
 nothing:
+    pla
+    tay
+    pla
+    tax
     clc
+    rts
+.endproc
+
+; ------------------------------------------------------------
+; replay_next -- return the next queued screen-editor character
+;                C=1 and A=char if available, C=0 otherwise
+; ------------------------------------------------------------
+.proc replay_next
+    ldx SCREEN_REPLAY_POS
+    cpx SCREEN_REPLAY_LEN
+    bcc have
+    clc
+    rts
+have:
+    lda SCREEN_REPLAY_BUF,x
+    inx
+    stx SCREEN_REPLAY_POS
+    ldx #1
+    stx SCREEN_REPLAY_CHAR
+    sec
+    rts
+.endproc
+
+; ------------------------------------------------------------
+; handle_screen_key -- consume PETSCII-style screen editor keys
+;                      C=0 consumed, C=1 pass A through to BASIC
+; ------------------------------------------------------------
+.proc handle_screen_key
+    cmp #KEY_CRSR_LEFT
+    beq cursor_left
+    cmp #KEY_CRSR_RIGHT
+    bne :+
+    jmp cursor_right
+:
+    cmp #KEY_CRSR_UP
+    bne :+
+    jmp cursor_up
+:
+    cmp #KEY_CRSR_DOWN
+    bne :+
+    jmp cursor_down
+:
+    cmp #KEY_HOME
+    bne :+
+    jmp home
+:
+    cmp #KEY_CLEAR
+    bne :+
+    jmp clear
+:
+    cmp #KEY_BACKSPACE
+    bne :+
+    jmp edit_backspace
+:
+    cmp #$0D
+    bne pass_key
+    jmp enter
+pass_key:
+    ldx SCREEN_EDIT_ACTIVE
+    bne edit_printable
+    sec
+    rts
+
+edit_printable:
+    cmp #$20
+    bcc pass_printable
+    jsr to_upper
+    sta SCREEN_RETURN_CHAR
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    stx SCREEN_SAVED_X
+    sty SCREEN_SAVED_Y
+    jsr calc_ptr_xy
+    lda SCREEN_RETURN_CHAR
+    ldy #0
+    sta (SCRPTR_LO),y
+    ldx SCREEN_SAVED_X
+    ldy SCREEN_SAVED_Y
+    inx
+    cpx #COLS
+    bcc edit_printable_moved
+    ldx #0
+    iny
+    cpy #ROWS
+    bcc edit_printable_moved
+    ldx #(COLS-1)
+    ldy #(ROWS-1)
+edit_printable_moved:
+    jsr SETCURS
+    clc
+    rts
+pass_printable:
+    sec
+    rts
+
+cursor_left:
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    cpx #0
+    bne left_dec
+    cpy #0
+    bne left_wrap
+    jmp moved
+left_wrap:
+    ldx #(COLS-1)
+    dey
+    jmp moved
+left_dec:
+    dex
+    jmp moved
+
+cursor_right:
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    inx
+    cpx #COLS
+    bcc moved
+    ldx #0
+    iny
+    cpy #ROWS
+    bcc moved
+    ldx #(COLS-1)
+    ldy #(ROWS-1)
+    jmp moved
+
+cursor_up:
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    cpy #0
+    beq moved
+    dey
+    jmp moved
+
+cursor_down:
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    iny
+    cpy #ROWS
+    bcc moved
+    ldy #(ROWS-1)
+    jmp moved
+
+home:
+    ldx #0
+    ldy #0
+    jmp moved
+
+clear:
+    jsr CLRSCR
+    clc
+    rts
+
+edit_backspace:
+    ldx CURSOR_X
+    ldy CURSOR_Y
+    cpx #0
+    bne backspace_left
+    cpy #0
+    beq edit_backspace_done
+    ldx #(COLS-1)
+    dey
+    jmp backspace_erase
+backspace_left:
+    dex
+backspace_erase:
+    stx SCREEN_SAVED_X
+    sty SCREEN_SAVED_Y
+    jsr SETCURS
+    ldx SCREEN_SAVED_X
+    ldy SCREEN_SAVED_Y
+    jsr calc_ptr_xy
+    lda #$20
+    ldy #0
+    sta (SCRPTR_LO),y
+    ldx SCREEN_SAVED_X
+    ldy SCREEN_SAVED_Y
+    jsr SETCURS
+    lda #1
+    sta SCREEN_EDIT_ACTIVE
+edit_backspace_done:
+    clc
+    rts
+
+moved:
+    jsr SETCURS
+    lda #1
+    sta SCREEN_EDIT_ACTIVE
+    clc
+    rts
+
+enter:
+    lda SCREEN_EDIT_ACTIVE
+    bne replay_line
+    lda #$0D
+    sec
+    rts
+replay_line:
+    jsr build_screen_replay
+    rts
+.endproc
+
+; ------------------------------------------------------------
+; build_screen_replay -- read full screen line, trim trailing spaces, add CR
+;                        returns first queued char with C=1
+; ------------------------------------------------------------
+.proc build_screen_replay
+    lda CURSOR_X
+    sta SCREEN_SAVED_X
+    lda CURSOR_Y
+    sta SCREEN_SAVED_Y
+
+    ldx #0
+    ldy SCREEN_SAVED_Y
+    jsr calc_ptr_xy
+
+    ldy #0
+copy:
+    cpy #COLS
+    beq copied
+    lda (SCRPTR_LO),y
+    sta SCREEN_REPLAY_BUF,y
+    iny
+    jmp copy
+copied:
+    sty SCREEN_REPLAY_LEN
+
+trim:
+    lda SCREEN_REPLAY_LEN
+    beq add_cr
+    tax
+    dex
+    lda SCREEN_REPLAY_BUF,x
+    cmp #$20
+    bne add_cr
+    dec SCREEN_REPLAY_LEN
+    jmp trim
+
+add_cr:
+    ldx SCREEN_REPLAY_LEN
+    lda #$0D
+    sta SCREEN_REPLAY_BUF,x
+    inx
+    stx SCREEN_REPLAY_LEN
+    lda #0
+    sta SCREEN_REPLAY_POS
+    sta SCREEN_EDIT_ACTIVE
+
+    ldx #0
+    ldy SCREEN_SAVED_Y
+    jsr SETCURS
+    jsr replay_next
     rts
 .endproc
 
@@ -299,6 +623,13 @@ loop:
     sta CURSOR_Y
     sta VIC_CURSOR_X
     sta VIC_CURSOR_Y
+    sta SCREEN_EDIT_ACTIVE
+    sta SCREEN_REPLAY_POS
+    sta SCREEN_REPLAY_LEN
+    sta SCREEN_REPLAY_CHAR
+    sta SCREEN_RETURN_CHAR
+    sta SCREEN_PENDING_CHAR
+    sta SCREEN_PENDING_FLAG
     rts
 .endproc
 

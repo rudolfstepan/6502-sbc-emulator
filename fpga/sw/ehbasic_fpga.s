@@ -40,6 +40,8 @@ KERNAL_CHROUT   = $C003     ; write char A to VIC + mirror to UART
 KERNAL_CHRIN    = $C006     ; blocking read + echo (uppercase)
 KERNAL_CHRIN_NB = $C009     ; non-blocking: A=char, C=1 ready
 KERNAL_CLRSCR   = $C00C     ; clear VIC screen, home cursor
+KERNAL_PENDING_CHAR = $02F7
+KERNAL_PENDING_FLAG = $02F8
 
 ; UART hardware registers
 UART_DATA   = $8810         ; write = TX byte, read = RX byte
@@ -103,10 +105,11 @@ RESET_ENTRY:
 
     ; VEC_CC ($EA ZP BRAM) — CTRL-C check called from BASIC inner loop.
     ; Same T65 JMP-indirect timing fix as VEC_IN/OUT/LD/SV.
-    ; CTRLC is the default ctrl-c handler defined in basic.asm.
-    lda #<CTRLC
+    ; The wrapper keeps ordinary input bytes pending so STOP polling
+    ; cannot consume them before the line editor sees them.
+    lda #<EHB_CTRLC
     sta VEC_CC
-    lda #>CTRLC
+    lda #>EHB_CTRLC
     sta VEC_CC+1
 
     ; Diag R: all ZP vector writes done
@@ -185,6 +188,27 @@ disk_stub_done:
 
 msg_no_disk:
     .byte $0D, $0A, "?DISK NOT AVAILABLE", $0D, $0A, $00
+
+; ============================================================
+; EHB_CTRLC — EhBASIC STOP/Ctrl-C poll hook.
+; The stock handler reads VEC_IN and consumes every non-Ctrl-C byte while
+; BASIC is polling.  Put normal bytes back for the real input loop.
+; ============================================================
+EHB_CTRLC:
+    lda KERNAL_PENDING_FLAG
+    bne ehb_ctrlc_done
+    jsr KERNAL_CHRIN_NB
+    bcc ehb_ctrlc_done
+    cmp #$03
+    beq ehb_ctrlc_stop
+    sta KERNAL_PENDING_CHAR
+    lda #1
+    sta KERNAL_PENDING_FLAG
+ehb_ctrlc_done:
+    rts
+ehb_ctrlc_stop:
+    lda #$03
+    jmp LAB_1636
 
 ; ============================================================
 ; EHB_UART_CHROUT — direct UART TX, used as EhBASIC VEC_OUT.

@@ -72,16 +72,47 @@ architecture rtl of ps2_keyboard is
   signal connected : std_logic := '0';
 
   -- Scan code Set 2 to ASCII (unshifted / shifted)
-  function sc2_to_ascii(sc : std_logic_vector(7 downto 0);
-                         m  : std_logic_vector(7 downto 0))
+  function sc2_to_ascii(sc  : std_logic_vector(7 downto 0);
+                         m   : std_logic_vector(7 downto 0);
+                         ext : std_logic)
     return std_logic_vector is
     variable ki    : integer;
     variable shift : boolean;
+    variable ctrl  : boolean;
     variable c     : std_logic_vector(7 downto 0);
   begin
     ki    := to_integer(unsigned(sc));
     shift := (m(1) = '1') or (m(5) = '1');
+    ctrl  := (m(0) = '1') or (m(4) = '1');
     c     := x"00";
+    if ext = '1' then
+      case ki is
+        when 16#6B# => c := x"9D"; -- Cursor left
+        when 16#74# => c := x"1D"; -- Cursor right
+        when 16#75# => c := x"91"; -- Cursor up
+        when 16#72# => c := x"11"; -- Cursor down
+        when 16#6C# =>              -- Home / Shift+Home = clear screen
+          if shift then
+            c := x"93";
+          else
+            c := x"13";
+          end if;
+        when others => c := x"00";
+      end case;
+      return c;
+    end if;
+
+    if ctrl then
+      case ki is
+        when 16#21# => c := x"03"; -- Ctrl+C / RUN-STOP
+        when 16#4B# => c := x"93"; -- Ctrl+L / clear screen
+        when others => null;
+      end case;
+      if c /= x"00" then
+        return c;
+      end if;
+    end if;
+
     if not shift then
       case ki is
         when 16#1C# => c := x"61"; -- a
@@ -299,7 +330,7 @@ begin
             -- On make (not break), latch scancode and ASCII
             if is_break = '0' then
               scancode_r <= rx_byte;
-              ascii_r    <= sc2_to_ascii(rx_byte, modif_r);
+              ascii_r    <= sc2_to_ascii(rx_byte, modif_r, is_ext);
               key_ready  <= '1';
               key_ev_tog <= not key_ev_tog;
             end if;

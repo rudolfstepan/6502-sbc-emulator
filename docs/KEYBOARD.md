@@ -56,6 +56,16 @@ static inline uint8_t kb_getc_blocking(void) {
 - common punctuation
 - Enter (`0x0D`)
 - Backspace (`0x08`)
+- Arrow keys move the VIC hardware cursor around the 40x25 text screen.
+- Backspace in screen-edit mode deletes the character left of the hardware
+  cursor, including on recalled lines above the prompt.
+- Enter in screen-edit mode reads the entire screen line (all 40 columns),
+  trims trailing spaces, and replays the text to BASIC — matching C64
+  behavior.  Echo is suppressed during replay so the line is not duplicated
+  on screen.
+- Pause/Break or Ctrl+C in the SDL window sends BASIC STOP (`0x03`).
+- Home moves the cursor to the top-left cell; Shift+Home or Ctrl+L clears the
+  screen and homes the cursor.
 - ESC closes emulator window
 
 ## Related Files

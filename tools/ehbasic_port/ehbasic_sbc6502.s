@@ -23,6 +23,8 @@ KERNAL_CHROUT   = $C003
 KERNAL_CHRIN    = $C006
 KERNAL_CHRIN_NB = $C009
 KERNAL_CLRSCR   = $C00C
+KERNAL_PENDING_CHAR = $02F7
+KERNAL_PENDING_FLAG = $02F8
 
 ; UART hardware registers
 UART_DATA   = $8810
@@ -591,6 +593,27 @@ uc_char_wait:
     sta UART_DATA
 uc_done:
     rts
+
+; ============================================================
+; EHB_CTRLC -- EhBASIC STOP/Ctrl-C poll hook.
+; The stock handler reads VEC_IN and consumes every non-Ctrl-C byte while
+; BASIC is polling.  Put normal bytes back for the real input loop.
+; ============================================================
+EHB_CTRLC:
+    lda KERNAL_PENDING_FLAG
+    bne ehb_ctrlc_done
+    jsr KERNAL_CHRIN_NB
+    bcc ehb_ctrlc_done
+    cmp #$03
+    beq ehb_ctrlc_stop
+    sta KERNAL_PENDING_CHAR
+    lda #1
+    sta KERNAL_PENDING_FLAG
+ehb_ctrlc_done:
+    rts
+ehb_ctrlc_stop:
+    lda #$03
+    jmp LAB_1636
 
 ; ============================================================
 ; EhBASIC V2.22 source (patched by the build script)
