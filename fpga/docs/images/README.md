@@ -7,9 +7,6 @@ the FPGA design running on the target board. The HDMI output was recorded throug
 an external video capture device / HDMI grabber and then saved as image files for
 documentation and regression reference.
 
-Current captures include PETSCII/VIC text-mode output used to verify the FPGA
-character ROM, HDMI scanout, and CPU-to-VRAM write path.
-
 ## Captures
 
 ### Tang Primer Debug Screen
@@ -24,14 +21,34 @@ EhBASIC boot screen captured after the FPGA SD/ROM boot path starts BASIC.
 
 ![EhBASIC boot screen on FPGA HDMI](tang_primer_ehbasic_boot.jpg)
 
-### Mandelbrot BASIC Demo
+### Mandelbrot BASIC Demo (Text Mode)
 
-Mandelbrot BASIC demo output captured from the live FPGA HDMI signal.
+Mandelbrot set rendered as ASCII art in text mode (`mandelbrot.bas`). Uses
+character density mapping with 12 iterations on a 39x23 grid.
 
 ![Mandelbrot BASIC demo on FPGA HDMI](tang_primer_mandelbrot.bas.jpg)
+
+### Mandelbrot (Bitmap Mode, Monochrome)
+
+Mandelbrot set rendered in 320x200 bitmap mode with 16 iterations. Black pixels
+represent the set interior, white pixels the escaped exterior. Demonstrates the
+FPGA VIC bitmap rendering pipeline with full pixel resolution.
+
+![Mandelbrot bitmap mode on FPGA HDMI](tang_primer_mandelbrot_bw.jpg)
+
+### Bitmap Mode Graphics Test
+
+Output of `bitmaptest.bas` running in 320x200 bitmap mode. Shows a pixel-level
+border frame, diagonal lines from corner to corner, a filled rectangle, and four
+colored quadrants (red, green, cyan, yellow) using per-8x8-cell color attributes
+from color RAM. The center box has a white-on-purple color overlay.
+
+![Bitmap mode graphics test on FPGA HDMI](tang_primer_bitmap_mode.jpg)
 
 ### PETSCII Test
 
 PETSCII/VIC text-mode graphics test captured from the live FPGA HDMI output.
+Verifies the character ROM, PETSCII block/line-drawing glyphs ($60-$7F), and
+the CPU-to-VRAM write path.
 
 ![PETSCII/VIC text-mode graphics test on FPGA HDMI](tang_primer_petscii_test.jpg)
