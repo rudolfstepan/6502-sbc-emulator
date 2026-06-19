@@ -22,7 +22,7 @@ programmer-visible interfaces:
 | UART 6551 | basic TX/RX register interface, status, RX IRQ | baud generator and serial pin timing |
 | DISK MVP | stub or SPI/SD-card bridge | FAT/raw block protocol |
 | VIC | text/color RAM and VGA timing | bitmap, sprites, blitter, raster IRQ |
-| Sound | register file and square wave | all waveforms, ADSR, mixer, DAC/I2S |
+| Sound | ✅ single-voice synth (square + noise) on PT8211 DAC/I2S, Tang dock | remaining waveforms, ADSR, duration, channels 1–3 mixer |
 
 ## Verification Plan
 

@@ -12,6 +12,7 @@ Target: Sipeed Tang Primer 20K (Gowin GW2A-LV18PG256C8/I7)
 | UART           | CH340 USB-UART / pins `M11/T13` |
 | Video          | HDMI out                     |
 | Storage        | On-board microSD/SDIO slot in SPI mode |
+| Audio          | Dock PT8211 audio DAC        |
 | GPIO           | 2× 40-pin headers            |
 
 ## Toolchain
@@ -135,6 +136,38 @@ dual-purpose SSPI pins on the GW2A-18C. The build uses a Tcl script
 `set_option -use_sspi_as_gpio 1` is passed to P&R before placement runs.
 This permanently embeds the setting and avoids the `PR2017`/`PR2028` errors that
 occur when GowinEDA regenerates `device.cfg` from `.gprj` defaults.
+
+## Audio (PT8211 DAC)
+
+The dock board's PT8211 (TM8211) audio DAC is driven by the single-voice sound
+synthesizer at `$8830`–`$8839`. See [Sound Chip](../../docs/SOUND.md) for the
+register map, BASIC/assembly usage, and the C-emulator-compatible programming
+model.
+
+| Signal | FPGA pin | Notes |
+| --- | --- | --- |
+| `dac_bck` (BCK) | N15 | bit clock |
+| `dac_ws` (WS/LRCK) | P16 | word/channel select |
+| `dac_din` (DIN) | P15 | serial data, MSB first |
+| `pa_en` (PA_EN) | R16 | **amp enable — tied high; without it the amp only hisses** |
+
+Pinout matches Sipeed's `TangPrimer-20K-example/PT8211`. These pins are in Bank 1
+(VCCIO locked to 3.3 V by other ports), so they are constrained `LVCMOS33`.
+
+> The sound sources (`sound_voice.vhd`, `pt8211_dac.vhd`) must be listed in
+> `project/build.tcl` — the PowerShell build drives `gw_sh build.tcl`, not the
+> `.gprj`. If they are missing, GowinEDA synthesizes them as black boxes and the
+> DAC outputs float (hiss / silence).
+
+Quick test from BASIC:
+
+```basic
+10 POKE 34864,184 : POKE 34865,1 : REM 440 Hz
+20 POKE 34868,255 : REM volume
+30 POKE 34869,17  : REM square + gate on
+40 FOR I=1 TO 1000 : NEXT
+50 POKE 34869,0   : REM gate off
+```
 
 ## Build
 

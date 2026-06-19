@@ -61,7 +61,9 @@ rtl/core/
 │   ├── mem/char_rom.vhd           — 8×8 character patterns
 │   ├── peripherals/via6522.vhd    — VIA 6522: Timer 1 IRQ + Port B
 │   ├── peripherals/uart6551.vhd   — UART 6551: CPU TX/RX registers
-│   └── peripherals/vic_vga.vhd    — VIC: bus stealing + VGA/HDMI pixel output
+│   ├── peripherals/vic_vga.vhd    — VIC: bus stealing + VGA/HDMI pixel output
+│   ├── peripherals/sound_voice.vhd — single-voice synth (channel 0, $8830)
+│   └── peripherals/pt8211_dac.vhd  — PT8211 audio DAC I2S serializer
 
 third_party/alinx_sd/              — vendor SD-card SPI sector core
 ```
@@ -539,6 +541,27 @@ Writing to the DATA register ($8810) pulses `tx_valid` and updates `tx_data`.
 The board wrapper feeds the serializer `busy` signal back to `tx_busy`, so TDRE
 is clear while a byte is actively being transmitted and firmware can safely emit
 multi-line reset diagnostics.
+
+### `peripherals/sound_voice.vhd`
+
+Single-voice sound synthesizer (channel 0, `$8830`–`$8839`). A 24-bit
+phase-accumulator oscillator produces square and noise (16-bit Galois LFSR)
+waveforms; frequency (direct in Hz) and 8-bit volume are honoured, with the note
+gated by CONTROL bit 0. The duration and ADSR registers are accepted (so 6502
+code writing the full 10-register block does not error) but are not yet acted on.
+The register layout mirrors `src/soundchip.h`, so it is software-compatible with
+the C emulator's sound chip. Output is a signed 16-bit sample. Verified by
+`sim/tb/tb_sound_voice.vhd`.
+
+### `peripherals/pt8211_dac.vhd`
+
+I2S serializer for the dock board's PT8211 (TM8211) audio DAC. A 1:1 VHDL port of
+Sipeed's proven `pt8211_drive.v`: a free-running ~1.5 MHz BCK, MSB-first data with
+the PT8211's right-justified WS alignment, fed the signed 16-bit sample from
+`sound_voice` on both channels. Pins on the Tang Primer 20K dock are
+`dac_bck`=N15, `dac_ws`=P16, `dac_din`=P15, plus the amplifier-enable `pa_en`=R16
+(tied high in `tang20k_sbc_top.vhd`). See [Sound Chip](./SOUND.md) for the full
+register map, usage, and wiring.
 
 ---
 

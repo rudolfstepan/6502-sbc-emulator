@@ -10,6 +10,7 @@ Welcome to the 6502 SBC FPGA documentation. This directory contains comprehensiv
 - **[Building & Synthesis](./03_BUILDING.md)** - How to build and synthesize the project
 - **[Testing Guide](./04_TESTING.md)** - Test infrastructure and running tests
 - **[Component Reference](./05_COMPONENTS.md)** - Detailed specs for major components
+- **[Sound Chip](./SOUND.md)** - Single-voice synth + PT8211 DAC: register map, usage, and wiring
 - **[Simulation](./06_SIMULATION.md)** - Running and analyzing simulations
 - **[Development Guide](./07_DEVELOPMENT.md)** - Contributing and development workflow
 - **[UART Monitor](./UART_MONITOR.md)** - Hardware monitor commands and live ROM upload over UART
@@ -141,6 +142,7 @@ ROM, HDMI scanout, and CPU-to-VRAM write path.
 - ✅ PIX16 SD boot top with boot VGA status, SDRAM RAM test, and UART monitor
 - ✅ Tang Primer 20K HDMI boot/status screen, CH340 UART, and KEY1 FPGA monitor bring-up
 - ✅ Live 16 KB ROM upload into shadow ROM over UART
+- ✅ Single-voice sound chip (square + noise) on the Tang dock PT8211 DAC
 - ✅ Comprehensive documentation
 
 **In Progress**

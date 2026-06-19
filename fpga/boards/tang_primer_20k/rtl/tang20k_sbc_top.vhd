@@ -34,6 +34,7 @@ entity tang20k_sbc_top is
     dac_bck    : out std_logic;
     dac_ws     : out std_logic;
     dac_din    : out std_logic;
+    pa_en      : out std_logic;   -- dock audio power-amplifier enable (active high)
     -- HDMI TMDS differential outputs
     tmds_clk_p : out std_logic;
     tmds_clk_n : out std_logic;
@@ -205,6 +206,7 @@ begin
   reset_n <= key(0) and pll_lock;
   rst <= not reset_n;
   monitor_button <= not key(1);
+  pa_en <= '1';  -- keep dock audio power amplifier enabled (PT8211 PA_EN, active high)
   sd_ncs <= sd_ncs_i;
   sd_dclk <= sd_dclk_i;
   sd_mosi <= sd_mosi_i;

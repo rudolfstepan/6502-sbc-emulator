@@ -9,7 +9,7 @@
 //   HDMI       — TMDS pairs, LEDs, reset T10 / clock H11
 //   Litex      — buttons, LED array
 //   TangPrimer-20K-example README — SD card/SDIO pins (N10/R14/M8/N11/D15)
-//   PT8211     — audio DAC pins R16, P15, P16, N15
+//   PT8211     — audio DAC pins BCK=N15, WS=P16, DIN=P15
 //
 // The on-board SDIO pins use dual-purpose SSPI pins. Enable the corresponding
 // Dual Purpose Pin / SSPI option in GowinEDA project configuration.
@@ -91,15 +91,20 @@ IO_PORT "led[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 //   dac_bck -> BCK  (bit clock)
 //   dac_ws  -> WS   (word/channel select, LRCK)
 //   dac_din -> DIN  (serial data)
-// Pins R16/P15/P16/N15 are the dock's audio-DAC group; N15 (4th pin) is
-// left unassigned for this mono bring-up.
+// Official Sipeed Tang Primer 20K Dock pinout (PT8211 example):
+//   HP_BCK = N15, HP_WS = P16, HP_DIN = P15, PA_EN = R16 (amp enable, active high).
 // -------------------------------------------------------------------------
-IO_LOC "dac_bck" R16;
-IO_PORT "dac_bck" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "dac_ws" P15;
-IO_PORT "dac_ws" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
-IO_LOC "dac_din" P16;
-IO_PORT "dac_din" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+// Bank 1 VCCIO is locked to 3.3 V by other ports in the same bank, so these
+// pins must be LVCMOS33 (the standalone Sipeed demo omits IO_TYPE because its
+// bank is free to default to 1.8 V — not the case here).
+IO_LOC "pa_en" R16;
+IO_PORT "pa_en" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "dac_bck" N15;
+IO_PORT "dac_bck" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "dac_ws" P16;
+IO_PORT "dac_ws" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
+IO_LOC "dac_din" P15;
+IO_PORT "dac_din" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 
 // -------------------------------------------------------------------------
 // HDMI TMDS differential pairs (from manufacturer HDMI example dk_video.cst)
