@@ -95,6 +95,13 @@ architecture rtl of sbc_sdram_top is
   signal vic_cursor_y : std_logic_vector(4 downto 0) := (others => '0');
   signal vic_text_color : data_t := x"01";
   signal vic_bg_color   : data_t := x"00";
+  signal vic_mode_reg     : data_t := x"00";
+  signal vic_fetch_bitmap : std_logic;
+  signal bitmap_dout      : data_t;
+  signal bitmap_addr      : std_logic_vector(12 downto 0);
+  signal bitmap_we        : std_logic;
+  signal vram_data_sel    : std_logic := '0';
+  signal vram_data_mux    : data_t;
 
   -- SDRAM wait-state signal
   signal sdram_rdy    : std_logic;
@@ -160,12 +167,28 @@ begin
   uart_cs  <= '1'        when dev_sel = DEV_UART     else '0';
 
   -- VRAM bus mux: VIC takes bus during steal
-  vram_addr    <= vic_addr(10 downto 0) when vic_stealing = '1'
+  vram_addr    <= vic_addr(10 downto 0) when vic_stealing = '1' and vic_fetch_bitmap = '0'
                   else cpu_addr(10 downto 0);
   vram_we_mux  <= '0' when vic_stealing = '1' else vram_we;
 
+  -- Bitmap RAM bus mux
+  bitmap_addr <= std_logic_vector(resize(unsigned(vic_addr) - x"9010", 13))
+                 when vic_stealing = '1' and vic_fetch_bitmap = '1'
+                 else std_logic_vector(resize(unsigned(cpu_addr) - x"9010", 13));
+  bitmap_we   <= '0' when vic_stealing = '1'
+                 else cpu_bus_we when dev_sel = DEV_VIC_BMP else '0';
+
+  -- VIC data mux: select bitmap or VRAM data (registered to match sync RAM latency)
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      vram_data_sel <= vic_fetch_bitmap;
+    end if;
+  end process;
+  vram_data_mux <= bitmap_dout when vram_data_sel = '1' else vram_dout;
+
   -- CPU data mux
-  process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout, uart_dout)
+  process(dev_sel, zp_cs, zp_dout, sdram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout, uart_dout, bitmap_dout)
   begin
     case dev_sel is
       when DEV_SRAM =>
@@ -184,6 +207,8 @@ begin
         cpu_din <= via_dout;
       when DEV_UART =>
         cpu_din <= uart_dout;
+      when DEV_VIC_BMP =>
+        cpu_din <= bitmap_dout;
       when others =>
         cpu_din <= x"FF";
     end case;
@@ -197,6 +222,8 @@ begin
         vic_cursor_y <= (others => '0');
       elsif vic_reg_we = '1' then
         case cpu_addr(3 downto 0) is
+          when x"0" =>
+            vic_mode_reg <= cpu_dout;
           when x"1" =>
             if unsigned(cpu_dout(5 downto 0)) < to_unsigned(40, 6) then
               vic_cursor_x <= cpu_dout(5 downto 0);
@@ -216,9 +243,11 @@ begin
     end if;
   end process;
 
-  process(cpu_addr, vic_cursor_x, vic_cursor_y, vic_text_color, vic_bg_color)
+  process(cpu_addr, vic_cursor_x, vic_cursor_y, vic_text_color, vic_bg_color, vic_mode_reg)
   begin
     case cpu_addr(3 downto 0) is
+      when x"0" =>
+        vic_reg_dout <= vic_mode_reg;
       when x"1" =>
         vic_reg_dout <= "00" & vic_cursor_x;
       when x"2" =>
@@ -336,6 +365,11 @@ begin
       dout => vram_dout
     );
 
+  bitmap_ram_i : entity work.sync_ram
+    generic map (ADDR_WIDTH => 13, ASYNC_READ => false)
+    port map (clk => clk, we => bitmap_we,
+              addr => bitmap_addr, din => cpu_dout, dout => bitmap_dout);
+
   -- -------------------------------------------------------------------------
   rom_i : entity work.rom
     generic map (ADDR_WIDTH => 11, INIT_FILE => ROM_INIT_FILE, ASYNC_READ => true)
@@ -396,13 +430,15 @@ begin
       clk          => clk,
       reset_n      => reset_n,
       vic_addr     => vic_addr,
-      vram_data    => vram_dout,
+      vram_data    => vram_data_mux,
       vic_stealing => vic_stealing,
       char_addr    => char_addr,
       char_data    => char_data,
       cursor_x     => vic_cursor_x,
       cursor_y     => vic_cursor_y,
       cursor_enable => '1',
+      bitmap_mode      => vic_mode_reg(0),
+      vic_fetch_bitmap => vic_fetch_bitmap,
       vga_hs       => vga_hs,
       vga_vs       => vga_vs,
       vga_de       => open,

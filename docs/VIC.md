@@ -36,9 +36,37 @@ Text/color layout inside the 2 KB text window:
 ## Bitmap Mode
 
 - Resolution: 320×200 pixels, 1 bit per pixel
-- RAM: `$9010-$AF4F` (8000 bytes)
-- Pixel formula: `address = $9010 + Y * 40 + X / 8`, bit position = `X AND 7`
+- RAM: `$9010-$AF4F` (8000 bytes, directly accessible via PEEK/POKE)
+- Pixel formula: `address = $9010 + Y * 40 + INT(X / 8)`, bit position = `7 - (X AND 7)` (MSB-first, C64 convention)
+- Color: per-8×8 cell from color RAM at `$8400` (same as text mode), `bg[7:4] | fg[3:0]`
 - Activate: write `$01` to MODE register (`$9000`)
+- Display: 2× scaled (each bitmap pixel = 2×2 screen pixels on 640×480 VGA)
+
+### BASIC Bitmap Usage
+
+```basic
+REM Enable bitmap mode
+POKE 36864, 1
+
+REM Clear bitmap (all pixels off)
+FOR I=0 TO 7999: POKE 36880+I, 0: NEXT
+
+REM Set pixel at (X, Y)
+A=36880+Y*40+INT(X/8)
+POKE A, PEEK(A) OR 2^(7-(X AND 7))
+
+REM Clear pixel at (X, Y)
+A=36880+Y*40+INT(X/8)
+POKE A, PEEK(A) AND (255-2^(7-(X AND 7)))
+
+REM Set color for 8x8 cell at (CX, CY)
+POKE 33792+CY*40+CX, BG*16+FG
+
+REM Return to text mode
+POKE 36864, 0
+```
+
+See [examples/bitmaptest.bas](../examples/bitmaptest.bas) for a full demo.
 
 ---
 

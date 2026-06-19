@@ -182,6 +182,7 @@ PETSCII graphics write those character codes directly to VRAM.
 The VIC supports per-cell foreground and background colors using the C64 16-color
 palette. Color attributes are stored in color RAM at `$8400–$87E7`, parallel to the
 character codes at `$8000–$83E7`. Each color byte is packed as `bg[7:4] | fg[3:0]`.
+Color attributes apply to both text and bitmap modes.
 
 The VIC fetches both character and color data via two-phase bus stealing during
 H-blank. The 16-color palette is implemented as constant RGB565 lookup tables
@@ -210,6 +211,33 @@ POKE 33792+offset, color: REM direct color RAM write
 See [examples/colortest.bas](../../examples/colortest.bas) for a full demo of all
 16 colors with PETSCII art, and [docs/VIC.md](../../docs/VIC.md) for the complete
 color palette reference.
+
+### Bitmap Mode
+
+The VIC supports a 320×200 pixel bitmap mode (1 bit per pixel, 2× scaled to
+640×400 on VGA). Bitmap data is stored in a dedicated 8 KB block RAM mapped at
+`$9010–$AF4F`. Bitmap mode is activated by writing `$01` to the MODE register
+(`$9000`).
+
+During bitmap mode, the bus-stealing FSM fetches 40 bitmap bytes per scanline
+(from `$9010 + bmp_line*40`) in phase 0, and 40 color bytes (from `$8400 +
+color_row*40`) in phase 1. The bitmap byte is used directly as the pixel pattern
+— no char ROM lookup or reverse-video processing. Each 8×8 pixel cell shares one
+color attribute from color RAM, providing 16-color foreground/background per cell.
+
+**Pixel formula:** `address = $9010 + Y*40 + INT(X/8)`, bit = `7 - (X AND 7)`
+(MSB-first, C64 convention).
+
+**BASIC usage:**
+
+```basic
+POKE 36864, 1                          : REM bitmap mode on
+A=36880+Y*40+INT(X/8)                  : REM pixel address
+POKE A, PEEK(A) OR 2^(7-(X AND 7))    : REM set pixel
+POKE 36864, 0                          : REM back to text
+```
+
+See [examples/bitmaptest.bas](../../examples/bitmaptest.bas) for a full demo.
 
 The FPGA BASIC example [examples/petscii_gfx.bas](../../examples/petscii_gfx.bas)
 is intentionally a pure VRAM `POKE` demo. It avoids `PRINT CHR$(96)` for graphics

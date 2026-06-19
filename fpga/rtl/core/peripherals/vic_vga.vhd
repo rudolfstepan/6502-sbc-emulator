@@ -48,6 +48,10 @@ entity vic_vga is
     cursor_y     : in  std_logic_vector(4 downto 0);
     cursor_enable : in std_logic := '1';
 
+    -- Bitmap mode (active when $9000 bit 0 = 1)
+    bitmap_mode   : in  std_logic := '0';
+    vic_fetch_bitmap : out std_logic;
+
     -- VGA-Ausgang 640x480
     vga_hs       : out std_logic;
     vga_vs       : out std_logic;
@@ -96,6 +100,7 @@ architecture rtl of vic_vga is
   signal fetch_col      : natural range 0 to 39 := 0;
   signal fetch_store_col : natural range 0 to 39 := 0;
   signal fetch_row      : natural range 0 to 24 := 0;
+  signal fetch_bmp_line : natural range 0 to 199 := 0;
   signal fetch_valid    : std_logic := '0';
 
   -- Anzeige-Geometrie (kombinatorisch aus Scanzaehlern)
@@ -203,6 +208,7 @@ begin
   process(clk)
     variable nv : natural range 0 to V_TOT - 1;
     variable nr : natural range 0 to 24;
+    variable nb : natural range 0 to 199;
   begin
     if rising_edge(clk) then
       if reset_n = '0' then
@@ -211,6 +217,7 @@ begin
         fetch_col       <= 0;
         fetch_store_col <= 0;
         fetch_row       <= 0;
+        fetch_bmp_line  <= 0;
         fetch_valid     <= '0';
       else
         if fetching = '0' then
@@ -223,10 +230,13 @@ begin
             -- Zeichenzeile fuer naechste Scanzeile berechnen
             if nv >= V_BORD and nv < TV_END then
               nr := (nv - V_BORD) / 16;
+              nb := (nv - V_BORD) / 2;
             else
               nr := 0;
+              nb := 0;
             end if;
             fetch_row       <= nr;
+            fetch_bmp_line  <= nb;
             fetch_col       <= 0;
             fetch_store_col <= 0;
             fetch_valid     <= '0';
@@ -272,9 +282,16 @@ begin
   end process;
 
   -- Bus-Steal-Ausgaenge (kombinatorisch)
-  -- Phase 0: Zeichencodes aus $8000+, Phase 1: Farben aus $8400+
+  -- Phase 0 Text:   Zeichencodes aus $8000+
+  -- Phase 0 Bitmap: Pixeldaten aus $9010+
+  -- Phase 1:        Farben aus $8400+ (beide Modi identisch)
   vic_stealing <= fetching;
+  vic_fetch_bitmap <= fetching and (not fetch_phase) and bitmap_mode;
+
   vic_addr <= std_logic_vector(
+      to_unsigned(16#9010# + fetch_bmp_line * 40 + fetch_col, 16))
+    when fetching = '1' and fetch_phase = '0' and bitmap_mode = '1' else
+             std_logic_vector(
       to_unsigned(16#8000# + fetch_row * 40 + fetch_col, 16))
     when fetching = '1' and fetch_phase = '0' else
              std_logic_vector(
@@ -310,7 +327,9 @@ begin
                            to_integer(unsigned(cursor_y)) = crow and
                            cline >= 6
                   else '0';
-  pbit <= ((char_data(7 - cpix) xor char_code(7)) or cursor_pixel)
+  pbit <= char_code(7 - cpix)
+          when in_text = '1' and bitmap_mode = '1' else
+          ((char_data(7 - cpix) xor char_code(7)) or cursor_pixel)
           when in_text = '1' else '0';
 
   -- VGA-Sync (aktiv-low)

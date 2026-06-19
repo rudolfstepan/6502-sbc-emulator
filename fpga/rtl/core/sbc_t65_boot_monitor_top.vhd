@@ -130,6 +130,13 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal vic_cursor_y : std_logic_vector(4 downto 0) := (others => '0');
   signal vic_text_color : data_t := x"01";
   signal vic_bg_color   : data_t := x"00";
+  signal vic_mode_reg     : data_t := x"00";
+  signal vic_fetch_bitmap : std_logic;
+  signal bitmap_dout      : data_t;
+  signal bitmap_addr      : std_logic_vector(12 downto 0);
+  signal bitmap_we        : std_logic;
+  signal vram_data_sel    : std_logic := '0';
+  signal vram_data_mux    : data_t;
 
   signal char_addr   : std_logic_vector(9 downto 0);
   signal char_data   : data_t;
@@ -216,7 +223,7 @@ begin
   rom_load_data_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_ROM_WR_WAIT else
                        rom_load_data;
 
-  vram_addr   <= vic_addr(10 downto 0) when vic_stealing = '1' else cpu_addr(10 downto 0);
+  vram_addr   <= vic_addr(10 downto 0) when vic_stealing = '1' and vic_fetch_bitmap = '0' else cpu_addr(10 downto 0);
   vram_addr_mux <= mon_addr_lat(10 downto 0) when monitor_hold = '1' and
                    (mon_mem_state = M_VRAM_RD_WAIT or mon_mem_state = M_VRAM_RD_READY or
                     mon_mem_state = M_VRAM_WR_WAIT) else
@@ -225,6 +232,23 @@ begin
   vram_we_mux <= '1' when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT and mon_we_lat = '1' else
                  '1' when vram_wr_pending = '1' and vic_stealing = '0' else
                  '0' when vic_stealing = '1' else vram_we;
+
+  -- Bitmap RAM bus mux
+  bitmap_addr <= std_logic_vector(resize(unsigned(vic_addr) - x"9010", 13))
+                 when vic_stealing = '1' and vic_fetch_bitmap = '1'
+                 else std_logic_vector(resize(unsigned(cpu_addr) - x"9010", 13));
+  bitmap_we   <= '0' when vic_stealing = '1'
+                 else cpu_bus_we when dev_sel = DEV_VIC_BMP else '0';
+
+  -- VIC data mux: select bitmap or VRAM data (registered to match sync RAM latency)
+  process(clk)
+  begin
+    if rising_edge(clk) then
+      vram_data_sel <= vic_fetch_bitmap;
+    end if;
+  end process;
+  vram_data_mux <= bitmap_dout when vram_data_sel = '1' else vram_dout;
+
   vram_din_mux <= mon_wdata_lat when monitor_hold = '1' and mon_mem_state = M_VRAM_WR_WAIT else
                   vram_wr_data when vram_wr_pending = '1' and vic_stealing = '0' else
                   cpu_dout;
@@ -269,7 +293,7 @@ begin
   merged_rx_valid_cpu <= merged_rx_valid when monitor_hold = '0' else '0';
 
   process(dev_sel, zp_cs, zp_dout, sram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout,
-          uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr)
+          uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr, bitmap_dout)
   begin
     case dev_sel is
       when DEV_SRAM =>
@@ -296,6 +320,8 @@ begin
         cpu_din <= uart_dout;
       when DEV_USB =>
         cpu_din <= usb_dout;
+      when DEV_VIC_BMP =>
+        cpu_din <= bitmap_dout;
       when others =>
         cpu_din <= x"FF";
     end case;
@@ -309,6 +335,8 @@ begin
         vic_cursor_y <= (others => '0');
       elsif vic_reg_we = '1' then
         case cpu_addr(3 downto 0) is
+          when x"0" =>
+            vic_mode_reg <= cpu_dout;
           when x"1" =>
             if unsigned(cpu_dout(5 downto 0)) < to_unsigned(40, 6) then
               vic_cursor_x <= cpu_dout(5 downto 0);
@@ -328,9 +356,11 @@ begin
     end if;
   end process;
 
-  process(cpu_addr, vic_cursor_x, vic_cursor_y, vic_text_color, vic_bg_color)
+  process(cpu_addr, vic_cursor_x, vic_cursor_y, vic_text_color, vic_bg_color, vic_mode_reg)
   begin
     case cpu_addr(3 downto 0) is
+      when x"0" =>
+        vic_reg_dout <= vic_mode_reg;
       when x"1" =>
         vic_reg_dout <= "00" & vic_cursor_x;
       when x"2" =>
@@ -408,6 +438,11 @@ begin
     generic map (ADDR_WIDTH => 11, ASYNC_READ => false)
     port map (clk => clk, we => vram_we_mux,
               addr => vram_addr_mux, din => vram_din_mux, dout => vram_dout);
+
+  bitmap_ram_i : entity work.sync_ram
+    generic map (ADDR_WIDTH => 13, ASYNC_READ => false)
+    port map (clk => clk, we => bitmap_we,
+              addr => bitmap_addr, din => cpu_dout, dout => bitmap_dout);
 
   via_i : entity work.via6522
     port map (
@@ -604,13 +639,15 @@ begin
       clk          => clk,
       reset_n      => reset_n,
       vic_addr     => vic_addr,
-      vram_data    => vram_dout,
+      vram_data    => vram_data_mux,
       vic_stealing => vic_stealing,
       char_addr    => char_addr,
       char_data    => char_data,
       cursor_x     => vic_cursor_x,
       cursor_y     => vic_cursor_y,
       cursor_enable => '1',
+      bitmap_mode      => vic_mode_reg(0),
+      vic_fetch_bitmap => vic_fetch_bitmap,
       vga_hs       => vga_hs,
       vga_vs       => vga_vs,
       vga_de       => vga_de,
