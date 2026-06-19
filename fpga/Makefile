@@ -35,7 +35,8 @@ SIM = sim/tb/tb_bus_decode.vhd sim/tb/tb_sbc_reset.vhd sim/tb/tb_sbc_bus_write.v
       sim/tb/tb_sbc_t65_kernel_smoke.vhd sim/tb/tb_vic_core.vhd sim/tb/tb_char_rom.vhd \
       sim/tb/tb_sbc_t65_boot_shadow.vhd sim/tb/tb_vic_pixel_gen.vhd \
       sim/tb/tb_vic_raster_irq.vhd sim/tb/tb_sbc_vic_display.vhd \
-      sim/tb/tb_sound_voice.vhd
+      sim/tb/tb_sound_voice.vhd sim/tb/tb_vram_steal_race.vhd \
+      sim/tb/tb_vram_read_steal.vhd
 
 .PHONY: analyze roms sd-boot-image sd-boot-test-image test test-sd-boot-shadow \
         clean pix16 tang_primer_20k
@@ -84,6 +85,10 @@ test: roms
 	$(GHDL) -r $(GHDL_FLAGS) tb_sbc_vic_display $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_sound_voice
 	$(GHDL) -r $(GHDL_FLAGS) tb_sound_voice $(GHDL_RUN_FLAGS) --stop-time=5ms
+	$(GHDL) -e $(GHDL_FLAGS) tb_vram_steal_race
+	$(GHDL) -r $(GHDL_FLAGS) tb_vram_steal_race $(GHDL_RUN_FLAGS)
+	$(GHDL) -e $(GHDL_FLAGS) tb_vram_read_steal
+	$(GHDL) -r $(GHDL_FLAGS) tb_vram_read_steal $(GHDL_RUN_FLAGS) -gREAD_LATENCY_FIX=true
 	$(GHDL) -e $(GHDL_FLAGS) tb_rom_image
 	$(GHDL) -r $(GHDL_FLAGS) tb_rom_image $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_t65_adapter

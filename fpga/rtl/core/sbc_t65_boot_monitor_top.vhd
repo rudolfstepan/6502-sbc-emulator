@@ -136,6 +136,7 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal vram_wr_data    : data_t := (others => '0');
   signal vic_addr     : addr_t;
   signal vic_stealing : std_logic;
+  signal vic_stealing_d : std_logic := '0';  -- steal delayed 1 clk (read-latency cushion)
   signal vic_cursor_x : std_logic_vector(5 downto 0) := (others => '0');
   signal vic_cursor_y : std_logic_vector(4 downto 0) := (others => '0');
   signal vic_text_color : data_t := x"01";
@@ -202,11 +203,19 @@ begin
       else
         cpu_enable <= not cpu_enable;
       end if;
+      -- One-cycle-delayed copy of the steal flag. The VRAM/bitmap RAMs are
+      -- single-port with one cycle of read latency, so after a steal ends the
+      -- RAM still presents the VIC's address for one more cycle. Holding the CPU
+      -- stalled that extra cycle prevents it from latching the VIC's fetched byte
+      -- (e.g. a colour value $01) as its own VRAM read — the bug that scrolled
+      -- stray 'A' characters onto the screen. Proven by tb_vram_read_steal.
+      vic_stealing_d <= vic_stealing;
     end if;
   end process;
 
   cpu_bus_we <= cpu_we and not cpu_enable;
-  cpu_rdy    <= not vic_stealing and not vram_wr_pending and not bitmap_wr_pending and not monitor_hold;
+  cpu_rdy    <= not vic_stealing and not vic_stealing_d and
+                not vram_wr_pending and not bitmap_wr_pending and not monitor_hold;
   cpu_irq_n  <= not (via_irq or uart_irq or usb_irq);
   usb_cs     <= '1' when monitor_hold = '0' and dev_sel = DEV_USB else '0';
 
