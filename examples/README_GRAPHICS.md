@@ -1,85 +1,85 @@
 # VIC Graphics Test
 
-Umfassendes Test-Programm für den VIC Bitmap-Modus (320x200 Pixel).
+Comprehensive test program for the VIC bitmap mode (320x200 pixels).
 
-## Schnellstart
+## Quick Start
 
 ```bash
-# Programm ist bereits in data/disk/basic.prg
+# Program is already in data/disk/basic.prg
 ./sbc6502
 ```
 
-Im Emulator:
+In the emulator:
 ```
 BASIC
 LOAD
 RUN
 ```
 
-## Was das Programm testet
+## What the Program Tests
 
-Das Programm führt 6 verschiedene Grafik-Tests durch:
+The program runs 6 different graphics tests:
 
-1. **Horizontale Linien** - Zeichnet horizontale Linien im Abstand von 20 Pixeln
-2. **Vertikale Linien** - Zeichnet vertikale Linien im Abstand von 32 Pixeln
-3. **Schachbrett-Muster** - Zeichnet ein Checkerboard-Muster
-4. **Rechteck** - Zeichnet ein Rechteck (50,40) bis (270,160)
-5. **Diagonale Linie** - Zeichnet eine Diagonale von oben-links nach unten-rechts
-6. **Vollbild** - Füllt den gesamten Bildschirm mit weißen Pixeln
+1. **Horizontal Lines** — Draws horizontal lines spaced 20 pixels apart
+2. **Vertical Lines** — Draws vertical lines spaced 32 pixels apart
+3. **Checkerboard Pattern** — Draws a checkerboard pattern
+4. **Rectangle** — Draws a rectangle from (50,40) to (270,160)
+5. **Diagonal Line** — Draws a diagonal from top-left to bottom-right
+6. **Full Screen** — Fills the entire screen with white pixels
 
-Jeder Test wird für ca. 2 Sekunden angezeigt, dann wird der Bildschirm gelöscht und der nächste Test startet.
+Each test is displayed for about 2 seconds, then the screen is cleared and the next test starts.
 
-## Technische Details
+## Technical Details
 
-**Memory-Map:**
+**Memory Map:**
 - VIC Control Register: `$9000` (36864)
-  - Wert `0`: Text-Modus (40x25)
-  - Wert `1`: Bitmap-Modus (320x200)
-- Bitmap RAM: `$9010-$AF4F` (36880-44879, 8000 Bytes)
+  - Value `0`: Text mode (40x25)
+  - Value `1`: Bitmap mode (320x200)
+- Bitmap RAM: `$9010-$AF4F` (36880-44879, 8000 bytes)
 
-**Pixel-Formel:**
+**Pixel Formula:**
 ```basic
 X = 0-319  (horizontal)
-Y = 0-199  (vertikal)
-BYTE_OFFSET = Y * 40 + X / 8
-BIT_POSITION = X AND 7
+Y = 0-199  (vertical)
+BYTE_OFFSET = Y * 40 + INT(X / 8)
+BIT_POSITION = 7 - (X AND 7)
 ADDRESS = 36880 + BYTE_OFFSET
 ```
 
-**Pixel setzen:**
+**Set pixel:**
 ```basic
 POKE ADDRESS, PEEK(ADDRESS) OR (2^BIT_POSITION)
 ```
 
-**Pixel löschen:**
+**Clear pixel:**
 ```basic
 POKE ADDRESS, PEEK(ADDRESS) AND (255 - 2^BIT_POSITION)
 ```
 
-## Eigene Programme erstellen
+## Creating Your Own Programs
 
-**Von Text-Datei:**
+**From a text file:**
 ```bash
-# Programm in examples/mygfx.txt erstellen
+# Create program in examples/mygfx.txt
 nano examples/mygfx.txt
 
-# Konvertieren
+# Convert
 python3 tools/basic_convert.py examples/mygfx.txt data/disk/basic.prg
 
-# Laden im Emulator
+# Load in emulator
 ./sbc6502
 BASIC
 LOAD
 RUN
 ```
 
-**Minimales Beispiel:**
+**Minimal example:**
 ```basic
 10 REM Switch to graphics
 20 POKE 36864,1
 30 REM Draw pixel at (100,50)
-40 A=36880+(50*40+100/8)
-50 POKE A,PEEK(A) OR (2^(100 AND 7))
+40 A=36880+(50*40+INT(100/8))
+50 POKE A,PEEK(A) OR 2^(7-(100 AND 7))
 60 REM Wait for key
 70 GET K$: IF K$="" THEN 70
 80 REM Back to text mode
@@ -87,14 +87,14 @@ RUN
 100 END
 ```
 
-## Weitere Beispiele
+## More Examples
 
-- `examples/hello.txt` - Einfaches Hello World
-- `examples/graphics.txt` - Interaktive Grafik-Demo
-- `examples/gfxtest.txt` - Dieser automatische Test (154 Zeilen)
+- `examples/hello.txt` — Simple Hello World
+- `examples/graphics.txt` — Interactive graphics demo
+- `examples/gfxtest.txt` — This automated test (154 lines)
 
-## Performance-Hinweise
+## Performance Notes
 
-- Das Zeichnen von vielen Pixeln ist langsam (BASIC interpretiert)
-- Delay-Loops (`FOR W=1 TO 2000: NEXT W`) sind ungefähr, nicht exakt
-- Für schnellere Grafik: Assembler-Routinen via `SYS` nutzen
+- Drawing many pixels is slow (BASIC is interpreted)
+- Delay loops (`FOR W=1 TO 2000: NEXT W`) are approximate, not exact
+- For faster graphics: use assembly routines via `SYS`
