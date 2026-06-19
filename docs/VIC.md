@@ -265,7 +265,52 @@ The SDL backend opens a 640×400 window (2× scale) and renders VIC state at the
 
 ---
 
-## Basic Usage Examples
+## FPGA Color Support
+
+The FPGA VIC implements per-cell color attributes, stored in color RAM at `$8400-$87E7` (offset `$400` within the 2 KB VRAM window). Each byte encodes `background[7:4] | foreground[3:0]` using the 16-color C64 palette.
+
+The kernel automatically writes the current color with each character output. Color is controlled via VIC registers:
+
+| Register | Address | BASIC POKE | Description |
+|---|---|---|---|
+| TEXT_COLOR | `$9003` | `POKE 36867, fg` | Foreground color (0–15) |
+| BG_COLOR | `$9004` | `POKE 36868, bg` | Background color (0–15) |
+
+### BASIC Color Examples
+
+```basic
+REM Set green text on black background
+POKE 36867, 5
+
+REM Set white text on blue background
+POKE 36867, 1 : POKE 36868, 6
+
+REM Print colored text
+POKE 36867, 2 : PRINT "RED TEXT"
+POKE 36867, 7 : PRINT "YELLOW TEXT"
+POKE 36867, 1 : POKE 36868, 0 : REM Reset to white on black
+
+REM Direct color RAM write (cell at row 0, col 0)
+REM Color byte = bg * 16 + fg
+POKE 33792, 6*16+1 : REM White on blue for first cell
+```
+
+### Color Palette
+
+| Value | Color | Value | Color |
+|---|---|---|---|
+| 0 | Black | 8 | Orange |
+| 1 | White | 9 | Brown |
+| 2 | Red | 10 | Light red |
+| 3 | Cyan | 11 | Dark gray |
+| 4 | Purple | 12 | Gray |
+| 5 | Green | 13 | Light green |
+| 6 | Blue | 14 | Light blue |
+| 7 | Yellow | 15 | Light gray |
+
+---
+
+## Assembly Usage Examples
 
 ```asm
 ; Write 'A' to first screen cell
@@ -287,6 +332,10 @@ LDA #5  : STA $9002
 ; Set foreground color to white (1), background to blue (6)
 LDA #1  : STA $9003
 LDA #6  : STA $9004
+
+; Direct color RAM: set cell (0,0) to yellow on blue
+LDA #$67         ; bg=6 (blue), fg=7 (yellow)
+STA $8400        ; color RAM offset 0
 ```
 
 ---

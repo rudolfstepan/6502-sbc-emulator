@@ -82,14 +82,17 @@ architecture rtl of vic_vga is
   signal hc       : natural range 0 to H_TOT - 1 := 0;
   signal vc       : natural range 0 to V_TOT - 1 := 0;
 
-  -- 40-Byte Zeilenpuffer (Zeichencodes der aktuellen Zeile)
+  -- 40-Byte Zeilenpuffer (Zeichencodes und Farbattribute der aktuellen Zeile)
   type linebuf_t is array (0 to 39) of data_t;
   signal linebuf  : linebuf_t := (others => (others => '0'));
+  signal colorbuf : linebuf_t := (others => x"01");  -- default: white on black
   attribute ram_style : string;
-  attribute ram_style of linebuf : signal is "distributed";
+  attribute ram_style of linebuf  : signal is "distributed";
+  attribute ram_style of colorbuf : signal is "distributed";
 
-  -- Fetch-Zustandsautomat
+  -- Fetch-Zustandsautomat (2-Phasen: Phase 0 = Zeichencodes, Phase 1 = Farben)
   signal fetching       : std_logic := '0';
+  signal fetch_phase    : std_logic := '0';  -- 0=char, 1=color
   signal fetch_col      : natural range 0 to 39 := 0;
   signal fetch_store_col : natural range 0 to 39 := 0;
   signal fetch_row      : natural range 0 to 24 := 0;
@@ -105,10 +108,37 @@ architecture rtl of vic_vga is
   signal cpix     : natural range 0 to 7  := 0;
 
   signal char_code : data_t;
+  signal cell_color : data_t;
   signal pbit      : std_logic;
   signal cursor_pixel   : std_logic;
   signal cursor_visible : std_logic := '1';
   signal cursor_cnt     : natural range 0 to CURSOR_BLINK_DIV - 1 := 0;
+
+  -- C64-Farbpalette (16 Farben, Pepto-Palette, RGB565)
+  type pal5_t is array (0 to 15) of std_logic_vector(4 downto 0);
+  type pal6_t is array (0 to 15) of std_logic_vector(5 downto 0);
+
+  constant PAL_R : pal5_t := (
+    "00000", "11111", "10001", "01101",   -- black, white, red, cyan
+    "10001", "01011", "01000", "11000",   -- purple, green, blue, yellow
+    "10001", "01011", "10111", "01010",   -- orange, brown, light red, dark gray
+    "01111", "10011", "01111", "10100"    -- gray, light green, light blue, light gray
+  );
+  constant PAL_G : pal6_t := (
+    "000000", "111111", "001110", "101110",
+    "010000", "101000", "001100", "110100",
+    "011001", "010010", "011010", "010100",
+    "011110", "111000", "011010", "101000"
+  );
+  constant PAL_B : pal5_t := (
+    "00000", "11111", "00110", "11000",
+    "10011", "01001", "10010", "01110",
+    "00110", "00000", "01100", "01010",
+    "01111", "10001", "11001", "10100"
+  );
+
+  signal fg_index : natural range 0 to 15;
+  signal bg_index : natural range 0 to 15;
 
 begin
   -- Pixel-clock enable: divide by CLK_DIV (2 for 50 MHz, 1 for 27 MHz)
@@ -177,6 +207,7 @@ begin
     if rising_edge(clk) then
       if reset_n = '0' then
         fetching        <= '0';
+        fetch_phase     <= '0';
         fetch_col       <= 0;
         fetch_store_col <= 0;
         fetch_row       <= 0;
@@ -199,26 +230,41 @@ begin
             fetch_col       <= 0;
             fetch_store_col <= 0;
             fetch_valid     <= '0';
+            fetch_phase     <= '0';
             fetching        <= '1';
           end if;
         else
+          -- fetch_col Vorlauf: Adresse einen Takt vor Datenuebernahme ausgeben.
+          -- Steht VOR dem Phasencheck, damit fetch_col<=0 beim Phasenwechsel
+          -- als spaetere Zuweisung gewinnt (VHDL last-assignment rule).
+          if fetch_col < 39 then
+            fetch_col <= fetch_col + 1;
+          end if;
+
           -- Einen Takt nach Ausgabe der Adresse liegt das synchrone VRAM-Datum an.
           if fetch_valid = '1' then
-            linebuf(fetch_store_col) <= vram_data;
+            if fetch_phase = '0' then
+              linebuf(fetch_store_col) <= vram_data;
+            else
+              colorbuf(fetch_store_col) <= vram_data;
+            end if;
             if fetch_store_col = 39 then
-              fetching    <= '0';
-              fetch_valid <= '0';
+              if fetch_phase = '0' then
+                -- Zeichencodes fertig, jetzt Farbattribute holen
+                fetch_phase     <= '1';
+                fetch_col       <= 0;
+                fetch_store_col <= 0;
+                fetch_valid     <= '0';
+              else
+                -- Beide Phasen fertig
+                fetching    <= '0';
+                fetch_valid <= '0';
+              end if;
             else
               fetch_store_col <= fetch_store_col + 1;
             end if;
           else
             fetch_valid <= '1';
-          end if;
-
-          if fetch_col < 39 then
-            fetch_col <= fetch_col + 1;
-          else
-            fetch_col <= 39;
           end if;
         end if;
       end if;
@@ -226,9 +272,13 @@ begin
   end process;
 
   -- Bus-Steal-Ausgaenge (kombinatorisch)
+  -- Phase 0: Zeichencodes aus $8000+, Phase 1: Farben aus $8400+
   vic_stealing <= fetching;
   vic_addr <= std_logic_vector(
       to_unsigned(16#8000# + fetch_row * 40 + fetch_col, 16))
+    when fetching = '1' and fetch_phase = '0' else
+             std_logic_vector(
+      to_unsigned(16#8400# + fetch_row * 40 + fetch_col, 16))
     when fetching = '1' else (others => '0');
 
   -- Anzeige-Geometrie: col/row auf gueltigen Bereich klemmen
@@ -241,8 +291,11 @@ begin
   cline <= (v_off / 2) mod 8;
   cpix  <= (hc  / 2) mod 8;
 
-  -- Zeichencode aus Zeilenpuffer
-  char_code <= linebuf(col) when in_text = '1' else x"00";
+  -- Zeichencode und Farbattribut aus Zeilenpuffer
+  char_code  <= linebuf(col)  when in_text = '1' else x"00";
+  cell_color <= colorbuf(col) when in_text = '1' else x"00";
+  fg_index   <= to_integer(unsigned(cell_color(3 downto 0)));
+  bg_index   <= to_integer(unsigned(cell_color(7 downto 4)));
 
   -- Char-ROM-Adresse: char_code[6:0] & cline[2:0]
   char_addr <= char_code(6 downto 0) &
@@ -265,9 +318,9 @@ begin
   vga_vs <= '0' when vc >= V_SS and vc < V_SE else '1';
   vga_de <= '1' when hc < H_VIS and vc < V_VIS else '0';
 
-  -- VGA-Farbe: weiss auf schwarz
-  vga_r <= "11111"  when pbit = '1' else "00000";
-  vga_g <= "111111" when pbit = '1' else "000000";
-  vga_b <= "11111"  when pbit = '1' else "00000";
+  -- VGA-Farbe: Palette-Lookup (Vordergrund bei pbit=1, Hintergrund bei pbit=0)
+  vga_r <= PAL_R(fg_index) when pbit = '1' else PAL_R(bg_index);
+  vga_g <= PAL_G(fg_index) when pbit = '1' else PAL_G(bg_index);
+  vga_b <= PAL_B(fg_index) when pbit = '1' else PAL_B(bg_index);
 
 end architecture;

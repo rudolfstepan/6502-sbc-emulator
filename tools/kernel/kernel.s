@@ -88,6 +88,10 @@ SCREEN_RETURN_CHAR = $02F6
 SCREEN_PENDING_CHAR = $02F7
 SCREEN_PENDING_FLAG = $02F8
 
+VIC_TEXT_COLOR = $9003          ; foreground color register (0-15)
+VIC_BG_COLOR   = $9004          ; background color register (0-15)
+VIC_COLOR_BASE = $8400          ; color RAM: per-cell bg[7:4] | fg[3:0]
+
 KEY_CRSR_DOWN  = $11
 KEY_HOME       = $13
 KEY_CRSR_RIGHT = $1D
@@ -130,11 +134,10 @@ IRQ_HANDLER:
     txs                     ; init stack pointer
     lda #$00
     sta VIA_DDRA            ; VIA Port A = all input (keyboard)
-    ; VIA IER left at $00 -- all VIA interrupts disabled.
-    ; The kernel polls IFR directly (CHRIN_NB), so no CPU IRQ is needed.
-    ; Enabling CA1 in IER caused BASIC to crash: BASIC calls CLI in its
-    ; float/time routines, which lets the pending keyboard IRQ fire and
-    ; jump to the RESET vector ($C000 = INIT), resetting the system.
+    lda #$01                ; white
+    sta VIC_TEXT_COLOR
+    lda #$00                ; black
+    sta VIC_BG_COLOR
     jsr CLRSCR
     jsr show_welcome
     ; Auto-start BASIC (like C64)
@@ -187,6 +190,7 @@ no_suppress:
     jsr to_upper            ; lowercase ASCII overlaps PETSCII graphics
     ldy #0
     sta (SCRPTR_LO),y      ; write character
+    jsr write_color_attr   ; write color to $8400+offset
     pla
     tax
     pla
@@ -223,6 +227,7 @@ backspace:
     lda #$20
     ldy #0
     sta (SCRPTR_LO),y
+    jsr write_color_attr
     pla
     tax
     pla
@@ -402,6 +407,7 @@ edit_printable:
     lda SCREEN_RETURN_CHAR
     ldy #0
     sta (SCRPTR_LO),y
+    jsr write_color_attr
     ldx SCREEN_SAVED_X
     ldy SCREEN_SAVED_Y
     inx
@@ -500,6 +506,7 @@ backspace_erase:
     lda #$20
     ldy #0
     sta (SCRPTR_LO),y
+    jsr write_color_attr
     ldx SCREEN_SAVED_X
     ldy SCREEN_SAVED_Y
     jsr SETCURS
@@ -604,20 +611,38 @@ clrscr_diag:
     lda #'*'
     sta UART_DATA
     pla
+    ; Fill character area ($8000-$83FF) with spaces
     lda #<VIC_BASE
     sta SCRPTR_LO
     lda #>VIC_BASE
     sta SCRPTR_HI
     lda #$20                ; space character
     ldy #0
-    ldx #8                  ; 8 x 256 = 2048 bytes
-loop:
+    ldx #4                  ; 4 x 256 = 1024 bytes
+char_loop:
     sta (SCRPTR_LO),y
     iny
-    bne loop
+    bne char_loop
     inc SCRPTR_HI
     dex
-    bne loop
+    bne char_loop
+    ; SCRPTR_HI is now $84 (start of color area)
+    ; Fill color area ($8400-$87FF) with composed color byte
+    lda VIC_BG_COLOR
+    asl a
+    asl a
+    asl a
+    asl a
+    ora VIC_TEXT_COLOR
+    ldy #0
+    ldx #4                  ; 4 x 256 = 1024 bytes
+color_loop:
+    sta (SCRPTR_LO),y
+    iny
+    bne color_loop
+    inc SCRPTR_HI
+    dex
+    bne color_loop
     lda #0
     sta CURSOR_X
     sta CURSOR_Y
@@ -715,8 +740,7 @@ done:
     tya
     pha                     ; save Y
 
-    ; Copy 24 * 40 = 960 bytes from row 1 to row 0 without using a second
-    ; zero-page pointer; EhBASIC leaves only one safe ZP pointer pair.
+    ; Copy 24 * 40 = 960 bytes from row 1 to row 0 (character codes)
     ldx #0
 copy0:
     lda VIC_BASE + COLS,x
@@ -740,10 +764,10 @@ copy3:
     lda VIC_BASE + COLS + $300,x
     sta VIC_BASE + $300,x
     inx
-    cpx #192                ; $C0 = remaining bytes in the fourth page
+    cpx #192
     bne copy3
 
-    ; clear last row: VIC_BASE + 24*40 = $83C0
+    ; clear last character row
     lda #$20
     ldx #0
 clr:
@@ -751,6 +775,47 @@ clr:
     inx
     cpx #COLS
     bne clr
+
+    ; Scroll color RAM ($8400-$87C0) — same pattern as character scroll
+    ldx #0
+ccopy0:
+    lda VIC_COLOR_BASE + COLS,x
+    sta VIC_COLOR_BASE,x
+    inx
+    bne ccopy0
+
+ccopy1:
+    lda VIC_COLOR_BASE + COLS + $100,x
+    sta VIC_COLOR_BASE + $100,x
+    inx
+    bne ccopy1
+
+ccopy2:
+    lda VIC_COLOR_BASE + COLS + $200,x
+    sta VIC_COLOR_BASE + $200,x
+    inx
+    bne ccopy2
+
+ccopy3:
+    lda VIC_COLOR_BASE + COLS + $300,x
+    sta VIC_COLOR_BASE + $300,x
+    inx
+    cpx #192
+    bne ccopy3
+
+    ; clear last color row with composed color byte
+    lda VIC_BG_COLOR
+    asl a
+    asl a
+    asl a
+    asl a
+    ora VIC_TEXT_COLOR
+    ldx #0
+cclr:
+    sta VIC_COLOR_BASE + (ROWS-1)*COLS,x
+    inx
+    cpx #COLS
+    bne cclr
 
     ; Restore registers in reverse order
     pla
@@ -791,6 +856,25 @@ add_x:
     bcc done
     inc SCRPTR_HI
 done:
+    rts
+.endproc
+
+; ------------------------------------------------------------
+; write_color_attr -- write CUR_COLOR to color RAM at SCRPTR+$0400
+;                     Y must be 0. Clobbers A, SCRPTR_HI.
+; ------------------------------------------------------------
+.proc write_color_attr
+    lda SCRPTR_HI
+    clc
+    adc #$04
+    sta SCRPTR_HI
+    lda VIC_BG_COLOR
+    asl a
+    asl a
+    asl a
+    asl a
+    ora VIC_TEXT_COLOR
+    sta (SCRPTR_LO),y
     rts
 .endproc
 

@@ -57,7 +57,7 @@ failure while the CPU remains held.
 | --- | --- | --- | --- |
 | $0000-$01FF | 512 B | Internal FPGA RAM | Zero page and stack, no external wait states |
 | $0200-$7FFF | ~31.5 KB | Main RAM | PIX16 uses SDRAM-backed RAM; current Tang bring-up uses internal BSRAM |
-| $8000-$87FF | 2 KB | VIC text VRAM | Shared by CPU/monitor/VIC |
+| $8000-$87FF | 2 KB | VIC text/color VRAM | $8000–$83E7 chars, $8400–$87E7 colors; shared by CPU/monitor/VIC |
 | $8800-$880F | 16 B | VIA 6522 | Port B bit 0 -> board LED 1 after boot |
 | $8810-$8813 | 4 B | UART 6551 | CPU UART registers |
 | $C000-$FFFF | 16 KB | Shadow ROM RAM | Loaded from SD or patched by UART monitor |
@@ -100,9 +100,11 @@ failure while the CPU remains held.
 │                               ┌────────────────────────────┐   │
 │                               │       vic_vga              │   │
 │                               │  - VGA timing (h/v counters│   │
-│                               │  - Line buffer (40 bytes)  │   │
-│                               │  - Bus steal FSM           │──►│ vic_stealing
+│                               │  - Char line buffer (40 B) │   │
+│                               │  - Color line buffer (40 B)│   │
+│                               │  - 2-phase bus steal FSM   │──►│ vic_stealing
 │                               │  - char_rom lookup         │   │
+│                               │  - 16-color C64 palette    │   │
 │                               │  - VGA RGB + sync output   │   │
 │                               └────────────┬───────────────┘   │
 │                                            │                    │
@@ -114,7 +116,7 @@ failure while the CPU remains held.
 
 ### Bus Stealing — C64-Style Shared Bus
 
-The VIC and CPU share a single-port VRAM via a bus multiplexer. During each horizontal blanking interval the VIC takes control of the bus for 41 clock cycles to prefetch one complete character row into its internal line buffer. The first cycle presents the address to synchronous VRAM; the following 40 cycles latch the returned character bytes. The CPU is halted during this time via the T65 `RDY` pin.
+The VIC and CPU share a single-port VRAM via a bus multiplexer. During each horizontal blanking interval the VIC takes control of the bus in two phases to prefetch one complete row of character codes and color attributes into internal line buffers. Phase 0 fetches 40 character bytes from `$8000+`, phase 1 fetches 40 color bytes from `$8400+`. Each phase takes 41 clock cycles (1 setup + 40 reads). The CPU is halted during this time via the T65 `RDY` pin.
 
 ```
 One scan line = 1600 system clock cycles (800 pixel clocks × 2)
@@ -124,14 +126,15 @@ One scan line = 1600 system clock cycles (800 pixel clocks × 2)
 │   VIC displays from line buffer (no bus access)                 │
 │                                                                 │
 ├── H-Blank (320 cycles) ──────────────────────────────────────┤
-│   ├── 41 stolen cycles ──────────────────────────────────────┤ │
-│   │   1 setup cycle + 40 synchronous VRAM reads into linebuf │ │
+│   ├── 82 stolen cycles ──────────────────────────────────────┤ │
+│   │   Phase 0: 1 setup + 40 char reads into linebuf          │ │
+│   │   Phase 1: 1 setup + 40 color reads into colorbuf        │ │
 │   │   CPU held (RDY=0) while the VIC owns the VRAM bus.      │ │
-│   ├── 279 remaining cycles ──────────────────────────────────┤ │
+│   ├── 238 remaining cycles ──────────────────────────────────┤ │
 │   │   CPU runs freely                                         │ │
 ```
 
-**CPU overhead:** 41 stolen out of 1600 = about 2.6% per scan line.
+**CPU overhead:** 82 stolen out of 1600 = about 5.1% per scan line.
 
 CPU writes to `$8000-$87FF` are never discarded while the VIC owns VRAM. The
 active SD boot cores (`sbc_t65_boot_monitor_top` and `sbc_t65_sdram_boot_top`)
@@ -147,7 +150,7 @@ the display is active.
 | --- | --- | --- | --- |
 | $0000–$01FF | 512 B | Internal FPGA RAM | Zero page and stack, no external wait states |
 | $0200–$0FFF | 3.5 KB | CPU SRAM | General RAM for the minimal build |
-| $8000–$87FF | 2 KB | VRAM | Shared single-port; CPU writes, VIC reads |
+| $8000–$87FF | 2 KB | VRAM | Chars at $8000+, colors at $8400+; shared single-port |
 | $8800–$880F | 16 B | VIA 6522 | Timer 1 → IRQ; Port B → board LEDs |
 | $8810–$8813 | 4 B | UART 6551 | TX byte stream |
 | $F800–$FFFF | 2 KB | ROM | Kernel + reset vector at $FFFC |
@@ -173,6 +176,40 @@ bit 7 = reverse video).
 range, so keyboard/UART input is mapped to A–Z in `CHRIN_NB` before BASIC sees it,
 and `CHROUT` also maps lowercase output to uppercase text. Programs that need raw
 PETSCII graphics write those character codes directly to VRAM.
+
+### Color Support
+
+The VIC supports per-cell foreground and background colors using the C64 16-color
+palette. Color attributes are stored in color RAM at `$8400–$87E7`, parallel to the
+character codes at `$8000–$83E7`. Each color byte is packed as `bg[7:4] | fg[3:0]`.
+
+The VIC fetches both character and color data via two-phase bus stealing during
+H-blank. The 16-color palette is implemented as constant RGB565 lookup tables
+(Pepto-style C64 colors) in `vic_vga.vhd`.
+
+**VIC color registers** (active in all top-level modules):
+
+| Address | Register | Default | Description |
+| --- | --- | --- | --- |
+| `$9003` | TEXT_COLOR | 1 (white) | Foreground color index 0–15 |
+| `$9004` | BG_COLOR | 0 (black) | Background color index 0–15 |
+
+The kernel reads these registers and writes the composed color byte (`bg<<4 | fg`)
+to color RAM with every character output. `CLRSCR` fills color RAM with the current
+color, and `SCROLL` scrolls color RAM alongside character data.
+
+**BASIC usage:**
+
+```basic
+POKE 36867, 5           : REM green text
+POKE 36868, 6           : REM blue background
+PRINT "HELLO"           : REM green on blue
+POKE 33792+offset, color: REM direct color RAM write
+```
+
+See [examples/colortest.bas](../../examples/colortest.bas) for a full demo of all
+16 colors with PETSCII art, and [docs/VIC.md](../../docs/VIC.md) for the complete
+color palette reference.
 
 The FPGA BASIC example [examples/petscii_gfx.bas](../../examples/petscii_gfx.bas)
 is intentionally a pure VRAM `POKE` demo. It avoids `PRINT CHR$(96)` for graphics

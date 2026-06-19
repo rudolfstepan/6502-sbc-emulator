@@ -93,6 +93,8 @@ architecture rtl of sbc_minimal_top is
   signal vic_stealing : std_logic;
   signal vic_cursor_x : std_logic_vector(5 downto 0) := (others => '0');
   signal vic_cursor_y : std_logic_vector(4 downto 0) := (others => '0');
+  signal vic_text_color : data_t := x"01";  -- $9003: foreground color (default: white)
+  signal vic_bg_color   : data_t := x"00";  -- $9004: background color (default: black)
 
   -- Char ROM
   signal char_addr : std_logic_vector(9 downto 0);
@@ -180,6 +182,10 @@ begin
             if unsigned(cpu_dout(4 downto 0)) < to_unsigned(25, 5) then
               vic_cursor_y <= cpu_dout(4 downto 0);
             end if;
+          when x"3" =>
+            vic_text_color <= cpu_dout;
+          when x"4" =>
+            vic_bg_color <= cpu_dout;
           when others =>
             null;
         end case;
@@ -187,13 +193,17 @@ begin
     end if;
   end process;
 
-  process(cpu_addr, vic_cursor_x, vic_cursor_y)
+  process(cpu_addr, vic_cursor_x, vic_cursor_y, vic_text_color, vic_bg_color)
   begin
     case cpu_addr(3 downto 0) is
       when x"1" =>
         vic_reg_dout <= "00" & vic_cursor_x;
       when x"2" =>
         vic_reg_dout <= "000" & vic_cursor_y;
+      when x"3" =>
+        vic_reg_dout <= vic_text_color;
+      when x"4" =>
+        vic_reg_dout <= vic_bg_color;
       when others =>
         vic_reg_dout <= x"00";
     end case;
