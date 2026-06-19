@@ -36,6 +36,30 @@ FPGA VIC bitmap rendering pipeline with full pixel resolution.
 
 ![Mandelbrot bitmap mode on FPGA HDMI](tang_primer_mandelbrot_bw.jpg)
 
+### Mandelbrot (Bitmap Mode, Color)
+
+Mandelbrot set rendered in 320x200 bitmap mode with 16 iterations. Black pixels
+represent the set interior, white pixels the escaped exterior. Demonstrates the
+FPGA VIC bitmap rendering pipeline with full pixel resolution.
+
+![Mandelbrot color bitmap mode on FPGA HDMI](tang_primer_mandelbrot_col.jpg)
+
+
+### Mandelbrot (Bitmap Mode, Color, Assembler)
+
+Mandelbrot set rendered in 320x200 bitmap mode with 16 iterations. Black pixels
+represent the set interior, white pixels the escaped exterior. Demonstrates the
+FPGA VIC bitmap rendering pipeline with full pixel resolution.
+
+The first image showed an issue with the vic stealing cpu cycles form the cpu
+therefore some black artefacts did remain. The second image is after the fix
+has been applied.
+
+![Mandelbrot color bitmap mode on FPGA HDMI](tang_primer_mandelbrot_asm_def.jpg)
+![Mandelbrot color bitmap mode on FPGA HDMI](tang_primer_mandelbrot_asm_fixed.jpg)
+
+
+
 ### Bitmap Mode Graphics Test
 
 Output of `bitmaptest.bas` running in 320x200 bitmap mode. Shows a pixel-level

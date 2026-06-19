@@ -23,6 +23,16 @@ Takes approximately 20 minutes at 1 MHz — watch it draw line by line, classic 
 RUN
 ```
 
+### mandelbrot3.bas — Mandelbrot (Bitmap Mode)
+
+Full 320x200 pixel Mandelbrot set in 16-color bitmap mode. Uses a rainbow color gradient (blue, cyan, green, yellow, red, purple) mapped to iteration count. The Mandelbrot set itself is black.
+
+Optimized code — watch it draw line by line, classic 8-bit style.
+
+```
+RUN
+```
+
 Press any key to return to text mode when finished.
 
 ### colortest.bas — Color Palette Test
