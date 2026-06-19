@@ -85,3 +85,7 @@ fpga/sw/*.o
 !fpga/boards/*/bitstreams/*.prm
 !fpga/boards/*/bitstreams/*.mcs
 !fpga/boards/*/bitstreams/*.cfi
+
+pix16
+fpga/boards/pix16/project/*.bit
+fpga/fpga

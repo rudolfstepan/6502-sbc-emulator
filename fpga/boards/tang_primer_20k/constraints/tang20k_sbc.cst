@@ -87,6 +87,21 @@ IO_LOC "led[3]" N16;
 IO_PORT "led[3]" IO_TYPE=LVCMOS33 PULL_MODE=UP DRIVE=8;
 
 // -------------------------------------------------------------------------
+// PT8211 (TM8211) audio DAC on the dock board.
+//   dac_bck -> BCK  (bit clock)
+//   dac_ws  -> WS   (word/channel select, LRCK)
+//   dac_din -> DIN  (serial data)
+// Pins R16/P15/P16/N15 are the dock's audio-DAC group; N15 (4th pin) is
+// left unassigned for this mono bring-up.
+// -------------------------------------------------------------------------
+IO_LOC "dac_bck" R16;
+IO_PORT "dac_bck" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "dac_ws" P15;
+IO_PORT "dac_ws" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+IO_LOC "dac_din" P16;
+IO_PORT "dac_din" IO_TYPE=LVCMOS33 PULL_MODE=NONE DRIVE=8;
+
+// -------------------------------------------------------------------------
 // HDMI TMDS differential pairs (from manufacturer HDMI example dk_video.cst)
 // Only the P-side pin is constrained; GowinEDA automatically assigns the N
 // side when IO_TYPE=LVCMOS33D is set on the P pin.

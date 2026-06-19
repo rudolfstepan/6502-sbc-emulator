@@ -30,6 +30,10 @@ entity tang20k_sbc_top is
     -- PS/2 keyboard on PMOD GPIO (directly active-low, open-collector)
     ps2_clk    : in std_logic;
     ps2_data   : in std_logic;
+    -- PT8211 audio DAC (dock board)
+    dac_bck    : out std_logic;
+    dac_ws     : out std_logic;
+    dac_din    : out std_logic;
     -- HDMI TMDS differential outputs
     tmds_clk_p : out std_logic;
     tmds_clk_n : out std_logic;
@@ -366,6 +370,9 @@ begin
       uart_tx_valid => uart_tx_valid,
       uart_tx_busy  => uart_tx_busy,
       via_portb     => via_portb,
+      dac_bck       => dac_bck,
+      dac_ws        => dac_ws,
+      dac_din       => dac_din,
       ps2_clk       => ps2_clk,
       ps2_data      => ps2_data,
       usb_connected => usb_connected,

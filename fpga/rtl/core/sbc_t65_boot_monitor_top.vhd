@@ -42,6 +42,11 @@ entity sbc_t65_boot_monitor_top is
 
     via_portb   : out data_t;
 
+    -- PT8211 audio DAC (I2S-style serial output)
+    dac_bck     : out std_logic;
+    dac_ws      : out std_logic;
+    dac_din     : out std_logic;
+
     -- PS/2 keyboard (directly on PMOD GPIO pins)
     ps2_clk  : in std_logic;
     ps2_data : in std_logic;
@@ -90,6 +95,11 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal vic_reg_dout : data_t;
   signal via_dout    : data_t;
   signal uart_dout   : data_t;
+
+  signal sound0_cs   : std_logic;
+  signal sound0_we   : std_logic;
+  signal sound0_dout : data_t;
+  signal sound0_sample : std_logic_vector(15 downto 0);
 
   signal zp_cs       : std_logic;
   signal zp_we       : std_logic;
@@ -208,6 +218,9 @@ begin
   via_cs  <= '1'        when monitor_hold = '0' and dev_sel = DEV_VIA      else '0';
   uart_cs <= '1'        when monitor_hold = '0' and dev_sel = DEV_UART     else '0';
 
+  sound0_cs <= '1'        when monitor_hold = '0' and dev_sel = DEV_SOUND0 else '0';
+  sound0_we <= cpu_bus_we when monitor_hold = '0' and dev_sel = DEV_SOUND0 else '0';
+
   zp_we_mux   <= '1' when monitor_hold = '1' and mon_mem_state = M_ZP_WAIT and mon_we_lat = '1' else zp_we;
   zp_addr_mux <= mon_addr_lat(8 downto 0) when monitor_hold = '1' and
                  (mon_mem_state = M_ZP_WAIT or mon_mem_state = M_ZP_READY) else cpu_addr(8 downto 0);
@@ -323,7 +336,8 @@ begin
   merged_rx_valid_cpu <= merged_rx_valid when monitor_hold = '0' else '0';
 
   process(dev_sel, zp_cs, zp_dout, sram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout,
-          uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr, bitmap_dout)
+          uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr, bitmap_dout,
+          sound0_dout)
   begin
     case dev_sel is
       when DEV_SRAM =>
@@ -352,6 +366,8 @@ begin
         cpu_din <= usb_dout;
       when DEV_VIC_BMP =>
         cpu_din <= bitmap_dout;
+      when DEV_SOUND0 =>
+        cpu_din <= sound0_dout;
       when others =>
         cpu_din <= x"FF";
     end case;
@@ -488,6 +504,30 @@ begin
       porta_out => open,
       portb_out => via_portb,
       irq       => via_irq
+    );
+
+  -- ── Sound: single-voice synth (channel 0) + PT8211 DAC ────────────────
+  sound0_i : entity work.sound_voice
+    generic map (CLK_HZ => CLK_HZ)
+    port map (
+      clk     => clk,
+      reset_n => cpu_reset_n,
+      cs      => sound0_cs,
+      we      => sound0_we,
+      addr    => cpu_addr(3 downto 0),
+      din     => cpu_dout,
+      dout    => sound0_dout,
+      sample  => sound0_sample
+    );
+
+  dac_i : entity work.pt8211_dac
+    port map (
+      clk     => clk,
+      reset_n => cpu_reset_n,
+      sample  => sound0_sample,
+      dac_bck => dac_bck,
+      dac_ws  => dac_ws,
+      dac_din => dac_din
     );
 
   uart_i : entity work.uart6551
