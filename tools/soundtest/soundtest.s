@@ -29,6 +29,7 @@ V0_ATK       = $8836
 V0_DEC       = $8837
 V0_SUS       = $8838
 V0_REL       = $8839
+TIME_MS      = $883A       ; free-running milliseconds, wraps every 256 ms
 
 ; Voice 1 ($8890)
 V1_FLO       = $8890
@@ -73,6 +74,7 @@ dly_cnt      = $02
 sweep_lo     = $03
 sweep_hi     = $04
 sweep_cnt    = $05    ; loop counter for intro_sweep (X is clobbered by delay)
+dly_start    = $06
 
 ; ============================================================
 .segment "CODE"
@@ -463,19 +465,19 @@ arp_done:
 .endproc
 
 ; ============================================================
-; delay_25ms_units -- wait A * ~25ms (at 1 MHz)
+; delay_25ms_units -- wait A * 25ms, independent of CPU clock
 ; ============================================================
 .proc delay_25ms_units
     STA dly_cnt
 delay_outer:
-    LDX #25
-delay_mid:
-    LDY #200
-delay_inner:
-    DEY
-    BNE delay_inner
-    DEX
-    BNE delay_mid
+    LDA TIME_MS
+    STA dly_start
+delay_tick:
+    LDA TIME_MS
+    SEC
+    SBC dly_start
+    CMP #25
+    BCC delay_tick
     DEC dly_cnt
     BNE delay_outer
     RTS

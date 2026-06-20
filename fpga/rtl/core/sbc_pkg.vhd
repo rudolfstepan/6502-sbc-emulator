@@ -42,7 +42,7 @@ package sbc_pkg is
 
   -- Sound synthesizer channel 0 (10 bytes)
   constant ADDR_SOUND0_BASE     : unsigned(15 downto 0) := x"8830";
-  constant ADDR_SOUND0_LAST     : unsigned(15 downto 0) := x"8839";
+  constant ADDR_SOUND0_LAST     : unsigned(15 downto 0) := x"883A";
 
   -- VIC Blit engine: Hardware graphics blitter (16 bytes)
   constant ADDR_VIC_BLIT_BASE   : unsigned(15 downto 0) := x"8840";

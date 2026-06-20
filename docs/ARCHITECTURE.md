@@ -30,6 +30,7 @@ The emulator uses both fixed and configurable regions.
 
 - `$8000-$87FF`: VIC text/color RAM
 - `$8830-$8839`: SOUND Voice 0 (10 registers)
+- `$883A`: SOUND free-running millisecond counter (low 8 bits)
 - `$8840-$884F`: VIC blitter registers
 - `$8850-$888F`: VIC sprite registers (8 × 8 bytes)
 - `$8890-$8899`: SOUND Voice 1 (10 registers)

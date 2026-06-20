@@ -15,7 +15,7 @@ static const float INV_PI = 0.31830988618379067154f;
 
 /* ── Per-voice state ────────────────────────────────────────── */
 typedef struct {
-    uint8_t regs[SOUND_REG_COUNT];   /* register file (CPU-visible) */
+    uint8_t regs[SOUND_REG_COUNT];   /* writable per-voice registers */
 
     /* note parameters — captured at trigger time, read by callback */
     float frequency;
@@ -226,7 +226,11 @@ void soundchip_shutdown(void)
 uint8_t soundchip_voice_read(void *dev, uint16_t offset)
 {
     int vi = (int)(uintptr_t)dev;
-    if ((unsigned)vi >= SOUND_VOICES || offset >= SOUND_REG_COUNT)
+    if ((unsigned)vi >= SOUND_VOICES)
+        return 0xFF;
+    if (vi == 0 && offset == SOUND_TIME_MS)
+        return (uint8_t)SDL_GetTicks();
+    if (offset >= SOUND_REG_COUNT)
         return 0xFF;
     return voices[vi].regs[offset];
 }

@@ -261,7 +261,7 @@ int main(int argc, char *argv[])
                  vic_sprite_data_read, vic_sprite_data_write, NULL);
 
     bus_register(&bus, "SOUND0", (void*)(uintptr_t)0,
-                 SOUND_VOICE0_BASE, SOUND_REG_COUNT,
+                 SOUND_VOICE0_BASE, SOUND0_REG_COUNT,
                  soundchip_voice_read, soundchip_voice_write, NULL);
     bus_register(&bus, "SOUND1", (void*)(uintptr_t)1,
                  SOUND_VOICE1_BASE, SOUND_REG_COUNT,

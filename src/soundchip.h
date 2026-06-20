@@ -31,7 +31,8 @@
  */
 
 #define SOUND_VOICES    4
-#define SOUND_REG_COUNT 10
+#define SOUND_REG_COUNT  10
+#define SOUND0_REG_COUNT 11  /* voice 0 +10: free-running milliseconds */
 
 /* Voice base addresses (for memory-map documentation / assembly code) */
 #define SOUND_VOICE0_BASE  0x8830U
@@ -50,6 +51,7 @@ enum {
     SOUND_DECAY   = 7,
     SOUND_SUSTAIN = 8,
     SOUND_RELEASE = 9,
+    SOUND_TIME_MS = 10,
 };
 
 void    soundchip_init(void);

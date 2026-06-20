@@ -55,6 +55,11 @@ Channel 0 occupies **`$8830`–`$8839`** (decimal `34864`–`34873`). Offsets ma
 | `$8837` | 34871 | +7 | DECAY | *accepted, unused* |
 | `$8838` | 34872 | +8 | SUSTAIN | *accepted, unused* |
 | `$8839` | 34873 | +9 | RELEASE | *accepted, unused* |
+| `$883A` | 34874 | +10 | TIME_MS | free-running millisecond counter, low 8 bits |
+
+`TIME_MS` is independent of CPU speed and wraps every 256 ms. Software should
+subtract a saved start value from the current value; unsigned subtraction then
+handles wraparound naturally for delays shorter than 256 ms.
 
 ### CONTROL register (`$8835`)
 

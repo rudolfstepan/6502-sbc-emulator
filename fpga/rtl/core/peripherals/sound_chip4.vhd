@@ -40,13 +40,33 @@ entity sound_chip4 is
 end entity;
 
 architecture rtl of sound_chip4 is
+  constant MS_DIV : positive := CLK_HZ / 1000;
   type dout_arr   is array (0 to 3) of data_t;
   type sample_arr is array (0 to 3) of std_logic_vector(15 downto 0);
 
   signal v_dout   : dout_arr;
   signal v_sample : sample_arr;
   signal v_active : std_logic_vector(3 downto 0);
+  signal ms_div_count : natural range 0 to MS_DIV-1 := 0;
+  signal ms_counter   : unsigned(7 downto 0) := (others => '0');
 begin
+
+  -- CPU-independent timebase.  Voice 0 offset 10 ($883A) exposes the low
+  -- byte of a free-running millisecond counter for tempo/delay generation.
+  timebase_proc : process(clk)
+  begin
+    if rising_edge(clk) then
+      if reset_n = '0' then
+        ms_div_count <= 0;
+        ms_counter <= (others => '0');
+      elsif ms_div_count = MS_DIV-1 then
+        ms_div_count <= 0;
+        ms_counter <= ms_counter + 1;
+      else
+        ms_div_count <= ms_div_count + 1;
+      end if;
+    end if;
+  end process;
 
   gen_voices : for i in 0 to 3 generate
     voice_i : entity work.sound_voice_full
@@ -65,7 +85,8 @@ begin
   end generate;
 
   -- read mux: return the selected voice's register, else $FF
-  dout <= v_dout(0) when cs(0) = '1' else
+  dout <= std_logic_vector(ms_counter) when cs(0) = '1' and addr = "1010" else
+          v_dout(0) when cs(0) = '1' else
           v_dout(1) when cs(1) = '1' else
           v_dout(2) when cs(2) = '1' else
           v_dout(3) when cs(3) = '1' else

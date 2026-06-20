@@ -45,7 +45,7 @@ begin
     -- 0x8824-0x882F: Disk controller (12 bytes)
     elsif in_range(addr, ADDR_DISK_BASE, ADDR_DISK_LAST) then
       sel <= DEV_DISK;
-    -- 0x8830-0x8839: Sound synthesizer channel 0 (10 bytes)
+    -- 0x8830-0x883A: Sound channel 0 plus free-running millisecond counter
     elsif in_range(addr, ADDR_SOUND0_BASE, ADDR_SOUND0_LAST) then
       sel <= DEV_SOUND0;
     -- 0x8840-0x844F: VIC hardware blitter (16 bytes)
