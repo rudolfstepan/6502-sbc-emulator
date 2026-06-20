@@ -16,77 +16,10 @@ tools/roms/
 data/disk/*.prg
 !data/disk/.gitkeep
 
-# ── Xilinx ISE generated files ────────────────────────────────────────────────
-fpga/boards/pix16/project/_ngo/
-fpga/boards/pix16/project/_xmsgs/
-fpga/boards/pix16/project/impact_xdb/
-fpga/boards/pix16/project/iseconfig/
-fpga/boards/pix16/project/planAhead_run_*/
-fpga/boards/pix16/project/xlnx_auto_*_xdb/
-fpga/boards/pix16/project/xst/
-fpga/boards/pix16/project/*.bgn
-fpga/boards/pix16/project/*.bit
-fpga/boards/pix16/project/*.bld
-fpga/boards/pix16/project/*.cmd_log
-fpga/boards/pix16/project/*.csv
-fpga/boards/pix16/project/*.drc
-fpga/boards/pix16/project/*.gise
-fpga/boards/pix16/project/*.html
-fpga/boards/pix16/project/*.ipf
-fpga/boards/pix16/project/*.jou
-fpga/boards/pix16/project/*.lso
-fpga/boards/pix16/project/*.map
-fpga/boards/pix16/project/*.mrp
-fpga/boards/pix16/project/*.ncd
-fpga/boards/pix16/project/*.ngc
-fpga/boards/pix16/project/*.ngd
-fpga/boards/pix16/project/*.ngm
-fpga/boards/pix16/project/*.ngr
-fpga/boards/pix16/project/*.pad
-fpga/boards/pix16/project/*_pad.txt
-fpga/boards/pix16/project/*.par
-fpga/boards/pix16/project/*.pcf
-fpga/boards/pix16/project/*.ppr
-fpga/boards/pix16/project/*.prj
-fpga/boards/pix16/project/*.ptwx
-fpga/boards/pix16/project/*.stx
-fpga/boards/pix16/project/*.syr
-fpga/boards/pix16/project/*.twr
-fpga/boards/pix16/project/*.twx
-fpga/boards/pix16/project/*.unroutes
-fpga/boards/pix16/project/*.ut
-fpga/boards/pix16/project/*.xpi
-fpga/boards/pix16/project/*.xrpt
-fpga/boards/pix16/project/*.xsl
-fpga/boards/pix16/project/*.xst
-fpga/boards/pix16/project/*.xwbt
-fpga/boards/pix16/project/planAhead_pid*.debug
-fpga/boards/pix16/project/*_summary.xml
-fpga/boards/pix16/project/*_usage.xml
-fpga/boards/pix16/project/webtalk*.xml
-fpga/boards/pix16/project/webtalk.log
-fpga/boards/pix16/project/*_webtalk.html
-
-# ── GowinEDA generated files ──────────────────────────────────────────────────
-fpga/boards/tang_primer_20k/project/impl/
-fpga/boards/tang_primer_20k/project/tmp/
-fpga/boards/tang_primer_20k/project/*.gprj.user
-
-# ── 6502 assembly build artifacts ─────────────────────────────────────────────
-fpga/sw/*.bin
-fpga/sw/*.lst
-fpga/sw/*.map
-fpga/sw/*.o
-
-# ── FPGA programming files (keep only in boards/*/bitstreams/) ────────────────
+# ── FPGA programming files (fpga is now a submodule with its own .gitignore) ──
 *.prm
 *.mcs
 *.cfi
-!fpga/boards/*/bitstreams/*.prm
-!fpga/boards/*/bitstreams/*.mcs
-!fpga/boards/*/bitstreams/*.cfi
 
 pix16
-fpga/boards/pix16/project/*.bit
-fpga/fpga
 sid_demo

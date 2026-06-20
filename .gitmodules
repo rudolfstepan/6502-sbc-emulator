@@ -1,0 +1,3 @@
+[submodule "fpga"]
+	path = fpga
+	url = https://github.com/rudolfstepan/6502-sbc-fpga.git
