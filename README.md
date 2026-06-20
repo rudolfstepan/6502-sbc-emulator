@@ -18,6 +18,22 @@ A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an in
 
 ## Quick Start
 
+Clone with the FPGA submodule (the `fpga/` tree lives in its own repository,
+[rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga)):
+
+```sh
+git clone --recurse-submodules https://github.com/rudolfstepan/6502-sbc-emulator.git
+```
+
+If you already cloned without `--recurse-submodules`, fetch it afterwards:
+
+```sh
+git submodule update --init
+```
+
+The emulator itself builds without the submodule; you only need it for the FPGA
+RTL, simulation, and board flows.
+
 Build:
 
 ```sh
@@ -306,6 +322,19 @@ roms/       ROM binaries
 docs/       documentation
 examples/   sample code
 data/disk/  host-backed BASIC disk files
+fpga/       FPGA implementation (git submodule → 6502-sbc-fpga)
+```
+
+The `fpga/` directory is a **git submodule** pointing at
+[rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga). Its
+build reuses ROMs and kernel sources from this repository (via `../roms/` and
+`../../tools/kernel/`), so run the FPGA flows with the submodule checked out
+inside this repo. To update the pinned submodule revision after pulling FPGA
+changes:
+
+```sh
+git -C fpga pull origin main
+git add fpga && git commit -m "fpga: bump submodule"
 ```
 
 ## License

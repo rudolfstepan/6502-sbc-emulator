@@ -2,7 +2,7 @@
 
 ## Scope
 
-This repository contains a C99-based 6502 SBC emulator, helper ROM generators, and documentation.
+This repository contains a C99-based 6502 SBC emulator, helper ROM generators, and documentation. The FPGA implementation lives in a separate repository, [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga), linked here as a git submodule at `fpga/`. Clone with `--recurse-submodules` (or run `git submodule update --init`) when working on the FPGA side.
 
 ## Development Workflow
 

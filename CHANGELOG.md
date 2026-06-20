@@ -4,6 +4,19 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### FPGA extracted into a standalone repository (git submodule)
+
+- The `fpga/` tree (RTL, simulation, board flows, 6502 firmware) now lives in its
+  own repository, [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga),
+  with its full 85-commit history preserved (exported via `git subtree split`).
+- It is re-linked here as a **git submodule** at the original `fpga/` path, so the
+  directory layout is unchanged. Clone with `--recurse-submodules`, or run
+  `git submodule update --init` after a plain clone.
+- The FPGA build still reuses parent ROMs and kernel sources via `../roms/` and
+  `../../tools/kernel/`, so it builds when checked out inside this repo. Removed the
+  now-obsolete `fpga/*` rules from the top-level `.gitignore` (they live in the
+  submodule's own `.gitignore`).
+
 ### Tang Primer 20K — reset button (KEY0 / dock S0)
 
 - Fixed the `key[0]` pin: the dock's **S0** reset button is FPGA pin `T10`, not
