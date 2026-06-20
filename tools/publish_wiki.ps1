@@ -165,6 +165,10 @@ $sidebar = @(
     "- [MS BASIC Text Converter]($repoUrl/wiki/MS-BASIC-Text-Converter)",
     "- [VIC Graphics Test]($repoUrl/wiki/VIC-Graphics-Test)",
     "",
+    "## FPGA",
+    "- [FPGA Repository](https://github.com/rudolfstepan/6502-sbc-fpga)",
+    "- [FPGA Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki)",
+    "",
     "## Project",
     "- [Third-Party Components]($repoUrl/wiki/Third-Party-Components)",
     "- [Changelog]($repoUrl/wiki/Changelog)",
@@ -175,7 +179,10 @@ $sidebar = @(
 )
 Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "_Sidebar.md") -Value ($sidebar -join "`n")
 
-$footer = "Generated from [$Repo]($repoUrl) Markdown documentation."
+$fpgaRepoUrl = "https://github.com/rudolfstepan/6502-sbc-fpga"
+$footer = "Generated from [$Repo]($repoUrl) Markdown documentation. " +
+    "FPGA hardware track: [6502-sbc-fpga]($fpgaRepoUrl) " +
+    "([FPGA Wiki]($fpgaRepoUrl/wiki))."
 Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "_Footer.md") -Value $footer
 
 Push-Location $wikiPath
