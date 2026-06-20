@@ -4,6 +4,25 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Tang Primer 20K — 54 MHz SBC clock
+
+- Reworked the HDMI/SBC clock tree around one 270 MHz PLL root: `/2` generates
+  the 135 MHz TMDS serializer clock, `/5` generates the 54 MHz SBC clock, and a
+  second `/5` from the TMDS branch restores the serializer's required 27 MHz
+  pixel clock.
+- Doubled the T65's maximum effective bus rate from 13.5 MHz to 27 MHz while
+  retaining its proven two-phase synchronous-memory bus protocol.
+- Added a registered 54 MHz renderer output stage and a falling-edge handoff
+  into the HDMI path, keeping RGB, sync, and data-enable aligned across the
+  related 54/27 MHz clock boundary.
+- Updated all clock-derived parameters: VIC and boot VGA pixel enables, sound
+  phase/envelope timing, PT8211 BCK, UART baud generators, SD low/high-speed SPI,
+  PS/2 timeouts, cursor blink, and boot diagnostics.
+- Added T65-only multicycle timing constraints. Final Gowin place-and-route
+  reports zero setup and hold violations at 54 MHz (54.4 MHz post-route Fmax).
+- Corrected `key[1]` from the incompatible `LVCMOS15` declaration to
+  `LVCMOS33`, matching the bank voltage and removing the `CT1136` P&R failure.
+
 ### FPGA VIC/PETSCII graphics
 
 - Added PETSCII block/line glyph coverage for the C/SDL VIC font at `$60-$7F`,

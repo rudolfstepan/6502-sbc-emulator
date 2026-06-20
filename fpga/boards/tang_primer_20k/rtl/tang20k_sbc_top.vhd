@@ -1,13 +1,13 @@
 -- Tang Primer 20K board top — 6502 SBC with HDMI output.
 --
--- Clock: 27 MHz on-board oscillator -> rPLL in tang20k_hdmi_tx generates
---   135 MHz (TMDS bit clock) and 27 MHz (PLL-synchronised system clock).
+-- Clock: 27 MHz oscillator -> 270 MHz PLL root -> 135 MHz TMDS,
+--   54 MHz SBC system clock, and 27 MHz pixel clock.
 --
 -- Video: vic_vga runs at CLK_DIV=1 (27 MHz pixel), 858x525 total (CEA 480p),
 --   giving 640x480 @ 31.47 kHz H / 59.94 Hz V.  Encoded to DVI TMDS over HDMI.
 --
 -- KEY[0] = T5  (LVCMOS33, active-low reset)
--- KEY[1] = T3  (LVCMOS15, active-low UART monitor enter / CPU hold)
+-- KEY[1] = T3  (LVCMOS33, active-low UART monitor enter / CPU hold)
 -- LED[0]/LED[1] show boot status until boot_done, then LED[3:0] follow VIA PB[3:0].
 library ieee;
 use ieee.std_logic_1164.all;
@@ -126,7 +126,8 @@ architecture rtl of tang20k_sbc_top is
     );
   end component;
 
-  signal clk_sys      : std_logic;   -- 27 MHz from rPLL (synchronised to 5x)
+  signal clk_sys      : std_logic;   -- 54 MHz from HDMI clock tree
+  signal clk_pix      : std_logic;   -- 27 MHz HDMI pixel clock
   signal pll_lock     : std_logic;
   signal reset_n      : std_logic;
   signal rst          : std_logic;
@@ -142,6 +143,12 @@ architecture rtl of tang20k_sbc_top is
   signal vga_hs       : std_logic;
   signal vga_vs       : std_logic;
   signal vga_de       : std_logic;
+  signal vga_mux_r    : std_logic_vector(4 downto 0);
+  signal vga_mux_g    : std_logic_vector(5 downto 0);
+  signal vga_mux_b    : std_logic_vector(4 downto 0);
+  signal vga_mux_hs   : std_logic;
+  signal vga_mux_vs   : std_logic;
+  signal vga_mux_de   : std_logic;
   signal sbc_vga_r    : std_logic_vector(4 downto 0);
   signal sbc_vga_g    : std_logic_vector(5 downto 0);
   signal sbc_vga_b    : std_logic_vector(4 downto 0);
@@ -212,12 +219,36 @@ begin
   sd_mosi <= sd_mosi_i;
   boot_vga_active <= (not boot_done) or boot_error or monitor_active;
 
-  vga_r  <= boot_vga_r  when boot_vga_active = '1' else sbc_vga_r;
-  vga_g  <= boot_vga_g  when boot_vga_active = '1' else sbc_vga_g;
-  vga_b  <= boot_vga_b  when boot_vga_active = '1' else sbc_vga_b;
-  vga_hs <= boot_vga_hs when boot_vga_active = '1' else sbc_vga_hs;
-  vga_vs <= boot_vga_vs when boot_vga_active = '1' else sbc_vga_vs;
-  vga_de <= boot_vga_de when boot_vga_active = '1' else sbc_vga_de;
+  vga_mux_r  <= boot_vga_r  when boot_vga_active = '1' else sbc_vga_r;
+  vga_mux_g  <= boot_vga_g  when boot_vga_active = '1' else sbc_vga_g;
+  vga_mux_b  <= boot_vga_b  when boot_vga_active = '1' else sbc_vga_b;
+  vga_mux_hs <= boot_vga_hs when boot_vga_active = '1' else sbc_vga_hs;
+  vga_mux_vs <= boot_vga_vs when boot_vga_active = '1' else sbc_vga_vs;
+  vga_mux_de <= boot_vga_de when boot_vga_active = '1' else sbc_vga_de;
+
+  -- Register the complete renderer output together before the related-clock
+  -- handoff in tang20k_hdmi_tx. This removes long combinational 54->27 MHz
+  -- paths while preserving RGB/sync/data-enable alignment.
+  process(clk_sys)
+  begin
+    if rising_edge(clk_sys) then
+      if reset_n = '0' then
+        vga_r  <= (others => '0');
+        vga_g  <= (others => '0');
+        vga_b  <= (others => '0');
+        vga_hs <= '1';
+        vga_vs <= '1';
+        vga_de <= '0';
+      else
+        vga_r  <= vga_mux_r;
+        vga_g  <= vga_mux_g;
+        vga_b  <= vga_mux_b;
+        vga_hs <= vga_mux_hs;
+        vga_vs <= vga_mux_vs;
+        vga_de <= vga_mux_de;
+      end if;
+    end if;
+  end process;
 
   process(clk_sys)
   begin
@@ -231,6 +262,10 @@ begin
   end process;
 
   sd_i : sd_card_top
+    generic map (
+      SPI_LOW_SPEED_DIV  => 268,
+      SPI_HIGH_SPEED_DIV => 2
+    )
     port map (
       clk                    => clk_sys,
       rst                    => rst,
@@ -273,7 +308,7 @@ begin
     );
 
   boot_debug_i : entity work.boot_debug_uart
-    generic map (STATUS_DIV => 27_000_000)
+    generic map (STATUS_DIV => 54_000_000)
     port map (
       clk             => clk_sys,
       reset_n         => reset_n,
@@ -303,7 +338,7 @@ begin
 
 
   monitor_rx_i : entity work.uart_rx_ser
-    generic map (CLK_HZ => 27_000_000, BAUD => BAUD)
+    generic map (CLK_HZ => 54_000_000, BAUD => BAUD)
     port map (
       clk     => clk_sys,
       reset_n => reset_n,
@@ -344,7 +379,7 @@ begin
     );
 
   sbc_i : entity work.sbc_t65_boot_monitor_top
-    generic map (CLK_HZ => 27_000_000, BAUD => BAUD)
+    generic map (CLK_HZ => 54_000_000, BAUD => BAUD)
     port map (
       clk           => clk_sys,
       reset_n       => reset_n,
@@ -395,7 +430,7 @@ begin
     );
 
   boot_vga_i : entity work.boot_vga_debug
-    generic map (CLK_DIV => 1)
+    generic map (CLK_DIV => 2)
     port map (
       clk             => clk_sys,
       reset_n         => reset_n,
@@ -436,7 +471,7 @@ begin
     );
 
   uart_ser_i : entity work.uart_tx_ser
-    generic map (CLK_HZ => 27_000_000, BAUD => BAUD)
+    generic map (CLK_HZ => 54_000_000, BAUD => BAUD)
     port map (
       clk     => clk_sys,
       reset_n => reset_n,
@@ -463,7 +498,8 @@ begin
       vga_r      => vga_r,
       vga_g      => vga_g,
       vga_b      => vga_b,
-      clk_pix    => clk_sys,
+      clk_sys    => clk_sys,
+      clk_pix    => clk_pix,
       pll_lock   => pll_lock,
       tmds_clk_p => tmds_clk_p,
       tmds_clk_n => tmds_clk_n,

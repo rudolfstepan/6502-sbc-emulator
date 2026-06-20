@@ -193,7 +193,8 @@ matching the emulator. ATTACK/DECAY/RELEASE are in units of 8 ms; SUSTAIN is a
 
 - **Sine** uses a hard-coded 256-entry signed LUT (`SINE`), indexed by the top 8
   phase bits — no `math_real` needed at synthesis except for the phase-increment
-  constant `PHASE_MUL = 2^PHASE_BITS·256 / CLK_HZ` (159 at 27 MHz).
+  constant `PHASE_MUL = 2^PHASE_BITS·256 / CLK_HZ` (79 at the board's 54 MHz
+  system clock).
 - **Envelope** is time-based (mirrors `envelope_at()` in the C code): a 1 ms time
   base drives a small ATK/DEC/SUS/REL state machine, and each ramp uses a
   division-free Bresenham accumulator (≤1 envelope step per clock).

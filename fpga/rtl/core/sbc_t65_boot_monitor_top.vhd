@@ -547,6 +547,7 @@ begin
     );
 
   dac_i : entity work.pt8211_dac
+    generic map (BCK_HALF => CLK_HZ / 3_000_000)
     port map (
       clk     => clk,
       reset_n => cpu_reset_n,
@@ -728,8 +729,8 @@ begin
 
   vic_i : entity work.vic_vga
     generic map (
-      CLK_DIV => 1,
-      CURSOR_BLINK_DIV => 13_500_000
+      CLK_DIV => CLK_HZ / 27_000_000,
+      CURSOR_BLINK_DIV => CLK_HZ / 2
     )
     port map (
       clk          => clk,

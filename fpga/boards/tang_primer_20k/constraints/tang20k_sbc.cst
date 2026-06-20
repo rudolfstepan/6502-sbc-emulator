@@ -67,12 +67,12 @@ IO_PORT "sd_miso" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 // -------------------------------------------------------------------------
 // Buttons (active-low)
 // key[0] = T5  LVCMOS33 reset (UART_HELLO: rst_n = T5)
-// key[1] = T3  LVCMOS15 UART monitor enter / CPU hold
+// key[1] = T3  LVCMOS33 UART monitor enter / CPU hold
 // -------------------------------------------------------------------------
 IO_LOC "key[0]" T5;
 IO_PORT "key[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 IO_LOC "key[1]" T3;
-IO_PORT "key[1]" IO_TYPE=LVCMOS15 PULL_MODE=UP;
+IO_PORT "key[1]" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
 // LEDs (active-low)

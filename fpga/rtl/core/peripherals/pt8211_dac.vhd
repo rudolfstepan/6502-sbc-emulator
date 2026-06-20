@@ -15,10 +15,11 @@
 -- The same mono sample feeds both channels.
 --
 -- The reference clocks everything on a dedicated ~1.536 MHz BCK domain. Here we
--- stay in the 27 MHz system-clock domain and generate BCK by division, doing
+-- stay in the system-clock domain and generate BCK by division, doing
 -- the reference's register updates on each detected BCK rising edge so the
 -- BCK/WS/DIN phase relationship is bit-for-bit identical to the working demo.
---   BCK = clk / (2*BCK_HALF). With BCK_HALF = 9 -> 1.5 MHz BCK, fs = 46.9 kHz.
+--   BCK = clk / (2*BCK_HALF). The board maps BCK_HALF from CLK_HZ so 27 MHz/9
+--   and 54 MHz/18 both produce 1.5 MHz BCK (fs = 46.9 kHz).
 
 library ieee;
 use ieee.std_logic_1164.all;

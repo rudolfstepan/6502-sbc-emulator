@@ -120,22 +120,24 @@ failure while the CPU remains held.
 The VIC and CPU share a single-port VRAM via a bus multiplexer. During each horizontal blanking interval the VIC takes control of the bus in two phases to prefetch one complete row of character codes and color attributes into internal line buffers. Phase 0 fetches 40 character bytes from `$8000+`, phase 1 fetches 40 color bytes from `$8400+`. Each phase takes 41 clock cycles (1 setup + 40 reads). The CPU is halted during this time via the T65 `RDY` pin.
 
 ```
-One scan line = 1600 system clock cycles (800 pixel clocks × 2)
+One scan line = 1716 system clock cycles (858 pixel clocks × 2)
 
 ├── H-Visible (1280 cycles) ─────────────────────────────────────┤
 │   CPU runs freely                                               │
 │   VIC displays from line buffer (no bus access)                 │
 │                                                                 │
-├── H-Blank (320 cycles) ──────────────────────────────────────┤
+├── H-Blank (436 cycles) ──────────────────────────────────────┤
 │   ├── 82 stolen cycles ──────────────────────────────────────┤ │
 │   │   Phase 0: 1 setup + 40 char reads into linebuf          │ │
 │   │   Phase 1: 1 setup + 40 color reads into colorbuf        │ │
 │   │   CPU held (RDY=0) while the VIC owns the VRAM bus.      │ │
-│   ├── 238 remaining cycles ──────────────────────────────────┤ │
+│   ├── 354 remaining cycles ──────────────────────────────────┤ │
 │   │   CPU runs freely                                         │ │
 ```
 
-**CPU overhead:** 82 stolen out of 1600 = about 5.1% per scan line.
+**CPU overhead on the Tang Primer 20K:** 82 stolen out of 1716 system clocks =
+about 4.8% per scan line. The 54 MHz two-phase T65 has a 27 MHz peak bus rate,
+or roughly 25.7 MHz averaged across continuous VIC steals.
 
 CPU writes to `$8000-$87FF` are never discarded while the VIC owns VRAM. The
 active SD boot cores (`sbc_t65_boot_monitor_top` and `sbc_t65_sdram_boot_top`)
@@ -167,7 +169,7 @@ IRQ sources are OR-combined: `cpu_irq_n = NOT (via_irq OR uart_irq)`.
 
 ### VGA Output
 
-640×480 @ ~60 Hz, pixel clock 25 MHz (50 MHz ÷ 2 via clock enable).  
+640×480 @ 59.94 Hz, pixel clock 27 MHz (54 MHz ÷ 2 via clock enable).  
 Text mode: 40×25 characters, each rendered 2× scaled (16×16 screen pixels).  
 Border: 40 px top and bottom. Character patterns from `char_rom.vhd` (8×8 pixels,
 bit 7 = reverse video).
@@ -329,15 +331,25 @@ It is present in the project but not synthesized for the PIX16 board (Implementa
 
 ## Clocking
 
-All designs use a single 50 MHz clock input.
+The Tang Primer 20K uses its 27 MHz oscillator as the reference for one 270 MHz
+PLL root. Dedicated dividers derive three phase-related clocks:
 
-The T65 CPU runs at effective half-speed through a toggling `cpu_enable` signal:
+- 135 MHz TMDS serializer clock (`270 / 2`)
+- 54 MHz SBC system clock (`270 / 5`)
+- 27 MHz HDMI pixel clock (`135 / 5`)
 
-- `cpu_enable` toggles every system clock → T65 advances every other clock.
+The direct 135-to-27 MHz divide is required by OSER10's 5:1 fast/parallel clock
+relationship. The renderer output is registered at 54 MHz and transferred on
+the falling system edge before the next 27 MHz TMDS encoder edge.
+
+The T65 CPU runs at effective half system-clock speed through a toggling
+`cpu_enable` signal:
+
+- `cpu_enable` toggles every 54 MHz system clock → T65 advances at up to 27 MHz.
 - Writes committed on the `cpu_enable = '0'` half-cycle (`cpu_bus_we = cpu_we AND NOT cpu_enable`).
 - In the minimal SBC, `vic_stealing` additionally holds the CPU via `RDY`.
 
-The VGA pixel clock is 25 MHz, derived from a `pixel_ce` toggle inside `vic_vga`.
+The VGA timing advances at 27 MHz through `CLK_DIV=2` inside `vic_vga`.
 
 ## Reset Sequence
 

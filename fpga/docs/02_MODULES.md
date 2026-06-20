@@ -199,10 +199,10 @@ end entity;
 
 | Signal | Description |
 | --- | --- |
-| `cpu_enable` | Toggles every clock — T65 effective half-speed |
+| `cpu_enable` | Toggles every clock — 27 MHz T65 rate from the Tang's 54 MHz system clock |
 | `cpu_bus_we` | `cpu_we AND NOT cpu_enable` — write on stable half-cycle |
 | `cpu_rdy` | `NOT vic_stealing` — CPU halted during VIC bus steal |
-| `vic_stealing` | High for 41 cycles during each H-blank |
+| `vic_stealing` | High for 82 system clocks during each H-blank (40 chars + 40 colours, each with setup) |
 | `vram_addr` | Mux: `vic_addr[10:0]` during steal, else `cpu_addr[10:0]` |
 | `vram_we_mux` | Zero during steal (VIC only reads), else `vram_we` |
 | `zp_cs` | Selects internal FPGA RAM for `$0000-$01FF` |
@@ -391,7 +391,7 @@ end entity;
 
 | Signal | Description |
 | --- | --- |
-| `pce` | Pixel clock enable — toggles every system clock (25 MHz effective) |
+| `pce` | Pixel clock enable — divides the Tang's 54 MHz system clock to 27 MHz |
 | `hc`, `vc` | Horizontal / vertical scan counters (pixel clock units) |
 | `linebuf` | 40-byte register array — one char code per column |
 | `fetching` | High during the 41-cycle bus steal window |
@@ -571,8 +571,9 @@ one full voice: 5 waveforms (sine LUT, square, sawtooth, triangle, xorshift32
 noise), a time-based ADSR envelope, note duration, and per-voice volume.
 `sound_chip4` wraps four of them with a clipping mixer and one chip-select per
 voice. Register-compatible with the bring-up `sound_voice`, so 6502 code is
-portable between versions. Verified by `sim/tb/tb_sound_chip4.vhd`; not yet wired
-into a board top. See [Sound Chip → The Large 4-Voice Version](./SOUND.md#the-large-4-voice-version).
+portable between versions. It is wired into the Tang Primer 20K board top and
+drives the PT8211 DAC. Verified by `sim/tb/tb_sound_chip4.vhd`. See
+[Sound Chip → The Large 4-Voice Version](./SOUND.md#the-large-4-voice-version).
 
 ---
 

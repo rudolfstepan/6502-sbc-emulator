@@ -8,7 +8,7 @@ Target: Sipeed Tang Primer 20K (Gowin GW2A-LV18PG256C8/I7)
 |----------------|------------------------------|
 | FPGA           | Gowin GW2A-18C / `GW2A-LV18PG256C8/I7` |
 | SDRAM          | 64 MB (onboard)              |
-| Clock          | 27 MHz oscillator            |
+| Clock          | 27 MHz oscillator; PLL derives 54 MHz SBC / 27 MHz pixel / 135 MHz TMDS |
 | UART           | CH340 USB-UART / pins `M11/T13` |
 | Video          | HDMI out                     |
 | Storage        | On-board microSD/SDIO slot in SPI mode |
@@ -38,6 +38,16 @@ TMDS output at 27 MHz pixel clock with CEA-861 480p total timing (858×525),
 giving standard 640×480 @ 59.94 Hz (31.47 kHz H-sync).  An earlier version used
 800×525 totals which produced non-standard 33.75 kHz / 64.3 Hz timing that some
 monitors could not sync to.
+
+The SBC logic runs at 54 MHz. Its two-phase T65 bus advances the CPU every
+second system clock, giving a 27 MHz maximum 6502 bus rate before VIC stalls.
+The VIC uses `CLK_DIV=2`, so video timing remains at exactly 27 MHz.
+Continuous VIC prefetch steals 82 of 1716 system clocks per scan line (about
+4.8%), leaving an average CPU throughput of roughly 25.7 MHz.
+
+Clock derivation uses a single 270 MHz PLL root. TMDS FCLK is `270/2 = 135 MHz`,
+the SBC is `270/5 = 54 MHz`, and OSER10 PCLK is derived directly from its FCLK as
+`135/5 = 27 MHz`. The direct FCLK/PCLK relationship is required for stable HDMI.
 
 On reset the FPGA shows the boot/status diagnostic screen while it initializes
 the on-board microSD/SDIO slot in SPI mode and loads the 16 KB ROM image into
