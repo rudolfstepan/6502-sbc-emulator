@@ -89,3 +89,4 @@ fpga/sw/*.o
 pix16
 fpga/boards/pix16/project/*.bit
 fpga/fpga
+sid_demo

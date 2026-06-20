@@ -22,6 +22,7 @@ RTL = rtl/core/sbc_pkg.vhd rtl/core/bus_decode.vhd \
       rtl/core/peripherals/uart_rx_ser.vhd rtl/core/peripherals/uart_tx_ser.vhd \
       rtl/core/peripherals/vic_pixel_gen.vhd rtl/core/peripherals/vic_vga.vhd \
       rtl/core/peripherals/sound_voice.vhd rtl/core/peripherals/pt8211_dac.vhd \
+      rtl/core/peripherals/sound_voice_full.vhd rtl/core/peripherals/sound_chip4.vhd \
       rtl/core/boot/boot_debug_uart.vhd rtl/core/boot/boot_vga_debug.vhd \
       rtl/core/boot/boot_sdram_test.vhd rtl/core/boot/uart_debug_monitor.vhd \
       rtl/core/cpu/t65_adapter.vhd rtl/core/cpu6502_slot.vhd rtl/core/sbc_top.vhd \
@@ -36,7 +37,7 @@ SIM = sim/tb/tb_bus_decode.vhd sim/tb/tb_sbc_reset.vhd sim/tb/tb_sbc_bus_write.v
       sim/tb/tb_sbc_t65_boot_shadow.vhd sim/tb/tb_vic_pixel_gen.vhd \
       sim/tb/tb_vic_raster_irq.vhd sim/tb/tb_sbc_vic_display.vhd \
       sim/tb/tb_sound_voice.vhd sim/tb/tb_vram_steal_race.vhd \
-      sim/tb/tb_vram_read_steal.vhd
+      sim/tb/tb_vram_read_steal.vhd sim/tb/tb_sound_chip4.vhd
 
 .PHONY: analyze roms sd-boot-image sd-boot-test-image test test-sd-boot-shadow \
         clean pix16 tang_primer_20k
@@ -89,6 +90,8 @@ test: roms
 	$(GHDL) -r $(GHDL_FLAGS) tb_vram_steal_race $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_vram_read_steal
 	$(GHDL) -r $(GHDL_FLAGS) tb_vram_read_steal $(GHDL_RUN_FLAGS) -gREAD_LATENCY_FIX=true
+	$(GHDL) -e $(GHDL_FLAGS) tb_sound_chip4
+	$(GHDL) -r $(GHDL_FLAGS) tb_sound_chip4 $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_rom_image
 	$(GHDL) -r $(GHDL_FLAGS) tb_rom_image $(GHDL_RUN_FLAGS)
 	$(GHDL) -e $(GHDL_FLAGS) tb_t65_adapter

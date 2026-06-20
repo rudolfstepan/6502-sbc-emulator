@@ -10,7 +10,8 @@ add_file -type vhdl {../../../rtl/core/peripherals/uart_tx_ser.vhd}
 add_file -type vhdl {../../../rtl/core/peripherals/uart_rx_ser.vhd}
 add_file -type vhdl {../../../rtl/core/peripherals/uart6551.vhd}
 add_file -type vhdl {../../../rtl/core/peripherals/vic_vga.vhd}
-add_file -type vhdl {../../../rtl/core/peripherals/sound_voice.vhd}
+add_file -type vhdl {../../../rtl/core/peripherals/sound_voice_full.vhd}
+add_file -type vhdl {../../../rtl/core/peripherals/sound_chip4.vhd}
 add_file -type vhdl {../../../rtl/core/peripherals/pt8211_dac.vhd}
 add_file -type vhdl {../../../rtl/core/mem/sync_ram.vhd}
 add_file -type vhdl {../../../rtl/core/mem/char_rom.vhd}

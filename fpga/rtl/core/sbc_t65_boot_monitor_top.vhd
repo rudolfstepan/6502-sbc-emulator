@@ -96,10 +96,14 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal via_dout    : data_t;
   signal uart_dout   : data_t;
 
-  signal sound0_cs   : std_logic;
-  signal sound0_we   : std_logic;
-  signal sound0_dout : data_t;
-  signal sound0_sample : std_logic_vector(15 downto 0);
+  -- 4-voice sound chip (sound_chip4). One chip-select per voice; the voices
+  -- live at $8830, $8890, $889A, $88A4 (not all 16-aligned) so the register
+  -- offset is computed as cpu_addr - base for the selected voice.
+  signal sound_cs     : std_logic_vector(3 downto 0);
+  signal sound_we     : std_logic;
+  signal sound_addr   : std_logic_vector(3 downto 0);
+  signal sound_dout   : data_t;
+  signal sound_sample : std_logic_vector(15 downto 0);
 
   signal zp_cs       : std_logic;
   signal zp_we       : std_logic;
@@ -227,8 +231,20 @@ begin
   via_cs  <= '1'        when monitor_hold = '0' and dev_sel = DEV_VIA      else '0';
   uart_cs <= '1'        when monitor_hold = '0' and dev_sel = DEV_UART     else '0';
 
-  sound0_cs <= '1'        when monitor_hold = '0' and dev_sel = DEV_SOUND0 else '0';
-  sound0_we <= cpu_bus_we when monitor_hold = '0' and dev_sel = DEV_SOUND0 else '0';
+  -- Per-voice chip-selects, shared write strobe, and the register offset for
+  -- whichever voice is currently addressed (cpu_addr - voice base).
+  sound_cs(0) <= '1' when monitor_hold = '0' and dev_sel = DEV_SOUND0 else '0';
+  sound_cs(1) <= '1' when monitor_hold = '0' and dev_sel = DEV_SOUND1 else '0';
+  sound_cs(2) <= '1' when monitor_hold = '0' and dev_sel = DEV_SOUND2 else '0';
+  sound_cs(3) <= '1' when monitor_hold = '0' and dev_sel = DEV_SOUND3 else '0';
+  sound_we    <= cpu_bus_we when monitor_hold = '0' else '0';
+
+  sound_addr <=
+    std_logic_vector(resize(unsigned(cpu_addr) - ADDR_SOUND0_BASE, 4)) when dev_sel = DEV_SOUND0 else
+    std_logic_vector(resize(unsigned(cpu_addr) - ADDR_SOUND1_BASE, 4)) when dev_sel = DEV_SOUND1 else
+    std_logic_vector(resize(unsigned(cpu_addr) - ADDR_SOUND2_BASE, 4)) when dev_sel = DEV_SOUND2 else
+    std_logic_vector(resize(unsigned(cpu_addr) - ADDR_SOUND3_BASE, 4)) when dev_sel = DEV_SOUND3 else
+    (others => '0');
 
   zp_we_mux   <= '1' when monitor_hold = '1' and mon_mem_state = M_ZP_WAIT and mon_we_lat = '1' else zp_we;
   zp_addr_mux <= mon_addr_lat(8 downto 0) when monitor_hold = '1' and
@@ -346,7 +362,7 @@ begin
 
   process(dev_sel, zp_cs, zp_dout, sram_dout, rom_dout, vram_dout, vic_reg_dout, via_dout,
           uart_dout, mon_jump_vector_active, mon_jump_vector, cpu_addr, bitmap_dout,
-          sound0_dout)
+          sound_dout)
   begin
     case dev_sel is
       when DEV_SRAM =>
@@ -375,8 +391,8 @@ begin
         cpu_din <= usb_dout;
       when DEV_VIC_BMP =>
         cpu_din <= bitmap_dout;
-      when DEV_SOUND0 =>
-        cpu_din <= sound0_dout;
+      when DEV_SOUND0 | DEV_SOUND1 | DEV_SOUND2 | DEV_SOUND3 =>
+        cpu_din <= sound_dout;
       when others =>
         cpu_din <= x"FF";
     end case;
@@ -515,25 +531,26 @@ begin
       irq       => via_irq
     );
 
-  -- ── Sound: single-voice synth (channel 0) + PT8211 DAC ────────────────
-  sound0_i : entity work.sound_voice
+  -- ── Sound: 4-voice synth (ADSR + 5 waveforms) + PT8211 DAC ────────────
+  sound_i : entity work.sound_chip4
     generic map (CLK_HZ => CLK_HZ)
     port map (
-      clk     => clk,
-      reset_n => cpu_reset_n,
-      cs      => sound0_cs,
-      we      => sound0_we,
-      addr    => cpu_addr(3 downto 0),
-      din     => cpu_dout,
-      dout    => sound0_dout,
-      sample  => sound0_sample
+      clk        => clk,
+      reset_n    => cpu_reset_n,
+      cs         => sound_cs,
+      we         => sound_we,
+      addr       => sound_addr,
+      din        => cpu_dout,
+      dout       => sound_dout,
+      sample_out => sound_sample,
+      active     => open
     );
 
   dac_i : entity work.pt8211_dac
     port map (
       clk     => clk,
       reset_n => cpu_reset_n,
-      sample  => sound0_sample,
+      sample  => sound_sample,
       dac_bck => dac_bck,
       dac_ws  => dac_ws,
       dac_din => dac_din

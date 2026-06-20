@@ -1,4 +1,0 @@
-v 4
-file . "fpga/rtl/core/boot/usb_ulpi_diag.vhd" "4b4015ab3e9f3f6499f5b885f1a383ed0ef732dc" "20260614192201.133":
-  entity usb_ulpi_diag at 6( 269) + 0 on 13;
-  architecture rtl of usb_ulpi_diag at 29( 847) + 0 on 14;

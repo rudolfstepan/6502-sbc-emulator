@@ -22,7 +22,7 @@ programmer-visible interfaces:
 | UART 6551 | basic TX/RX register interface, status, RX IRQ | baud generator and serial pin timing |
 | DISK MVP | stub or SPI/SD-card bridge | FAT/raw block protocol |
 | VIC | text/color RAM and VGA timing | bitmap, sprites, blitter, raster IRQ |
-| Sound | ✅ single-voice synth (square + noise) on PT8211 DAC/I2S, Tang dock | remaining waveforms, ADSR, duration, channels 1–3 mixer |
+| Sound | ✅ large 4-voice chip (5 waveforms + ADSR + duration + mixer) wired into the Tang Primer 20K board on the PT8211 DAC; bring-up single voice kept as alternative | tune levels / per-voice features on hardware |
 
 ## Verification Plan
 

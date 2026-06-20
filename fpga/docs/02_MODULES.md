@@ -563,6 +563,17 @@ the PT8211's right-justified WS alignment, fed the signed 16-bit sample from
 (tied high in `tang20k_sbc_top.vhd`). See [Sound Chip](./SOUND.md) for the full
 register map, usage, and wiring.
 
+### `peripherals/sound_voice_full.vhd` and `peripherals/sound_chip4.vhd`
+
+The **large** sound-chip version — an independent second implementation that
+ports the complete C-emulator model (`src/soundchip.c`). `sound_voice_full` is
+one full voice: 5 waveforms (sine LUT, square, sawtooth, triangle, xorshift32
+noise), a time-based ADSR envelope, note duration, and per-voice volume.
+`sound_chip4` wraps four of them with a clipping mixer and one chip-select per
+voice. Register-compatible with the bring-up `sound_voice`, so 6502 code is
+portable between versions. Verified by `sim/tb/tb_sound_chip4.vhd`; not yet wired
+into a board top. See [Sound Chip → The Large 4-Voice Version](./SOUND.md#the-large-4-voice-version).
+
 ---
 
 ## Reset ROM Diagnostics

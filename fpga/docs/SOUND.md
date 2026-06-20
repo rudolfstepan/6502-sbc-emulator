@@ -1,13 +1,23 @@
 # FPGA Sound Chip
 
-The Tang Primer 20K build includes a single-voice sound synthesizer that drives
-the dock board's **PT8211 (TM8211)** audio DAC. It is a stripped-down hardware
-port of the C emulator's sound chip (`src/soundchip.c`) and is
-register-compatible with it, so 6502 code that targets the emulator's sound
-registers also produces sound on real hardware.
+There are **two independent VHDL sound-chip versions**, both register-compatible
+with the C emulator's sound chip (`src/soundchip.c`), so the same 6502 code runs
+on either:
 
-- RTL: [`rtl/core/peripherals/sound_voice.vhd`](../rtl/core/peripherals/sound_voice.vhd) — oscillator + register file
-- RTL: [`rtl/core/peripherals/pt8211_dac.vhd`](../rtl/core/peripherals/pt8211_dac.vhd) — I2S serializer for the PT8211
+1. **Large 4-voice chip** (`sound_chip4.vhd` + `sound_voice_full.vhd`) — the full
+   model: 4 voices, 5 waveforms, ADSR envelopes, note duration, and a mixer.
+   **This is now wired into the Tang Primer 20K board** and drives the dock's
+   **PT8211 (TM8211)** DAC. See [The Large 4-Voice Version](#the-large-4-voice-version).
+2. **Bring-up single voice** (`sound_voice.vhd`) — one voice, square + noise, no
+   envelope; the original minimal version, kept as a simpler alternative. The
+   register-map / usage sections below apply to a single voice and are common to
+   both (the 4-voice chip just has four such voices plus envelopes).
+
+Files:
+
+- RTL (bring-up): [`rtl/core/peripherals/sound_voice.vhd`](../rtl/core/peripherals/sound_voice.vhd) — oscillator + register file
+- RTL (DAC): [`rtl/core/peripherals/pt8211_dac.vhd`](../rtl/core/peripherals/pt8211_dac.vhd) — I2S serializer for the PT8211
+- RTL (large): [`rtl/core/peripherals/sound_voice_full.vhd`](../rtl/core/peripherals/sound_voice_full.vhd), [`rtl/core/peripherals/sound_chip4.vhd`](../rtl/core/peripherals/sound_chip4.vhd)
 - BASIC examples: [`examples/soundtone.bas`](../../examples/soundtone.bas) (single tone), [`examples/soundtest.bas`](../../examples/soundtest.bas) (menu demo)
 
 ## Overview
@@ -150,6 +160,75 @@ shared.)
 | `CT1136` bank VCCIO error at build | Audio pins need `IO_TYPE=LVCMOS33` (Bank 1 is 3.3 V) |
 | Wrong pitch | Frequency is in Hz (16-bit); check FREQ_LO/FREQ_HI split |
 | Note never stops | Clear CONTROL bit 0 (gate) in software; duration is not yet honoured |
+
+## The Large 4-Voice Version
+
+`sound_chip4.vhd` + `sound_voice_full.vhd` implement the **full** C-emulator
+model in hardware — an independent second version alongside the bring-up voice
+above. Both use the same per-voice register layout, so 6502 code is portable.
+
+### What it adds over the bring-up voice
+
+| Feature | Bring-up `sound_voice` | Large `sound_chip4` |
+| --- | --- | --- |
+| Voices | 1 | 4, mixed |
+| Waveforms | square, noise | sine, square, sawtooth, triangle, noise |
+| Envelope | none (gate only) | full ADSR (attack/decay/sustain/release) |
+| Duration | ignored | honoured (note auto-stops) |
+| Noise | 16-bit Galois LFSR | xorshift32 (same sequence as the C code) |
+
+The CONTROL waveform field (bits 6–4) selects: `0`=sine, `1`=square,
+`2`=sawtooth, `3`=triangle, `4`=noise — matching `src/soundchip.c`. Writing
+CONTROL with bit 0 set captures all registers and (re)triggers the note, again
+matching the emulator. ATTACK/DECAY/RELEASE are in units of 8 ms; SUSTAIN is a
+0–255 level; duration is in ms; frequency in Hz (0 → 440 default, clamped
+20–12000).
+
+### Implementation notes
+
+- **Sine** uses a hard-coded 256-entry signed LUT (`SINE`), indexed by the top 8
+  phase bits — no `math_real` needed at synthesis except for the phase-increment
+  constant `PHASE_MUL = 2^PHASE_BITS·256 / CLK_HZ` (159 at 27 MHz).
+- **Envelope** is time-based (mirrors `envelope_at()` in the C code): a 1 ms time
+  base drives a small ATK/DEC/SUS/REL state machine, and each ramp uses a
+  division-free Bresenham accumulator (≤1 envelope step per clock).
+- **Mixer** sums the four signed voices; each voice is pre-scaled by `>>10`
+  (volume/255 · env/255 · 0.25 headroom), so four max-volume voices sum without
+  clipping. A hard clip guards corner cases.
+- **Interface**: `cs(3:0)` (one chip-select per voice), shared `we`/`addr(3:0)`/
+  `din`, muxed `dout`, signed 16-bit `sample_out`, and `active`.
+
+### Status
+
+Verified in simulation by [`sim/tb/tb_sound_chip4.vhd`](../sim/tb/tb_sound_chip4.vhd)
+(envelope attack, waveform swing, multi-voice mix, duration auto-stop) and **wired
+into the Tang Primer 20K board** in `sbc_t65_boot_monitor_top.vhd`, replacing the
+bring-up `sound_voice`. The four voices are selected by `DEV_SOUND0..3`
+(`$8830`, `$8890`, `$889A`, `$88A4`); because those bases are not all 16-aligned,
+the top computes each voice's register offset as `cpu_addr - base`. The mixed
+`sample_out` feeds `pt8211_dac`. Build sources are listed in
+`boards/tang_primer_20k/project/build.tcl` and `tang_sbc.gprj`.
+
+### Demo ROM (`soundtest.rom`)
+
+[`fpga/sw/soundtest.s`](../sw/soundtest.s) is a standalone 6502 demo ROM that
+exercises all four voices — each waveform on voice 0, an ADSR swell, and a
+4-voice chord — and writes a "SOUND TEST" title to the HDMI text screen. It
+builds to a 16 KB image (`$C000-$FFFF`) and uploads through the UART monitor
+exactly like the EhBASIC ROM:
+
+```sh
+make -C fpga/sw soundtest          # -> fpga/sw/soundtest.rom (16 KB)
+
+# board in monitor mode (press KEY0), then:
+python fpga/tools/upload_monitor_hex.py fpga/sw/soundtest.rom \
+       --port COM15 --baud 230400 --address 0xC000 --run --verbose
+# or, build + upload in one step:
+make -C fpga/sw upload-soundtest
+```
+
+The ROM's reset vector points at `$C000`, so it also runs from a cold boot if
+written to the SD card (wrap it with `fpga/tools/make_sd_boot_image.py`).
 
 ## See Also
 

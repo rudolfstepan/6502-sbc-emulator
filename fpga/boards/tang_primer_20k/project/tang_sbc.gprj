@@ -20,7 +20,8 @@
         <File path="../../../rtl/core/peripherals/uart_rx_ser.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/peripherals/uart6551.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/peripherals/vic_vga.vhd" type="file.vhdl" enable="1"/>
-        <File path="../../../rtl/core/peripherals/sound_voice.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/peripherals/sound_voice_full.vhd" type="file.vhdl" enable="1"/>
+        <File path="../../../rtl/core/peripherals/sound_chip4.vhd" type="file.vhdl" enable="1"/>
         <File path="../../../rtl/core/peripherals/pt8211_dac.vhd" type="file.vhdl" enable="1"/>
 
         <!-- Memory -->
