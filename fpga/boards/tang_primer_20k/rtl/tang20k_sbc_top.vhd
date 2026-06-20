@@ -6,7 +6,9 @@
 -- Video: vic_vga runs at CLK_DIV=1 (27 MHz pixel), 858x525 total (CEA 480p),
 --   giving 640x480 @ 31.47 kHz H / 59.94 Hz V.  Encoded to DVI TMDS over HDMI.
 --
--- KEY[0] = T5  (LVCMOS33, active-low reset)
+-- KEY[0] = T5  (LVCMOS33, active-low reset button):
+--                short press  -> CPU soft reset (restart program, keep ROM/boot)
+--                long press >1s -> full board reset (re-run SD boot loader)
 -- KEY[1] = T3  (LVCMOS33, active-low UART monitor enter / CPU hold)
 -- LED[0]/LED[1] show boot status until boot_done, then LED[3:0] follow VIA PB[3:0].
 library ieee;
@@ -131,6 +133,16 @@ architecture rtl of tang20k_sbc_top is
   signal pll_lock     : std_logic;
   signal reset_n      : std_logic;
   signal rst          : std_logic;
+  -- key(0) reset button: short press = CPU soft reset, long press = full board
+  -- reset. Debounced and synchronised in the clk_sys domain.
+  constant DB_MAX     : integer := 270_000;     -- ~5 ms debounce  @ 54 MHz
+  constant LONG_MAX   : integer := 54_000_000;  -- ~1 s  long-press @ 54 MHz
+  signal key0_sync    : std_logic_vector(2 downto 0) := (others => '1');
+  signal key0_db      : std_logic := '1';        -- debounced level (1 = released)
+  signal db_cnt       : integer range 0 to DB_MAX := 0;
+  signal press_cnt    : integer range 0 to LONG_MAX := 0;
+  signal soft_reset   : std_logic := '0';        -- CPU-only reset (short press)
+  signal long_reset   : std_logic := '0';        -- full board reset (long press)
   signal uart_tx_data : data_t;
   signal uart_tx_valid: std_logic;
   signal uart_tx_busy : std_logic;
@@ -209,8 +221,50 @@ architecture rtl of tang20k_sbc_top is
   signal usb_cap_data       : std_logic_vector(15 downto 0);
   signal usb_cap_ready      : std_logic;
 begin
-  -- Hold reset until PLL has locked
-  reset_n <= key(0) and pll_lock;
+  -- key(0) is the reset button: a short press soft-resets only the CPU (the
+  -- running program restarts via its reset vector, ROM/boot/SRAM kept), a long
+  -- press (>1 s) asserts a full board reset. Debounced/synchronised on clk_sys,
+  -- which stays alive because the HDMI PLL is no longer gated by the button.
+  key_reset_proc : process(clk_sys)
+  begin
+    if rising_edge(clk_sys) then
+      if pll_lock = '0' then
+        key0_sync  <= (others => '1');
+        key0_db    <= '1';
+        db_cnt     <= 0;
+        press_cnt  <= 0;
+        soft_reset <= '0';
+        long_reset <= '0';
+      else
+        key0_sync <= key0_sync(1 downto 0) & key(0);
+        -- debounce: the synchronised level must hold steady DB_MAX cycles
+        if key0_sync(2) = key0_db then
+          db_cnt <= 0;
+        elsif db_cnt = DB_MAX then
+          key0_db <= key0_sync(2);
+          db_cnt  <= 0;
+        else
+          db_cnt <= db_cnt + 1;
+        end if;
+        -- press duration: short -> soft_reset (CPU only), held >1 s -> full reset
+        if key0_db = '0' then            -- pressed (active low)
+          soft_reset <= '1';
+          if press_cnt = LONG_MAX then
+            long_reset <= '1';
+          else
+            press_cnt <= press_cnt + 1;
+          end if;
+        else                             -- released
+          soft_reset <= '0';
+          long_reset <= '0';
+          press_cnt  <= 0;
+        end if;
+      end if;
+    end if;
+  end process;
+
+  -- Full board reset on long press; also held until the PLL locks at power-on.
+  reset_n <= (not long_reset) and pll_lock;
   rst <= not reset_n;
   monitor_button <= not key(1);
   pa_en <= '1';  -- keep dock audio power amplifier enabled (PT8211 PA_EN, active high)
@@ -384,6 +438,7 @@ begin
       clk           => clk_sys,
       reset_n       => reset_n,
       boot_done     => boot_done,
+      soft_reset    => soft_reset,
       monitor_hold  => monitor_active,
       monitor_mem_req   => monitor_mem_req,
       monitor_mem_we    => monitor_mem_we,
@@ -491,7 +546,9 @@ begin
   hdmi_i : entity work.tang20k_hdmi_tx
     port map (
       clk_in     => clk_27mhz,
-      reset_n    => key(0),   -- raw key, before pll_lock gate
+      -- HDMI PLL is decoupled from the reset button so clk_sys keeps running
+      -- during a CPU soft reset (and during a full reset, so video stays up).
+      reset_n    => '1',
       vga_de     => vga_de,
       vga_hs     => vga_hs,
       vga_vs     => vga_vs,

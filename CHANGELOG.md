@@ -4,6 +4,43 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+### Tang Primer 20K — reset button (KEY0 / dock S0)
+
+- Fixed the `key[0]` pin: the dock's **S0** reset button is FPGA pin `T10`, not
+  `T5`. The original `T5` (and an interim `T2` attempt) were not the physical
+  button, so no reset button worked at all. Confirmed against Sipeed's own
+  examples — `Cam2HDMI` and the HDMI `dk_video` example both map reset to `T10`.
+- KEY0/S0 is now a debounced, clock-synchronised dual-action reset (in the 54 MHz
+  `clk_sys` domain):
+  - **short press** → CPU-only soft reset. The 6502 restarts via its reset vector
+    while `boot_done`, the shadow ROM, and SRAM are preserved — restarts a
+    UART-uploaded program without re-running the SD boot loader.
+  - **long press (>1 s)** → full board reset (re-runs the SD ROM loader).
+- Added a `soft_reset` input to `sbc_t65_boot_monitor_top`; `cpu_reset_base_n`
+  now also gates on `not soft_reset`, holding only the CPU in reset.
+- Decoupled the HDMI PLL reset from the button (`reset_n => '1'`) so `clk_sys`
+  keeps running during a soft reset and the picture stays up during a full reset.
+- KEY1/S1 (`T3`) is unchanged: enters the UART monitor and holds the CPU.
+
+### Chess ROM — FPGA PS/2 keyboard support
+
+- Rewrote `read_key` in `tools/chess/chess.s` to read the FPGA PS/2 keyboard
+  register file (`$8820` STATUS bit 0 = key ready, `$8823` ASCII) instead of the
+  C-emulator's VIA6522 Port A (`$8801`/`$880D`, CA1). The move parser is
+  unchanged — the PS/2 core already returns lowercase letters, digits, Enter
+  (`$0D`), and Backspace (`$08`).
+- Removed the now-unused VIA keyboard init from the reset routine; rebuilt
+  `roms/chess.rom`.
+
+### siddemo.bas — FPGA 4-voice sound chip
+
+- Rewrote `examples/siddemo.bas` for the FPGA 4-voice sound chip, which has no
+  note queue: each `POKE CONTROL,1` retriggers the voice immediately. The old
+  demo poked a 36-note theme into one voice with no delays, so only the last note
+  sounded. The new version plays notes sequentially with per-note duration and
+  software-delay pacing (the proven `soundtest.bas` pattern), demonstrating the
+  four ADSR presets, a 3-voice chord, and the Korobeiniki theme.
+
 ### Tang Primer 20K — 54 MHz SBC clock
 
 - Reworked the HDMI/SBC clock tree around one 270 MHz PLL root: `/2` generates

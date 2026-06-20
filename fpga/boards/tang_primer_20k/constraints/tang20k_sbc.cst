@@ -65,11 +65,14 @@ IO_LOC "sd_miso" M8;
 IO_PORT "sd_miso" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 
 // -------------------------------------------------------------------------
-// Buttons (active-low)
-// key[0] = T5  LVCMOS33 reset (UART_HELLO: rst_n = T5)
-// key[1] = T3  LVCMOS33 UART monitor enter / CPU hold
+// Buttons (active-low). The dock's S0 reset button is FPGA pin T10 — confirmed
+// by Sipeed's own examples (Cam2HDMI rst_n=T10, HDMI dk_video reset=T10). The
+// earlier key[0]=T5 (and the T2 guess) were wrong: S1/T3 worked but S0 was dead.
+// key[0] = T10 (S0)  reset button: short press = CPU soft reset (restart program,
+//                    keep ROM/boot); long press >1s = full board reset.
+// key[1] = T3  (S1)  UART monitor enter / CPU hold
 // -------------------------------------------------------------------------
-IO_LOC "key[0]" T5;
+IO_LOC "key[0]" T10;
 IO_PORT "key[0]" IO_TYPE=LVCMOS33 PULL_MODE=UP;
 IO_LOC "key[1]" T3;
 IO_PORT "key[1]" IO_TYPE=LVCMOS33 PULL_MODE=UP;

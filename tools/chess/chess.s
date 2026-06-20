@@ -11,16 +11,16 @@ VIC_CURSOR_X     = $9001
 VIC_CURSOR_Y     = $9002
 VIC_TEXT_COLOR   = $9003
 VIC_BG_COLOR     = $9004
-VIA_ORA          = $8801
-VIA_DDRA         = $8803
-VIA_IFR          = $880D
+; PS/2 keyboard register file (FPGA, $8820-$8823) - see fpga/rtl/core/ps2/ps2_keyboard.vhd
+KBD_STATUS       = $8820   ; bit7=connected bit0=key_ready
+KBD_ASCII        = $8823   ; ASCII translation; read clears key_ready
 SOUND_FREQ_LO    = $8830
 SOUND_FREQ_HI    = $8831
 SOUND_DUR_LO     = $8832
 SOUND_DUR_HI     = $8833
 SOUND_VOL        = $8834
 SOUND_CTRL       = $8835
-CA1_BIT          = $02
+KBD_READY        = $01
 UI_BG_ATTR       = $B0
 UI_TEXT_ATTR     = $BF
 BORDER_ATTR      = $BC
@@ -156,8 +156,6 @@ reset:
     cld
     ldx #$ff
     txs
-    lda #$00
-    sta VIA_DDRA
     lda #$0f
     sta VIC_TEXT_COLOR
     lda #$0b
@@ -330,10 +328,10 @@ print_string_done:
 
 read_key:
 read_key_loop:
-    lda VIA_IFR
-    and #CA1_BIT
+    lda KBD_STATUS
+    and #KBD_READY
     beq read_key_loop
-    lda VIA_ORA
+    lda KBD_ASCII
     cmp #'a'
     bcc read_key_done
     cmp #'z'+1

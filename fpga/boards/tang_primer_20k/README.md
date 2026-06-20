@@ -59,6 +59,8 @@ Current bring-up status:
 - HDMI boot/status screen works on a monitor.
 - CH340 UART works from the PC as a normal serial port, tested as `COM12`.
 - The UART monitor is reachable through the same CH340 path.
+- KEY0 (dock S0) is the reset button: a short press soft-resets the 6502, a long
+  press (>1 s) is a full board reset.
 - KEY1 enters the FPGA monitor and holds the 6502 CPU.
 - Without a card in the on-board microSD slot, the boot debug output correctly
   reports that the SD card cannot be initialized/read.
@@ -68,6 +70,35 @@ Current bring-up status:
 The Tang boot core currently uses internal BSRAM for main RAM instead of the
 on-board SDRAM. Pressing KEY1 enters the FPGA UART monitor, holds the 6502 CPU,
 and switches HDMI back to the diagnostic screen while monitor operations run.
+
+### Buttons (reset / monitor)
+
+The two on-board push buttons are active-low with internal pull-ups:
+
+| Button                 | FPGA pin | Function                               |
+|------------------------|----------|----------------------------------------|
+| **KEY0** (dock **S0**) | `T10`    | Reset button (see below)               |
+| **KEY1** (dock **S1**) | `T3`     | Enter UART monitor / hold the 6502 CPU |
+
+KEY0 is a dual-action reset, debounced and synchronised in the 54 MHz `clk_sys`
+domain:
+
+- **Short press** → **CPU soft reset**. Only the 6502 is held in reset and then
+  restarts via its reset vector. `boot_done`, the shadow ROM, and SRAM are kept,
+  so a program uploaded over the UART monitor restarts in place — the SD boot
+  loader is *not* re-run. This is the reset to use during normal operation.
+- **Long press (>1 s)** → **full board reset**. Asserts the global `reset_n`,
+  which also resets the SD ROM loader and reloads the ROM from the SD card. If
+  there is no valid SD boot image, the CPU stays held afterwards (no `boot_done`),
+  so use the short press for UART-uploaded ROMs.
+
+The HDMI PLL is intentionally **not** gated by the reset button, so `clk_sys`
+keeps running (the debounce/long-press timer needs it) and the picture stays up
+through both reset types.
+
+> **Pin note:** S0 is FPGA pin `T10` (matching Sipeed's own `Cam2HDMI` and HDMI
+> `dk_video` examples, whose reset is `T10`). An earlier `T5` assignment was not
+> the physical button and produced a dead reset key.
 
 The CH340 UART is connected to the SBC UART at 230400 8N1 on FPGA pins `M11`
 (`uart_tx`) and `T13` (`uart_rx`). On Windows this appears as a COM port such as

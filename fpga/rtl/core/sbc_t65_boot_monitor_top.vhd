@@ -14,6 +14,9 @@ entity sbc_t65_boot_monitor_top is
     clk          : in  std_logic;
     reset_n      : in  std_logic;
     boot_done    : in  std_logic;
+    -- CPU-only soft reset: restarts the 6502 via its reset vector while leaving
+    -- boot_done / ROM / SRAM contents intact (unlike the full reset_n).
+    soft_reset   : in  std_logic := '0';
     monitor_hold : in  std_logic := '0';
     monitor_mem_req   : in  std_logic := '0';
     monitor_mem_we    : in  std_logic := '0';
@@ -196,7 +199,7 @@ architecture rtl of sbc_t65_boot_monitor_top is
   signal mon_rdata_reg       : data_t := (others => '0');
   signal mon_ready_reg       : std_logic := '0';
 begin
-  cpu_reset_base_n <= reset_n and boot_done;
+  cpu_reset_base_n <= reset_n and boot_done and not soft_reset;
   cpu_reset_n <= cpu_reset_base_n when mon_jump_reset_cnt = 0 else '0';
 
   process(clk)
