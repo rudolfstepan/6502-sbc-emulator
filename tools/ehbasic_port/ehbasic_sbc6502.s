@@ -416,7 +416,7 @@ ehb_save_err:
 ; Shared helper routines
 ; ============================================================
 
-; ehb_add_prg_ext: append ".prg" to FNAME_BUF if not already present
+; ehb_add_prg_ext: append ".prg" unless FNAME_BUF already has .prg or .d64
 ; Entry: FNAME_BUF contains the filename string, Y = string length
 ; Exit:  FNAME_BUF has .prg appended if needed, Y = new total length
 ehb_add_prg_ext:
@@ -426,10 +426,36 @@ ehb_add_prg_ext:
     jmp @append
 
 @check_ext:
-    ; Check last 4 chars for ".prg" (case-insensitive)
+    ; Check last 4 chars for ".d64" or ".prg" (case-insensitive)
     ; Save original length in X
     tya
     tax                     ; X = original length
+    dey
+    lda FNAME_BUF,y         ; last char = '4'?
+    cmp #'4'
+    bne @check_prg
+    dey
+    lda FNAME_BUF,y         ; = '6'?
+    cmp #'6'
+    bne @check_prg
+    dey
+    lda FNAME_BUF,y         ; = 'D' or 'd'?
+    cmp #'D'
+    beq @cd
+    cmp #'d'
+    bne @check_prg
+@cd:
+    dey
+    lda FNAME_BUF,y         ; = '.'?
+    cmp #'.'
+    bne @check_prg
+    txa
+    tay
+    rts
+
+@check_prg:
+    txa
+    tay
     dey
     lda FNAME_BUF,y         ; last char = 'G' or 'g'?
     cmp #'G'

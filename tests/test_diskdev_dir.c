@@ -85,6 +85,7 @@ int main(void)
     disk.addr = load_addr;
     disk.len = 0x1000;
 
+    disk.mounted_d64[0] = 0;
     diskdev_write(&disk, DISK_REG_CMD, DISK_CMD_DIR);
 
     assert((disk.status & DISK_ST_OK) != 0);

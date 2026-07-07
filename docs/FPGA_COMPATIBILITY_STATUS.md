@@ -16,8 +16,9 @@ to the FPGA.
 
 - The default map now matches the FPGA-oriented split-ROM layout:
   `$A000-$CFFF` for BASIC/application ROM and `$F000-$FFFF` for kernel/vectors.
-- The disk MVP moved to `$8824-$882F`, leaving `$8820-$8823` for the FPGA-style
-  keyboard registers.
+- The FPGA D64 GoDrive / SD-card loader is exposed at `$8824-$882F`, matching
+  the FPGA kernel and BASIC LOAD routines. `LOAD "!"` invokes the ROM's D64
+  mount menu.
 - Fixed FPGA devices were added around the configurable map:
   bitmap framebuffer window at `$6000-$7FFF`, VIC registers, blitter, sprite
   registers/data, keyboard registers, math coprocessor, CIA1, and SID.

@@ -144,8 +144,7 @@ static void usage(const char *prog)
         "  $8000-$87FF  VIC Video RAM (2KB)\n"
         "  $8800-$880F  VIA 6522\n"
         "  $8810-$8813  UART 6551 (ACIA)\n"
-        "  $8820-$8823  PS/2 keyboard registers\n"
-        "  $8824-$882F  DISK MVP\n"
+        "  $8820-$882F  DISK MVP / SD-card loader or PS/2 keyboard regs\n"
         "  $8830-$8835  SOUND (freq/duration/volume/control)\n"
         "  $88B0-$88BF  Math coprocessor\n"
         "  $A000-$CFFF  BASIC ROM, $F000-$FFFF Kernel ROM\n",
@@ -174,6 +173,14 @@ static bool file_exists(const char *path)
     if (!f) return false;
     fclose(f);
     return true;
+}
+
+static bool ranges_overlap(uint16_t base_a, uint32_t size_a,
+                           uint16_t base_b, uint32_t size_b)
+{
+    uint32_t end_a = (uint32_t)base_a + size_a;
+    uint32_t end_b = (uint32_t)base_b + size_b;
+    return (uint32_t)base_a < end_b && (uint32_t)base_b < end_a;
 }
 
 static const char *path_basename(const char *path)
@@ -505,11 +512,19 @@ int main(int argc, char *argv[])
 
     Bus bus;
     bus_init(&bus);
+    bool keyboard_regs_mapped = true;
+    for (int i = 0; i < cfg.num_devs; i++) {
+        DevConfig *dc = &cfg.devs[i];
+        if (dc->type == DEV_DISK && ranges_overlap(dc->base, 12, 0x8820, 4)) {
+            keyboard_regs_mapped = false;
+            break;
+        }
+    }
 
     /* ── Initialize VIC (Video Interface Controller) ────── */
     vic_init();
     keyboard_regs_init(&keyboard_regs);
-    g_keyboard_regs = &keyboard_regs;
+    g_keyboard_regs = NULL;
     math_copro_init(&math_copro);
     cia_init(&cia1);
     sid_init(&sid);
@@ -551,9 +566,12 @@ int main(int argc, char *argv[])
                  SOUND_VOICE3_BASE, SOUND_REG_COUNT,
                  soundchip_voice_read, soundchip_voice_write, NULL);
 
-    bus_register(&bus, "KEYBOARD", &keyboard_regs,
-                 0x8820, 4,
-                 keyboard_regs_read, keyboard_regs_write, NULL);
+    if (keyboard_regs_mapped) {
+        g_keyboard_regs = &keyboard_regs;
+        bus_register(&bus, "KEYBOARD", &keyboard_regs,
+                     0x8820, 4,
+                     keyboard_regs_read, keyboard_regs_write, NULL);
+    }
 
     bus_register(&bus, "MATH-COPRO", &math_copro,
                  0x88B0, 16,
@@ -799,7 +817,7 @@ int main(int argc, char *argv[])
         bool irq = false;
         for (int i = 0; i < nv; i++) irq |= via_irq(&vias[i]);
         for (int i = 0; i < nu; i++) irq |= uart_irq(&uarts[i]);
-        irq |= keyboard_regs_irq(&keyboard_regs);
+        if (keyboard_regs_mapped) irq |= keyboard_regs_irq(&keyboard_regs);
         irq |= cia_irq(&cia1);
         irq |= vic_irq();
         if (irq) cpu6502_irq(&cpu);

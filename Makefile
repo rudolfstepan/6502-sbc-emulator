@@ -1,4 +1,5 @@
 CC      ?= gcc
+CL65    ?= cl65
 
 ifeq ($(OS),Windows_NT)
 SHELL       := cmd
@@ -86,7 +87,7 @@ OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
-.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo ehbasic software-test
+.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure spreadsheet test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo ehbasic software-test
 
 all: $(TARGET)
 
@@ -116,7 +117,15 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-check: all test-diskdir test-chess-rom test-peek-poke test-klaus-6502 test-65c02
+check: all test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02
+
+test-sheet: $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) -Iexamples/spreadsheet tests/test_sheet.c examples/spreadsheet/sheet.c -o $(OBJDIR)/test_sheet$(EXEEXT)
+	$(call RUN_BIN,$(OBJDIR)/test_sheet$(EXEEXT))
+
+test-sheet-disk: $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) -Iexamples/spreadsheet tests/test_sheet_disk.c src/bus.c src/sram.c src/diskdev.c src/soundchip.c examples/spreadsheet/sheet.c -o $(OBJDIR)/test_sheet_disk$(EXEEXT) $(TEST_LDFLAGS)
+	$(call RUN_BIN,$(OBJDIR)/test_sheet_disk$(EXEEXT))
 
 software-test: all
 	python tools/software_screenshot_test.py
@@ -128,6 +137,10 @@ $(KLAUS_BIN):
 test-diskdir: $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_diskdev_dir.c src/bus.c src/sram.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_diskdev_dir$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_diskdev_dir$(EXEEXT))
+
+test-fpga-disk: $(OBJDIR) data/sdcard/spreadsheet.d64
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_diskdev_fpga.c src/bus.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_diskdev_fpga$(EXEEXT) $(TEST_LDFLAGS)
+	$(call RUN_BIN,$(OBJDIR)/test_diskdev_fpga$(EXEEXT))
 
 test-chess-rom: $(OBJDIR)
 	$(BASH) tools/make_chess_rom.sh
@@ -170,6 +183,52 @@ adventure: data/disk/adventure.prg
 
 data/disk/adventure.prg: examples/adventure.bas tools/make_ehbasic_prg.py
 	python3 tools/make_ehbasic_prg.py examples/adventure.bas data/disk/adventure.prg
+
+spreadsheet: data/disk/spreadsheet.prg data/sdcard/spreadsheet.d64 data/disk/demo.mc
+	$(BASH) tools/stage_runtime.sh "$(BINDIR)"
+
+# Sample worksheet, generated on the host (not built into the PRG to save the
+# FPGA's scarce RAM).  Load it in MultiCalc with: / L  then  DEMO
+data/disk/demo.mc: tools/make_demo_sheet.c examples/spreadsheet/spreadsheet.c examples/spreadsheet/sheet.c examples/spreadsheet/sheet.h
+	@$(call MKDIR_P,data/disk)
+	$(CC) -std=c99 -Iexamples/spreadsheet tools/make_demo_sheet.c examples/spreadsheet/sheet.c -o $(OBJDIR)/make_demo_sheet$(EXEEXT)
+	$(call RUN_BIN,$(OBJDIR)/make_demo_sheet$(EXEEXT)) data/disk/demo.mc
+
+SPREADSHEET_SRCS = \
+	examples/spreadsheet/prg_header.s \
+	examples/spreadsheet/sbc6502_io.s \
+	examples/spreadsheet/sheet.c \
+	examples/spreadsheet/spreadsheet.c \
+	examples/spreadsheet/spreadsheet.cfg
+
+SPREADSHEET_OBJS = \
+	build/spreadsheet/prg_header.o \
+	build/spreadsheet/sbc6502_io.o \
+	build/spreadsheet/sheet.o \
+	build/spreadsheet/spreadsheet.o
+
+data/disk/spreadsheet.prg: $(SPREADSHEET_OBJS) examples/spreadsheet/spreadsheet.cfg
+	@$(call MKDIR_P,data/disk)
+	$(CL65) -t none -C examples/spreadsheet/spreadsheet.cfg -o data/disk/spreadsheet.prg $(SPREADSHEET_OBJS)
+
+build/spreadsheet/prg_header.o: examples/spreadsheet/prg_header.s examples/spreadsheet/spreadsheet.cfg
+	@$(call MKDIR_P,build/spreadsheet)
+	$(CL65) -t none -c -o build/spreadsheet/prg_header.o examples/spreadsheet/prg_header.s
+
+build/spreadsheet/sbc6502_io.o: examples/spreadsheet/sbc6502_io.s
+	@$(call MKDIR_P,build/spreadsheet)
+	$(CL65) -t none -c -o build/spreadsheet/sbc6502_io.o examples/spreadsheet/sbc6502_io.s
+
+build/spreadsheet/sheet.o: examples/spreadsheet/sheet.c examples/spreadsheet/sheet.h
+	@$(call MKDIR_P,build/spreadsheet)
+	$(CL65) -t none -O -c -o build/spreadsheet/sheet.o examples/spreadsheet/sheet.c
+
+build/spreadsheet/spreadsheet.o: examples/spreadsheet/spreadsheet.c examples/spreadsheet/sheet.h
+	@$(call MKDIR_P,build/spreadsheet)
+	$(CL65) -t none -O -c -o build/spreadsheet/spreadsheet.o examples/spreadsheet/spreadsheet.c
+
+data/sdcard/spreadsheet.d64: data/disk/spreadsheet.prg tools/make_d64.py
+	python tools/make_d64.py data/disk/spreadsheet.prg data/sdcard/spreadsheet.d64 --input-has-load-addr --name spreadsheet --disk-name sheet64
 
 bench-mandelbrot: $(OBJDIR)
 	$(CC) $(BENCH_CFLAGS) -I$(SRCDIR) tests/bench_mandelbrot.c \

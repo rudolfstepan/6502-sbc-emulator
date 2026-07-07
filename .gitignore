@@ -15,6 +15,10 @@ __pycache__/
 tools/roms/
 data/disk/*.prg
 !data/disk/.gitkeep
+!data/disk/spreadsheet.prg
+data/sdcard/*.d64
+!data/sdcard/.gitkeep
+!data/sdcard/spreadsheet.d64
 
 # ── FPGA programming files (fpga is now a submodule with its own .gitignore) ──
 *.prm

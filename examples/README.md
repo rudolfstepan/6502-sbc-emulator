@@ -1,6 +1,6 @@
 # BASIC Examples
 
-EhBASIC V2.22 programs for the 6502 SBC FPGA system. Upload via UART or type in directly at the BASIC prompt.
+BASIC programs for the 6502 SBC emulator and FPGA system. Most examples are plain text sources you can upload via UART or type in directly at the BASIC prompt; some also have Makefile targets that build tokenized disk `.prg` files.
 
 ## Programs
 
@@ -66,6 +66,34 @@ Direct VRAM POKE demo that writes PETSCII block and line-drawing characters to t
 ### adventure.bas — Crypt of the 6502
 
 Text adventure game with room exploration, item collection, and puzzle solving. Navigate with `N/S/E/W`, interact with `TAKE`, `DROP`, `USE`, `LOOK`, `INV`.
+
+### spreadsheet/ — Sheet64
+
+Small spreadsheet built as a real cc65/cl65 machine-code PRG. It provides an
+A1-H16 grid, labels, numbers, cell references, and one-operator formulas such as
+`=A1+B1`, `=A1-B1`, `=A1*B1`, and `=A1/B1`.
+
+Build the virtual SD-card D64 image and load the program:
+
+```
+make spreadsheet
+LOAD "!"
+LOAD "SPREADSHEET"
+```
+
+`make spreadsheet` creates `data/disk/spreadsheet.prg` and
+`data/sdcard/spreadsheet.d64`. The source lives in `examples/spreadsheet/` and
+is linked at `$1000` with a normal two-byte PRG load header. It is not BASIC;
+drag and drop of `data/disk/spreadsheet.prg` starts the machine program
+directly in the emulator.
+
+When running the FPGA ROM with `sbc6502 fpga.ini`, the mount menu is the ROM's
+own command:
+
+```
+LOAD "!"
+LOAD "$"
+```
 
 ## Quick Reference
 

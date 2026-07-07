@@ -11,6 +11,7 @@
 #if SCREEN_SCALE != 2
 #  error "SIMD render path requires SCREEN_SCALE == 2"
 #endif
+#define WINDOW_SCALE 2          // QEMU-style integer scaling of the SBC image
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 8
 #define SCREEN_COLS 40
@@ -18,12 +19,12 @@
 #define COLOR_RAM_OFFSET 1024
 #define WINDOW_WIDTH  (SCREEN_COLS * CHAR_WIDTH * SCREEN_SCALE)
 #define WINDOW_HEIGHT (SCREEN_ROWS * CHAR_HEIGHT * SCREEN_SCALE)
+#define SDL_WINDOW_WIDTH  (WINDOW_WIDTH * WINDOW_SCALE)
+#define SDL_WINDOW_HEIGHT (WINDOW_HEIGHT * WINDOW_SCALE)
 
 /* Sprite mask for collision detection: which sprites cover each pixel */
 static uint8_t sprite_mask[320 * 200];
 
-/* Dirty tracking: which 8x8 cells (text mode) / 8x8 blocks (bitmap) have changed */
-static bool dirty[25 * 40];  /* 25 rows × 40 cols */
 static bool full_redraw = true;  /* force full redraw on mode change, etc. */
 
 static const uint32_t vic_palette[16] = {
@@ -32,7 +33,7 @@ static const uint32_t vic_palette[16] = {
     0xFF813338, // 2 red
     0xFF75CEC8, // 3 cyan
     0xFF8E3C97, // 4 purple
-    0xFF56AC4D, // 5 green
+    0xFF003B16, // 5 green / dark terminal background
     0xFF2E2C9B, // 6 blue
     0xFFEDF171, // 7 yellow
     0xFF8E5029, // 8 orange
@@ -68,7 +69,6 @@ static SDL_Renderer *renderer = NULL;
 static SDL_Texture *texture = NULL;
 static uint32_t *framebuffer = NULL;
 static bool sdl_initialized = false;
-static bool screen_edit_mode = false;
 static vic_sdl_drop_file_fn drop_file_handler = NULL;
 static void *drop_file_user = NULL;
 
@@ -78,112 +78,6 @@ void vic_sdl_set_drop_file_handler(vic_sdl_drop_file_fn fn, void *user)
 {
     drop_file_handler = fn;
     drop_file_user = user;
-}
-
-static bool push_key_sequence(VIA6522 *via, const uint8_t *bytes, size_t len) {
-    KeyboardRegs *kbd = get_keyboard_regs();
-    for (size_t i = 0; i < len; i++) {
-        if (kbd) {
-            keyboard_regs_push_ascii(kbd, bytes[i]);
-        }
-        if (!via_keyboard_push(via, bytes[i])) {
-            return false;
-        }
-    }
-    return true;
-}
-
-static bool inject_current_screen_line(VIA6522 *via) {
-    uint8_t cursor_x = 0;
-    uint8_t cursor_y = 0;
-    uint8_t line[SCREEN_COLS + 2];
-    size_t len = 0;
-    size_t trimmed_len;
-
-    vic_get_cursor(&cursor_x, &cursor_y);
-
-    for (int col = 0; col < cursor_x && col < SCREEN_COLS; col++) {
-        line[len++] = vic_read_video_ram((uint16_t)(cursor_y * SCREEN_COLS + col));
-    }
-
-    trimmed_len = len;
-    while (trimmed_len > 0 && line[trimmed_len - 1] == ' ') {
-        trimmed_len--;
-    }
-
-    if (trimmed_len == 0) {
-        uint8_t cr = '\r';
-        return push_key_sequence(via, &cr, 1);
-    }
-
-    /* Retype the recalled line and execute it. Screen-edit characters were
-       written directly to video RAM and are not already in BASIC's input buffer. */
-    line[trimmed_len++] = '\r';
-    return push_key_sequence(via, line, trimmed_len);
-}
-
-static void move_cursor_left(void) {
-    uint8_t x = 0;
-    uint8_t y = 0;
-    vic_get_cursor(&x, &y);
-    if (x > 0) {
-        x--;
-    } else if (y > 0) {
-        x = SCREEN_COLS - 1;
-        y--;
-    }
-    vic_set_cursor(x, y);
-}
-
-static void move_cursor_right(void) {
-    uint8_t x = 0;
-    uint8_t y = 0;
-    vic_get_cursor(&x, &y);
-    if (x + 1 < SCREEN_COLS) {
-        x++;
-    } else if (y + 1 < SCREEN_ROWS) {
-        x = 0;
-        y++;
-    }
-    vic_set_cursor(x, y);
-}
-
-static void move_cursor_up(void) {
-    uint8_t x = 0;
-    uint8_t y = 0;
-    vic_get_cursor(&x, &y);
-    if (y > 0) {
-        y--;
-    }
-    vic_set_cursor(x, y);
-}
-
-static void move_cursor_down(void) {
-    uint8_t x = 0;
-    uint8_t y = 0;
-    vic_get_cursor(&x, &y);
-    if (y + 1 < SCREEN_ROWS) {
-        y++;
-    }
-    vic_set_cursor(x, y);
-}
-
-static void edit_backspace_at_cursor(void) {
-    uint8_t x = 0;
-    uint8_t y = 0;
-    vic_get_cursor(&x, &y);
-
-    if (x > 0) {
-        x--;
-    } else if (y > 0) {
-        x = SCREEN_COLS - 1;
-        y--;
-    } else {
-        return;
-    }
-
-    vic_set_cursor(x, y);
-    vic_write_video_ram((uint16_t)(y * SCREEN_COLS + x), ' ');
 }
 
 // Initialize SDL2 rendering
@@ -203,8 +97,8 @@ int vic_sdl_init(void) {
         "6502 SBC - VIC Display",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        WINDOW_WIDTH,
-        WINDOW_HEIGHT,
+        SDL_WINDOW_WIDTH,
+        SDL_WINDOW_HEIGHT,
         SDL_WINDOW_SHOWN
     );
 
@@ -260,7 +154,10 @@ int vic_sdl_init(void) {
     SDL_StartTextInput();
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
-    printf("SDL2 VIC display initialized: %dx%d\n", WINDOW_WIDTH, WINDOW_HEIGHT);
+    printf("SDL2 VIC display initialized: %dx%d framebuffer, %dx%d window (%dx)\n",
+           WINDOW_WIDTH, WINDOW_HEIGHT,
+           SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT,
+           WINDOW_SCALE);
 
     return 0;
 }
@@ -334,7 +231,8 @@ static void render_char_at(uint8_t char_code, int px, int py, uint8_t text_attr,
 }
 
 static void render_char_80_at(uint8_t char_code, int px, int py,
-                              uint32_t fg, uint32_t bg, bool invert) {
+                              uint32_t fg, uint32_t bg, bool invert,
+                              bool underline) {
     const uint8_t *pattern = vic_get_char_pattern(char_code);
     if (invert) {
         uint32_t tmp = fg;
@@ -344,6 +242,7 @@ static void render_char_80_at(uint8_t char_code, int px, int py,
 
     for (int row = 0; row < CHAR_HEIGHT; row++) {
         uint8_t pat = pattern[row];
+        if (underline && row == CHAR_HEIGHT - 1) pat = 0xFF;  /* solid bottom row */
         for (int vrep = 0; vrep < 2; vrep++) {
             int fy = py + row * 2 + vrep;
             if ((unsigned)fy >= WINDOW_HEIGHT) continue;
@@ -402,11 +301,16 @@ void vic_sdl_render(void) {
         if (text_attr_mode & 0x02) {
             uint32_t fg = vic_palette[vic_get_text_color() & 0x0F];
             uint32_t bg = vic_palette[vic_get_background_color() & 0x0F];
+            bool ul_attr = (text_attr_mode & 0x04) != 0;
             for (int row = 0; row < SCREEN_ROWS; row++) {
                 for (int col = 0; col < 80; col++) {
-                    uint8_t char_code = vic_read_video_ram((uint16_t)(row * 80 + col));
+                    uint8_t raw = vic_read_video_ram((uint16_t)(row * 80 + col));
+                    /* With the underline attribute enabled, bit 7 underlines the
+                     * character and the glyph index is the low 7 bits. */
+                    bool underline = ul_attr && (raw & 0x80);
+                    uint8_t char_code = ul_attr ? (uint8_t)(raw & 0x7F) : raw;
                     bool invert = cursor_visible && col == cursor_x && row == cursor_y;
-                    render_char_80_at(char_code, col * 8, row * 16, fg, bg, invert);
+                    render_char_80_at(char_code, col * 8, row * 16, fg, bg, invert, underline);
                 }
             }
         } else {
@@ -665,14 +569,10 @@ bool vic_sdl_handle_events(void) {
                     uint8_t ascii = (uint8_t)event.text.text[0];
                     // Only accept printable ASCII (0x20-0x7E)
                     if (ascii >= 0x20 && ascii <= 0x7E) {
-                        if (screen_edit_mode) {
-                            vic_write_char((char)ascii);
-                        } else {
-                            if (kbd) {
-                                keyboard_regs_push_ascii(kbd, ascii);
-                            }
-                            via_keyboard_push(via, ascii);
+                        if (kbd) {
+                            keyboard_regs_push_ascii(kbd, ascii);
                         }
+                        via_keyboard_push(via, ascii);
                     }
                 }
                 break;
@@ -694,49 +594,34 @@ bool vic_sdl_handle_events(void) {
                     // Only handle non-printable keys here
                     switch (key) {
                         case SDLK_LEFT:
-                            move_cursor_left();
-                            screen_edit_mode = true;
+                            ascii = 0x9D;  // PETSCII/SBC cursor left
                             break;
                         case SDLK_RIGHT:
-                            move_cursor_right();
-                            screen_edit_mode = true;
+                            ascii = 0x1D;  // PETSCII/SBC cursor right
                             break;
                         case SDLK_UP:
-                            move_cursor_up();
-                            screen_edit_mode = true;
+                            ascii = 0x91;  // PETSCII/SBC cursor up
                             break;
                         case SDLK_DOWN:
-                            move_cursor_down();
-                            screen_edit_mode = true;
+                            ascii = 0x11;  // PETSCII/SBC cursor down
                             break;
                         case SDLK_RETURN:
                         case SDLK_KP_ENTER:
-                            if (screen_edit_mode) {
-                                inject_current_screen_line(via);
-                                screen_edit_mode = false;
-                            } else {
-                                ascii = '\r';  // Carriage return
-                            }
+                            ascii = '\r';  // Carriage return
                             break;
                         case SDLK_BACKSPACE:
-                            if (screen_edit_mode) {
-                                edit_backspace_at_cursor();
-                            } else {
-                                ascii = '\b';  // Backspace
-                            }
+                            ascii = '\b';  // Backspace
                             break;
                         case SDLK_HOME:
                             if (mod & KMOD_SHIFT) {
-                                vic_clear_screen();
+                                ascii = 0x93;  // Clear/Home
                             } else {
-                                vic_set_cursor(0, 0);
+                                ascii = 0x13;  // Home
                             }
-                            screen_edit_mode = true;
                             break;
                         case SDLK_l:
                             if (mod & KMOD_CTRL) {
                                 vic_clear_screen();
-                                screen_edit_mode = true;
                             }
                             break;
                         case SDLK_c:

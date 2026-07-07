@@ -25,11 +25,17 @@ NEW
 
 ## LOAD / SAVE
 
-BASIC disk operations use host directory [data/disk](../data/disk):
+BASIC disk operations in `sbc.ini`/`ehbasic.ini` use the emulator BASIC disk
+device at `$8820`.
+Loose fallback files live in [data/disk](../data/disk), while mountable
+D64 disk images live in [data/sdcard](../data/sdcard):
 
 ```basic
 SAVE
 LOAD
+LOAD "SPREADSHEET.D64"
+LOAD "SPREADSHEET"
+LOAD "$"
 ```
 
 ## SBC-specific BASIC Addition
@@ -45,7 +51,7 @@ $0300-$7FFF   BASIC program + variables
 $8000-$87FF   VIC text/color RAM
 $8800-$880F   VIA 6522
 $8810-$8813   UART 6551
-$8820-$882F   DISK MVP
+$8820-$882F   DISK MVP (legacy emulator BASIC register layout)
 $8830-$8835   SOUND
 $9000-$900F   VIC registers
 $9010-$AF4F   VIC bitmap RAM

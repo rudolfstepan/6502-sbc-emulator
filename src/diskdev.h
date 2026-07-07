@@ -27,6 +27,15 @@
 typedef struct {
     Bus      *bus;
     char      root_path[256];
+    char      sdcard_path[256];
+    char      mounted_d64[512];
+    uint8_t   fpga_status;
+    uint8_t   fpga_result;
+    uint8_t   fpga_track;
+    uint8_t   fpga_sector;
+    uint8_t   fpga_ptr;
+    uint8_t   fpga_raw_lba[4];
+    uint8_t   fpga_sector_buf[256];
     char      filename[32];      // Current filename
     uint8_t   fname_idx;          // Index for filename access
     uint16_t  addr;

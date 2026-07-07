@@ -322,7 +322,9 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
             refresh_text_attr_background();
             break;
         case 5:
-            vic_state.text_attr_mode = val & 0x03;
+            /* bit0 = per-cell colour, bit1 = 80-column mode,
+             * bit2 = underline attribute (char bit7 underlines in 80-col). */
+            vic_state.text_attr_mode = val & 0x07;
             break;
         case 6:
             vic_state.bitmap_bank_ext = val & 0x1F;

@@ -25,7 +25,7 @@ void config_defaults(Config *cfg)
         cfg->devs[3] = (DevConfig){ .type=DEV_VIA,  .base=0x8800 };
         cfg->devs[4] = (DevConfig){ .type=DEV_UART, .base=0x8810,
                                     .uart_mode="stdio" };
-        cfg->devs[5] = (DevConfig){ .type=DEV_DISK, .base=0x8824,
+        cfg->devs[5] = (DevConfig){ .type=DEV_DISK, .base=0x8820,
                                     .disk_path="data/disk" };
         cfg->num_devs = 6;
     }

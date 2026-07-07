@@ -15,6 +15,7 @@ A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an in
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
 - Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), chess (`chess.ini`), and the 4-voice sound demo (`soundtest.ini`)
 - ROM build scripts for kernel, MS BASIC, EhBASIC, chess, and the soundtest ROM
+- **MultiCalc**, an 80-column Multiplan/Lotus-class spreadsheet built as a cc65 PRG for the FPGA target (`make spreadsheet`; see [docs/MULTICALC.md](docs/MULTICALC.md))
 
 ## Quick Start
 
@@ -119,7 +120,8 @@ $0000-$7FFF   SRAM (configurable)
 $8000-$87FF   VIC text/color RAM (fixed)
 $8800-$880F   VIA 6522 (configurable base)
 $8810-$8813   UART 6551 (configurable base)
-$8820-$882F   DISK MVP (configurable base)
+$8820-$8823   PS/2 keyboard registers, or legacy BASIC disk when overlapped
+$8824-$882F   FPGA D64 GoDrive / SD-card disk window (`fpga.ini`)
 $8830-$8839   SOUND Voice 0 — freq / dur / vol / control / ADSR (fixed)
 $8840-$884F   VIC blitter registers (fixed)
 $8850-$888F   VIC sprite registers (fixed)
@@ -264,7 +266,7 @@ base = 0x8810
 mode = stdio
 
 [disk]
-base = 0x8824
+base = 0x8820
 path = data/disk
 ```
 
@@ -293,6 +295,7 @@ bin/
     chess.rom
     soundtest.rom
   data/disk/
+  data/sdcard/
   # Windows only: SDL2.dll, libwinpthread-1.dll, libgcc_s_seh-1.dll
 ```
 
@@ -314,8 +317,9 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 - [fpga/docs/INDEX.md](fpga/docs/INDEX.md) — FPGA documentation index for architecture, builds, board support, and real hardware HDMI captures
 - [fpga/docs/images/README.md](fpga/docs/images/README.md) — Tang Primer 20K HDMI screenshots captured from FPGA hardware through a video grabber
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, device map, audio model
-- [docs/VIC.md](docs/VIC.md) — video chip registers and rendering modes
+- [docs/VIC.md](docs/VIC.md) — video chip registers and rendering modes (incl. the 80-column underline text attribute)
 - [docs/KEYBOARD.md](docs/KEYBOARD.md) — keyboard mapping
+- [docs/MULTICALC.md](docs/MULTICALC.md) — MultiCalc spreadsheet user manual
 - [docs/MSBASIC.md](docs/MSBASIC.md) — MS BASIC usage notes
 - [docs/BASIC_CONVERTER.md](docs/BASIC_CONVERTER.md) — BASIC tokenizer tool
 - [docs/THIRD_PARTY.md](docs/THIRD_PARTY.md) — third-party components and licenses
@@ -330,9 +334,22 @@ bin/        generated runtime bundle (created by make)
 roms/       ROM binaries
 docs/       documentation
 examples/   sample code
-data/disk/  host-backed BASIC disk files
+data/disk/  host-backed fallback BASIC disk files
+data/sdcard/ virtual SD-card folder for mountable D64 images
 fpga/       FPGA implementation (git submodule → 6502-sbc-fpga)
 ```
+
+With `fpga.ini`, the FPGA ROM uses its own D64 GoDrive commands:
+
+```basic
+LOAD "!"     : REM open the on-screen D64 mount menu
+LOAD "$"     : REM print the mounted D64 directory
+LOAD "NAME"  : REM load a PRG
+```
+
+For machine-code PRGs, use the `CALL` address printed by the ROM. Sheet64 is a
+hybrid PRG: the ROM-printed `CALL 766`, `RUN`, and direct PRG execution all
+enter its loader.
 
 The `fpga/` directory is a **git submodule** pointing at
 [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga). Its

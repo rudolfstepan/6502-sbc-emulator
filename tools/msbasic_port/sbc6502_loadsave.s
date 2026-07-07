@@ -253,7 +253,7 @@ copy_loop:
         tya
         tax
         
-        ; Check if filename ends with ".prg" (case insensitive)
+        ; Check if filename ends with ".prg" or ".d64" (case insensitive)
         ; Need at least 4 characters
         cpy     #4
         bcs     :+
@@ -262,7 +262,31 @@ copy_loop:
         
         ; Save original length in X for later
         sty     FNAME_BUF+FNAME_MAX-1  ; temp storage
-        
+
+        ; Check last 4 characters for ".d64"
+        dey
+        lda     FNAME_BUF,y
+        cmp     #'4'
+        bne     check_prg_ext
+        dey
+        lda     FNAME_BUF,y
+        cmp     #'6'
+        bne     check_prg_ext
+        dey
+        lda     FNAME_BUF,y
+        cmp     #'D'
+        beq     :+
+        cmp     #'d'
+        bne     check_prg_ext
+:       dey
+        lda     FNAME_BUF,y
+        cmp     #'.'
+        bne     check_prg_ext
+        ldy     FNAME_BUF+FNAME_MAX-1
+        jmp     has_prg         ; .d64 is a disk image name, do not append .prg
+
+check_prg_ext:
+        ldy     FNAME_BUF+FNAME_MAX-1
         ; Check last 4 characters: [Y-4] through [Y-1]
         dey
         lda     FNAME_BUF,y     ; should be 'g' or 'G'

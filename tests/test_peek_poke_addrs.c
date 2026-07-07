@@ -94,11 +94,12 @@ int main(void)
     assert(peek(&bus, 0x8823) == 'A');
     assert((peek(&bus, 0x8820) & 0x01) == 0);
 
-    /* DISK register window (address/length registers are read-back capable) */
-    assert_peek_poke(&bus, 0x8826, 0x34); /* ADDR_LO */
-    assert_peek_poke(&bus, 0x8827, 0x12); /* ADDR_HI */
-    assert_peek_poke(&bus, 0x8828, 0x78); /* LEN_LO */
-    assert_peek_poke(&bus, 0x8829, 0x56); /* LEN_HI */
+    /* FPGA GoDrive register window at $8824. */
+    poke(&bus, 0x8825, 0x0A);          /* RESET command */
+    assert((peek(&bus, 0x8824) & 0x02) != 0); /* DONE */
+    assert(peek(&bus, 0x8828) == 0x00);       /* RESULT OK */
+    assert_peek_poke(&bus, 0x8826, 0x34); /* TRACK */
+    assert_peek_poke(&bus, 0x8827, 0x12); /* SECTOR */
 
     /* SOUND register block */
     assert_peek_poke(&bus, 0x8830, 0x70); /* FREQ_LO */

@@ -31,6 +31,23 @@ Text/color layout inside the 2 KB text window:
 | `$000-$3E7` | 1000 B | Character codes |
 | `$400-$7E7` | 1000 B | Per-cell color attributes |
 
+### Text attribute register (`$9005`)
+
+Selects how the text plane is interpreted:
+
+| Bit | Mask | Meaning |
+|---|---|---|
+| 0 | `$01` | Per-cell colour: use color RAM at `$8400` (else a single global fg/bg) |
+| 1 | `$02` | 80-column mode: 80×25 characters at `$8000` with a global fg/bg |
+| 2 | `$04` | Underline attribute (80-column mode): character **bit 7 = underline**, glyph index is the low 7 bits |
+
+The underline attribute is a lightweight "text font type": with it enabled a
+program underlines any character by setting bit 7 of its code, without needing a
+second attribute plane (which would not fit alongside 2000 char codes in the
+2 KB window).  When the bit is clear the full 8-bit character code selects the
+glyph as before, so existing 80-column software is unaffected.  MultiCalc uses
+this to underline command hot-keys the way Multiplan did.
+
 ---
 
 ## Bitmap Mode
@@ -287,7 +304,9 @@ STA $9000
 
 ## SDL Rendering
 
-The SDL backend opens a 640×400 window (2× scale) and renders VIC state at the end of each emulation batch (~10 ms at the configured CPU speed).
+The SDL backend renders to a 640×400 framebuffer and opens a 1280×800 window
+with integer 2× window scaling, similar to QEMU display scaling. It renders VIC
+state at the end of each emulation batch (~10 ms at the configured CPU speed).
 
 - ESC or window close exits emulation
 - Keyboard input is injected into the VIA 6522 keyboard queue
