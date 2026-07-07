@@ -16,6 +16,8 @@ $wikiRemote = "https://github.com/$Owner/$Repo.wiki.git"
 
 $pages = @(
     @{ Source = "README.md"; Page = "Home"; Title = "Home" }
+    @{ Source = "docs/FPGA_COMPATIBILITY_STATUS.md"; Page = "FPGA-Compatibility-Status"; Title = "FPGA Compatibility Status" }
+    @{ Source = "docs/software-test.md"; Page = "FPGA-Software-Test"; Title = "FPGA Software Test" }
     @{ Source = "docs/ARCHITECTURE.md"; Page = "Architecture-Overview"; Title = "Architecture Overview" }
     @{ Source = "docs/VIC.md"; Page = "VIC-Video-Interface-Controller"; Title = "VIC Video Interface Controller" }
     @{ Source = "docs/KEYBOARD.md"; Page = "Keyboard-Integration"; Title = "Keyboard Integration" }
@@ -166,6 +168,8 @@ $sidebar = @(
     "- [VIC Graphics Test]($repoUrl/wiki/VIC-Graphics-Test)",
     "",
     "## FPGA",
+    "- [FPGA Compatibility Status]($repoUrl/wiki/FPGA-Compatibility-Status)",
+    "- [FPGA Software Test]($repoUrl/wiki/FPGA-Software-Test)",
     "- [FPGA Repository](https://github.com/rudolfstepan/6502-sbc-fpga)",
     "- [FPGA Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki)",
     "",
