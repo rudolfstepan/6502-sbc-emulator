@@ -39,7 +39,7 @@ void vic_write_video_ram(uint16_t address, uint8_t data);
 uint8_t vic_read_video_ram(uint16_t address);
 
 // Bitmap RAM access (for rendering)
-uint8_t vic_read_bitmap_ram(uint16_t address);
+uint8_t vic_read_bitmap_ram(uint32_t address);
 
 // Character ROM access
 const uint8_t* vic_get_char_pattern(uint8_t char_code);
@@ -55,6 +55,8 @@ void vic_scroll_up();
 // Graphics mode control
 uint8_t vic_get_graphics_mode(void);  // Returns 0=text, 1=bitmap
 void vic_set_graphics_mode(uint8_t mode);
+uint8_t vic_get_mode_raw(void);
+uint8_t vic_get_text_attr_mode(void);
 
 // Cursor control
 void vic_set_cursor(uint8_t x, uint8_t y);
@@ -65,6 +67,10 @@ void vic_set_text_color(uint8_t color);
 uint8_t vic_get_text_color(void);
 void vic_set_background_color(uint8_t color);
 uint8_t vic_get_background_color(void);
+
+/* C64-compatible VIC-II register block ($D000-$D03F) */
+uint8_t vicii_read(void *dev, uint16_t offset);
+void vicii_write(void *dev, uint16_t offset, uint8_t val);
 
 // Rendering
 void vic_render_screen();

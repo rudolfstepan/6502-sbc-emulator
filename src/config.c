@@ -16,19 +16,21 @@ static char *trim(char *s)
 void config_defaults(Config *cfg)
 {
     if (cfg->num_devs == 0) {
-        /* Default memory map: 32K SRAM + 16K ROM + VIA + UART */
+        /* Tang Primer 20K FPGA-compatible split-ROM map. */
         cfg->devs[0] = (DevConfig){ .type=DEV_SRAM, .base=0x0000, .size=0x8000 };
-        cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xC000, .size=0x4000,
-                                    .rom_file="roms/rom.bin" };
-        cfg->devs[2] = (DevConfig){ .type=DEV_VIA,  .base=0x8000 };
-        cfg->devs[3] = (DevConfig){ .type=DEV_UART, .base=0x8010,
+        cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xA000, .size=0x3000,
+                                    .rom_file="roms/ehbasic.rom" };
+        cfg->devs[2] = (DevConfig){ .type=DEV_ROM,  .base=0xF000, .size=0x1000,
+                                    .rom_file="roms/kernel.rom" };
+        cfg->devs[3] = (DevConfig){ .type=DEV_VIA,  .base=0x8800 };
+        cfg->devs[4] = (DevConfig){ .type=DEV_UART, .base=0x8810,
                                     .uart_mode="stdio" };
-        cfg->devs[4] = (DevConfig){ .type=DEV_DISK, .base=0x8020,
+        cfg->devs[5] = (DevConfig){ .type=DEV_DISK, .base=0x8824,
                                     .disk_path="data/disk" };
-        cfg->num_devs = 5;
+        cfg->num_devs = 6;
     }
-    if (cfg->cpu_speed_hz == 0)
-        cfg->cpu_speed_hz = 1000000; /* 1 MHz */
+    if (!cfg->cpu_speed_set)
+        cfg->cpu_speed_hz = DEFAULT_CPU_SPEED_HZ;
 }
 
 int config_load(Config *cfg, const char *filename)
@@ -80,8 +82,10 @@ int config_load(Config *cfg, const char *filename)
         if (cm) { *cm = 0; val = trim(val); }
 
         if (strcmp(section, "cpu") == 0) {
-            if (strcmp(key, "speed_hz") == 0)
+            if (strcmp(key, "speed_hz") == 0) {
                 cfg->cpu_speed_hz = (uint32_t)strtoul(val, NULL, 0);
+                cfg->cpu_speed_set = true;
+            }
             else if (strcmp(key, "debug") == 0)
                 cfg->debug = atoi(val) != 0;
             else if (strcmp(key, "model") == 0)
@@ -99,6 +103,10 @@ int config_load(Config *cfg, const char *filename)
                 cur.size = (uint32_t)strtoul(val, NULL, 16);
             else if (strcmp(key, "file") == 0)
                 strncpy(cur.rom_file, val, CFG_STR_MAX - 1);
+            else if (strcmp(key, "offset") == 0 || strcmp(key, "file_offset") == 0) {
+                cur.rom_file_offset = (uint32_t)strtoul(val, NULL, 0);
+                cur.has_rom_file_offset = true;
+            }
             else if (strcmp(key, "mode") == 0)
                 strncpy(cur.uart_mode, val, sizeof(cur.uart_mode) - 1);
             else if (strcmp(key, "port") == 0)
@@ -126,6 +134,7 @@ void config_dump(const Config *cfg)
         printf("  [%s] base=$%04X", type_names[d->type], d->base);
         if (d->size)  printf(" size=$%04X", d->size);
         if (d->rom_file[0]) printf(" file=%s", d->rom_file);
+        if (d->has_rom_file_offset) printf(" offset=$%04X", d->rom_file_offset);
         if (d->uart_mode[0]) printf(" mode=%s", d->uart_mode);
         if (d->uart_port)    printf(" port=%d", d->uart_port);
         if (d->disk_path[0]) printf(" path=%s", d->disk_path);

@@ -2,7 +2,7 @@
 #include <stdint.h>
 #include <stddef.h>
 
-#define BUS_MAX_DEVICES 16
+#define BUS_MAX_DEVICES 32
 #define BUS_PAGE_COUNT 256
 
 typedef uint8_t (*bus_read_fn)(void *dev, uint16_t offset);

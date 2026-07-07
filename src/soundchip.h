@@ -58,6 +58,9 @@ void    soundchip_init(void);
 void    soundchip_beep(float frequency, int duration_ms); /* legacy: triggers voice 0 */
 void    soundchip_shutdown(void);
 
+typedef float (*soundchip_sample_source_fn)(void *user, int sample_rate);
+void    soundchip_set_sid_source(soundchip_sample_source_fn fn, void *user);
+
 /* Bus callbacks — pass voice index (0–3) as dev pointer */
 uint8_t soundchip_voice_read(void *dev, uint16_t offset);
 void    soundchip_voice_write(void *dev, uint16_t offset, uint8_t val);

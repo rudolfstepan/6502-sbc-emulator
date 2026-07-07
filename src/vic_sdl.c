@@ -45,6 +45,23 @@ static const uint32_t vic_palette[16] = {
     0xFFB2B2B2  // 15 light gray
 };
 
+static uint32_t rgb332_to_argb(uint8_t v)
+{
+    uint8_t r = (uint8_t)(((v >> 5) & 0x07) * 255 / 7);
+    uint8_t g = (uint8_t)(((v >> 2) & 0x07) * 255 / 7);
+    uint8_t b = (uint8_t)((v & 0x03) * 255 / 3);
+    return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
+static uint32_t rgb565_to_argb(uint8_t lo, uint8_t hi)
+{
+    uint16_t v = (uint16_t)lo | ((uint16_t)hi << 8);
+    uint8_t r = (uint8_t)(((v >> 11) & 0x1F) * 255 / 31);
+    uint8_t g = (uint8_t)(((v >> 5) & 0x3F) * 255 / 63);
+    uint8_t b = (uint8_t)((v & 0x1F) * 255 / 31);
+    return 0xFF000000u | ((uint32_t)r << 16) | ((uint32_t)g << 8) | b;
+}
+
 // SDL objects
 static SDL_Window *window = NULL;
 static SDL_Renderer *renderer = NULL;
@@ -52,11 +69,23 @@ static SDL_Texture *texture = NULL;
 static uint32_t *framebuffer = NULL;
 static bool sdl_initialized = false;
 static bool screen_edit_mode = false;
+static vic_sdl_drop_file_fn drop_file_handler = NULL;
+static void *drop_file_user = NULL;
 
 #define CURSOR_BLINK_MS 500
 
+void vic_sdl_set_drop_file_handler(vic_sdl_drop_file_fn fn, void *user)
+{
+    drop_file_handler = fn;
+    drop_file_user = user;
+}
+
 static bool push_key_sequence(VIA6522 *via, const uint8_t *bytes, size_t len) {
+    KeyboardRegs *kbd = get_keyboard_regs();
     for (size_t i = 0; i < len; i++) {
+        if (kbd) {
+            keyboard_regs_push_ascii(kbd, bytes[i]);
+        }
         if (!via_keyboard_push(via, bytes[i])) {
             return false;
         }
@@ -188,6 +217,9 @@ int vic_sdl_init(void) {
     // Create renderer
     renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_ACCELERATED);
     if (!renderer) {
+        renderer = SDL_CreateRenderer(window, -1, SDL_RENDERER_SOFTWARE);
+    }
+    if (!renderer) {
         fprintf(stderr, "SDL_CreateRenderer failed: %s\n", SDL_GetError());
         SDL_DestroyWindow(window);
         SDL_Quit();
@@ -226,6 +258,7 @@ int vic_sdl_init(void) {
 
     // Enable text input for international keyboard support
     SDL_StartTextInput();
+    SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     printf("SDL2 VIC display initialized: %dx%d\n", WINDOW_WIDTH, WINDOW_HEIGHT);
 
@@ -300,6 +333,30 @@ static void render_char_at(uint8_t char_code, int px, int py, uint8_t text_attr,
     }
 }
 
+static void render_char_80_at(uint8_t char_code, int px, int py,
+                              uint32_t fg, uint32_t bg, bool invert) {
+    const uint8_t *pattern = vic_get_char_pattern(char_code);
+    if (invert) {
+        uint32_t tmp = fg;
+        fg = bg;
+        bg = tmp;
+    }
+
+    for (int row = 0; row < CHAR_HEIGHT; row++) {
+        uint8_t pat = pattern[row];
+        for (int vrep = 0; vrep < 2; vrep++) {
+            int fy = py + row * 2 + vrep;
+            if ((unsigned)fy >= WINDOW_HEIGHT) continue;
+            for (int bit = 0; bit < CHAR_WIDTH; bit++) {
+                int fx = px + bit;
+                if ((unsigned)fx >= WINDOW_WIDTH) continue;
+                framebuffer[fy * WINDOW_WIDTH + fx] =
+                    (pat & (1u << bit)) ? fg : bg;
+            }
+        }
+    }
+}
+
 
 // Render the VIC screen to SDL window
 void vic_sdl_render(void) {
@@ -332,7 +389,7 @@ void vic_sdl_render(void) {
         simd_fill_u32(framebuffer, vic_palette[vic_get_background_color() & 0x0F],
                       (size_t)WINDOW_WIDTH * WINDOW_HEIGHT);
 
-        // Text mode: 40x25 characters
+        // Text mode: 40x25 or FPGA 80x25 characters
         uint8_t cursor_x = 0;
         uint8_t cursor_y = 0;
         bool cursor_visible = ((SDL_GetTicks() / CURSOR_BLINK_MS) & 1u) == 0;
@@ -340,8 +397,20 @@ void vic_sdl_render(void) {
 
         uint8_t scroll_x = vic_get_scroll_x();
         uint8_t scroll_y = vic_get_scroll_y();
+        uint8_t text_attr_mode = vic_get_text_attr_mode();
 
-        for (int row = 0; row < SCREEN_ROWS; row++) {
+        if (text_attr_mode & 0x02) {
+            uint32_t fg = vic_palette[vic_get_text_color() & 0x0F];
+            uint32_t bg = vic_palette[vic_get_background_color() & 0x0F];
+            for (int row = 0; row < SCREEN_ROWS; row++) {
+                for (int col = 0; col < 80; col++) {
+                    uint8_t char_code = vic_read_video_ram((uint16_t)(row * 80 + col));
+                    bool invert = cursor_visible && col == cursor_x && row == cursor_y;
+                    render_char_80_at(char_code, col * 8, row * 16, fg, bg, invert);
+                }
+            }
+        } else {
+            for (int row = 0; row < SCREEN_ROWS; row++) {
             int render_row = row - (scroll_y >> 3);  /* coarse scroll by character rows */
             if (render_row < 0) render_row += SCREEN_ROWS;  /* wrap */
             for (int col = 0; col < SCREEN_COLS; col++) {
@@ -349,6 +418,10 @@ void vic_sdl_render(void) {
                 if (render_col < 0) render_col += SCREEN_COLS;  /* wrap */
                 uint8_t char_code = vic_read_video_ram(render_row * SCREEN_COLS + render_col);
                 uint8_t text_attr = vic_read_video_ram(COLOR_RAM_OFFSET + render_row * SCREEN_COLS + render_col);
+                if ((text_attr_mode & 0x01) == 0) {
+                    text_attr = (uint8_t)((text_attr & 0x0F) |
+                                ((vic_get_background_color() & 0x0F) << 4));
+                }
                 bool invert = cursor_visible && render_col == cursor_x && render_row == cursor_y;
                 /* Apply fine scroll offset to rendering position */
                 int render_x = col * CHAR_WIDTH - (scroll_x & 7);
@@ -356,8 +429,48 @@ void vic_sdl_render(void) {
                 render_char_at(char_code, render_x, render_y, text_attr, invert);
             }
         }
+        }
     } else {
-        /* Bitmap mode with per-cell colours from colour RAM.
+        uint8_t mode = vic_get_mode_raw();
+        if (mode & 0x40) {
+            /* Tang FPGA: 320x200 RGB565, centred vertically in the 640x400 window. */
+            for (int y = 0; y < 200; y++) {
+                for (int x = 0; x < 320; x++) {
+                    uint32_t byte_addr = (uint32_t)(y * 320 + x) * 2u;
+                    uint32_t c = rgb565_to_argb(vic_read_bitmap_ram(byte_addr),
+                                                vic_read_bitmap_ram(byte_addr + 1));
+                    int fx0 = x * 2;
+                    int fy0 = y * 2;
+                    framebuffer[fy0 * WINDOW_WIDTH + fx0] = c;
+                    framebuffer[fy0 * WINDOW_WIDTH + fx0 + 1] = c;
+                    framebuffer[(fy0 + 1) * WINDOW_WIDTH + fx0] = c;
+                    framebuffer[(fy0 + 1) * WINDOW_WIDTH + fx0 + 1] = c;
+                }
+            }
+        } else if (mode & 0x20) {
+            /* Tang FPGA: 640x400 RGB332, 1 byte per pixel. */
+            for (int y = 0; y < 400; y++) {
+                for (int x = 0; x < 640; x++) {
+                    framebuffer[y * WINDOW_WIDTH + x] =
+                        rgb332_to_argb(vic_read_bitmap_ram((uint32_t)y * 640u + (uint32_t)x));
+                }
+            }
+        } else if (mode & 0x10) {
+            /* Tang FPGA: 320x200 RGB332, scaled 2x to the emulator window. */
+            for (int y = 0; y < 200; y++) {
+                uint32_t *row0 = framebuffer + (size_t)(y * 2) * WINDOW_WIDTH;
+                uint32_t *row1 = row0 + WINDOW_WIDTH;
+                for (int x = 0; x < 320; x++) {
+                    uint32_t c = rgb332_to_argb(
+                        vic_read_bitmap_ram((uint32_t)y * 320u + (uint32_t)x));
+                    row0[x * 2] = c;
+                    row0[x * 2 + 1] = c;
+                    row1[x * 2] = c;
+                    row1[x * 2 + 1] = c;
+                }
+            }
+        } else {
+        /* Legacy bitmap mode with per-cell colours from colour RAM.
            Each 8×8 cell picks fg/bg from the same colour RAM used in text mode,
            enabling full multicolour bitmap graphics without extra hardware.
            One SIMD call per bitmap byte = 8x fewer iterations vs per-pixel. */
@@ -375,6 +488,7 @@ void vic_sdl_render(void) {
                     row_ptr + (size_t)(bx * CHAR_WIDTH * SCREEN_SCALE),
                     WINDOW_WIDTH, byte, bit_fg, bit_bg);
             }
+        }
         }
     }
 
@@ -490,6 +604,37 @@ void vic_sdl_render(void) {
     SDL_RenderPresent(renderer);
 }
 
+int vic_sdl_save_screenshot(const char *path)
+{
+    if (!sdl_initialized || !framebuffer || !path) {
+        return -1;
+    }
+
+    SDL_Surface *surface = SDL_CreateRGBSurfaceWithFormatFrom(
+        framebuffer,
+        WINDOW_WIDTH,
+        WINDOW_HEIGHT,
+        32,
+        WINDOW_WIDTH * (int)sizeof(uint32_t),
+        SDL_PIXELFORMAT_ARGB8888);
+    if (!surface) {
+        fprintf(stderr, "screenshot: SDL_CreateRGBSurfaceWithFormatFrom failed: %s\n",
+                SDL_GetError());
+        return -1;
+    }
+
+    int rc = SDL_SaveBMP(surface, path);
+    if (rc != 0) {
+        fprintf(stderr, "screenshot: SDL_SaveBMP '%s' failed: %s\n",
+                path, SDL_GetError());
+    } else {
+        printf("screenshot: saved '%s'\n", path);
+    }
+
+    SDL_FreeSurface(surface);
+    return rc == 0 ? 0 : -1;
+}
+
 // Handle SDL events
 bool vic_sdl_handle_events(void) {
     if (!sdl_initialized) {
@@ -502,9 +647,19 @@ bool vic_sdl_handle_events(void) {
             case SDL_QUIT:
                 return false;  // User wants to quit
 
+            case SDL_DROPFILE:
+                if (drop_file_handler && event.drop.file) {
+                    drop_file_handler(event.drop.file, drop_file_user);
+                }
+                if (event.drop.file) {
+                    SDL_free(event.drop.file);
+                }
+                break;
+
             case SDL_TEXTINPUT: {
                 // Handle text input (works with all keyboard layouts)
                 VIA6522 *via = get_keyboard_via();
+                KeyboardRegs *kbd = get_keyboard_regs();
                 if (via && event.text.text[0] != 0) {
                     // SDL_TEXTINPUT gives us the actual character typed
                     uint8_t ascii = (uint8_t)event.text.text[0];
@@ -513,6 +668,9 @@ bool vic_sdl_handle_events(void) {
                         if (screen_edit_mode) {
                             vic_write_char((char)ascii);
                         } else {
+                            if (kbd) {
+                                keyboard_regs_push_ascii(kbd, ascii);
+                            }
                             via_keyboard_push(via, ascii);
                         }
                     }
@@ -527,6 +685,7 @@ bool vic_sdl_handle_events(void) {
                 }
 
                 VIA6522 *via = get_keyboard_via();
+                KeyboardRegs *kbd = get_keyboard_regs();
                 if (via) {
                     SDL_Keycode key = event.key.keysym.sym;
                     SDL_Keymod mod = SDL_GetModState();
@@ -595,6 +754,9 @@ bool vic_sdl_handle_events(void) {
 
                     // Push to VIA keyboard buffer
                     if (ascii != 0) {
+                        if (kbd) {
+                            keyboard_regs_push_ascii(kbd, ascii);
+                        }
                         via_keyboard_push(via, ascii);
                     }
                 }

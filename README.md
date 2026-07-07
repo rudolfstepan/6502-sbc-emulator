@@ -98,11 +98,17 @@ Expected release assets:
 
 Options:
   -r <rom>      load ROM file (overrides first ROM entry in config)
-  -s <speed>    CPU speed in Hz (0 = unlimited, default 1 MHz)
+  -s <speed>    CPU speed in Hz (0 = unlimited, default 27 MHz FPGA)
   -d            start in monitor mode
   -m            print memory map and exit
   -h            show help
 ```
+
+You can also drag and drop files onto the SDL display window:
+
+- `.prg`: loads at the two-byte PRG load address and starts execution there.
+- `.rom` / `.bin`: reloads the configured ROM window(s) and resets the CPU.
+- With `fpga.ini`, a 16 KB FPGA shadow ROM is split into `$A000-$CFFF` and `$F000-$FFFF`.
 
 ## Current Memory Map
 
@@ -233,7 +239,7 @@ Example (`sbc.ini` style):
 
 ```ini
 [cpu]
-speed_hz = 1000000
+speed_hz = 27000000
 debug = 0
 
 [sram]
@@ -258,7 +264,7 @@ base = 0x8810
 mode = stdio
 
 [disk]
-base = 0x8820
+base = 0x8824
 path = data/disk
 ```
 
@@ -303,6 +309,8 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 ## Documentation Index
 
 - **FPGA** lives in its own repo, [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga) (linked here as the `fpga/` submodule) — full docs in its **[Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki)**
+- [docs/FPGA_COMPATIBILITY_STATUS.md](docs/FPGA_COMPATIBILITY_STATUS.md) — emulator-side FPGA compatibility changes, rationale, timing, and test flow
+- [docs/software-test.md](docs/software-test.md) — generated FPGA software screenshot report
 - [fpga/docs/INDEX.md](fpga/docs/INDEX.md) — FPGA documentation index for architecture, builds, board support, and real hardware HDMI captures
 - [fpga/docs/images/README.md](fpga/docs/images/README.md) — Tang Primer 20K HDMI screenshots captured from FPGA hardware through a video grabber
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, device map, audio model

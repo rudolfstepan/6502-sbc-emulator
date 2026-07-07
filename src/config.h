@@ -4,6 +4,7 @@
 
 #define CFG_STR_MAX  256
 #define CFG_MAX_DEVS 8
+#define DEFAULT_CPU_SPEED_HZ 27000000u
 
 typedef enum {
     DEV_SRAM,
@@ -18,6 +19,8 @@ typedef struct {
     uint16_t base;
     uint32_t size;           /* SRAM/ROM only */
     char     rom_file[CFG_STR_MAX];   /* ROM only */
+    uint32_t rom_file_offset;          /* ROM only; used for split FPGA images */
+    bool     has_rom_file_offset;
     char     uart_mode[32];  /* "stdio" or "tcp" */
     int      uart_port;      /* TCP mode */
     char     disk_path[CFG_STR_MAX];  /* DISK root path */
@@ -27,6 +30,7 @@ typedef struct {
     DevConfig devs[CFG_MAX_DEVS];
     int       num_devs;
     uint32_t  cpu_speed_hz;  /* 0 = unlimited */
+    bool      cpu_speed_set;
     bool      debug;
     char      rom_file[CFG_STR_MAX]; /* shorthand */
     char      cpu_model[16];  /* "6502" or "65c02" */

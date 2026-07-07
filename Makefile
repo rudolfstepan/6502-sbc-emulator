@@ -86,7 +86,7 @@ OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
-.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo ehbasic
+.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo ehbasic software-test
 
 all: $(TARGET)
 
@@ -118,6 +118,9 @@ clean:
 
 check: all test-diskdir test-chess-rom test-peek-poke test-klaus-6502 test-65c02
 
+software-test: all
+	python tools/software_screenshot_test.py
+
 $(KLAUS_BIN):
 	@$(call MKDIR_P,$(dir $@))
 	curl -fsSL $(KLAUS_URL) -o $@
@@ -128,11 +131,11 @@ test-diskdir: $(OBJDIR)
 
 test-chess-rom: $(OBJDIR)
 	$(BASH) tools/make_chess_rom.sh
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/disasm.c src/sram.c src/rom.c src/vic.c src/via6522.c src/soundchip.c -o $(OBJDIR)/test_chess_rom$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/disasm.c src/sram.c src/rom.c src/vic.c src/via6522.c src/soundchip.c src/keyboard_regs.c -o $(OBJDIR)/test_chess_rom$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_chess_rom$(EXEEXT))
 
 test-peek-poke: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_peek_poke_addrs.c src/bus.c src/sram.c src/vic.c src/via6522.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_peek_poke_addrs$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_peek_poke_addrs.c src/bus.c src/sram.c src/vic.c src/via6522.c src/diskdev.c src/soundchip.c src/math_copro.c src/keyboard_regs.c src/cia6526.c src/sid_stub.c -o $(OBJDIR)/test_peek_poke_addrs$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_peek_poke_addrs$(EXEEXT))
 
 test-klaus-6502: $(OBJDIR) $(KLAUS_BIN)

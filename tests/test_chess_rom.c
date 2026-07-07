@@ -6,6 +6,7 @@
 
 #include "bus.h"
 #include "cpu6502.h"
+#include "keyboard_regs.h"
 #include "rom.h"
 #include "sram.h"
 #include "via6522.h"
@@ -55,12 +56,14 @@ int main(void)
     SRAM ram;
     ROM rom;
     VIA6522 via;
+    KeyboardRegs kbd;
     uint16_t last_pc = 0xffff;
     int same_pc_count = 0;
 
     bus_init(&bus);
     vic_init();
     via_init(&via);
+    keyboard_regs_init(&kbd);
 
     if (sram_init(&ram, 0x8000) != 0) {
         fprintf(stderr, "failed to init SRAM\n");
@@ -77,6 +80,7 @@ int main(void)
     bus_register(&bus, "VIC-VIDEO", NULL, 0x8000, 2048, vic_bus_read, vic_bus_write, vic_bus_tick);
     bus_register(&bus, "VIC-REGS", NULL, 0x9000, 16, vic_reg_read, vic_reg_write, NULL);
     bus_register(&bus, "VIC-BITMAP", NULL, 0x9010, 8000, vic_bitmap_read, vic_bitmap_write, NULL);
+    bus_register(&bus, "KEYBOARD", &kbd, 0x8820, 4, keyboard_regs_read, keyboard_regs_write, NULL);
     bus_register(&bus, "VIA-6522", &via, 0x8800, 16, via_read, via_write, via_tick);
     bus_register(&bus, "ROM", &rom, 0xC000, 0x4000, rom_read, rom_write, NULL);
 
@@ -162,11 +166,11 @@ int main(void)
         return 1;
     }
 
-    via_keyboard_push(&via, 'h');
-    via_keyboard_push(&via, '7');
-    via_keyboard_push(&via, 'h');
-    via_keyboard_push(&via, '6');
-    via_keyboard_push(&via, '\r');
+    keyboard_regs_push_ascii(&kbd, 'h');
+    keyboard_regs_push_ascii(&kbd, '7');
+    keyboard_regs_push_ascii(&kbd, 'h');
+    keyboard_regs_push_ascii(&kbd, '6');
+    keyboard_regs_push_ascii(&kbd, '\r');
 
     for (int step = 0; step < 300000; step++) {
         int cycles = cpu6502_step(&cpu);
@@ -188,7 +192,8 @@ int main(void)
     }
 
     if (screen_char(&bus, 18, 6) != 0x20) {
-        fprintf(stderr, "expected visible H7 square to be cleared after H7-H6\n");
+        fprintf(stderr, "expected visible H7 square to be cleared after H7-H6, got $%02X\n",
+                screen_char(&bus, 18, 6));
         rom_free(&rom);
         sram_free(&ram);
         return 1;

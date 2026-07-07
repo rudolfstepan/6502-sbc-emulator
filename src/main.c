@@ -6,6 +6,7 @@
 #include <string.h>
 #include <signal.h>
 #include <time.h>
+#include <errno.h>
 #ifdef _WIN32
 #include <windows.h>
 #else
@@ -26,10 +27,31 @@
 #include "vic_sdl.h"
 #include "keyboard.h"
 #include "soundchip.h"
+#include "math_copro.h"
+#include "cia6526.h"
+#include "sid_stub.h"
 
 /* ── Global emulator state ────────────────────────────────── */
 static volatile int g_sigint = 0;
 static VIA6522 *g_keyboard_via = NULL;  /* Global VIA for keyboard input */
+static KeyboardRegs *g_keyboard_regs = NULL;
+
+#define AUTO_LOAD_MAX 16
+
+typedef struct {
+    ROM     *rom;
+    uint16_t base;
+    uint32_t size;
+    uint32_t file_offset;
+    bool     has_file_offset;
+} RomSlot;
+
+typedef struct {
+    Bus      *bus;
+    CPU6502  *cpu;
+    RomSlot  *rom_slots;
+    int       rom_count;
+} DropLoadContext;
 
 static void handle_sigint(int sig)
 {
@@ -41,6 +63,11 @@ static void handle_sigint(int sig)
 VIA6522* get_keyboard_via(void)
 {
     return g_keyboard_via;
+}
+
+KeyboardRegs* get_keyboard_regs(void)
+{
+    return g_keyboard_regs;
 }
 
 /* ── Bus read/write wrappers for CPU ─────────────────────── */
@@ -98,12 +125,18 @@ static void usage(const char *prog)
         "Usage: %s [options] [config.ini]\n"
         "Options:\n"
         "  -r <rom>      load ROM file (overrides config)\n"
-        "  -s <speed>    CPU speed in Hz (0=unlimited, default 1MHz)\n"
+        "  -s <speed>    CPU speed in Hz (0=unlimited, default 27MHz FPGA)\n"
+        "  --load <file> load .prg/.rom/.bin like drag and drop after startup\n"
+        "  --load-data <prg> load PRG bytes without changing CPU state\n"
+        "  --screenshot <bmp> save a framebuffer screenshot and exit\n"
+        "  --screenshot-frames <n> rendered frames before screenshot (default 120)\n"
         "  -d            start in debug/monitor mode\n"
         "  -t [file]     enable instruction tracing (default: stderr)\n"
         "  -p            dump CPU profile on exit\n"
         "  -m            show memory map and exit\n"
         "  -h            show this help\n"
+        "\n"
+        "Drag and drop .prg, .rom, or .bin files onto the SDL window to load them.\n"
         "\n"
         "Default config: sbc.ini (if present)\n"
         "Default memory map:\n"
@@ -111,9 +144,11 @@ static void usage(const char *prog)
         "  $8000-$87FF  VIC Video RAM (2KB)\n"
         "  $8800-$880F  VIA 6522\n"
         "  $8810-$8813  UART 6551 (ACIA)\n"
-        "  $8820-$882F  DISK MVP\n"
+        "  $8820-$8823  PS/2 keyboard registers\n"
+        "  $8824-$882F  DISK MVP\n"
         "  $8830-$8835  SOUND (freq/duration/volume/control)\n"
-        "  $C000-$FFFF  ROM  (16KB)\n",
+        "  $88B0-$88BF  Math coprocessor\n"
+        "  $A000-$CFFF  BASIC ROM, $F000-$FFFF Kernel ROM\n",
         prog);
 }
 
@@ -141,12 +176,214 @@ static bool file_exists(const char *path)
     return true;
 }
 
+static const char *path_basename(const char *path)
+{
+    const char *slash = strrchr(path, '/');
+    const char *backslash = strrchr(path, '\\');
+    const char *base = slash > backslash ? slash : backslash;
+    return base ? base + 1 : path;
+}
+
+static long file_size(FILE *f)
+{
+    long pos = ftell(f);
+    if (pos < 0) return -1;
+    if (fseek(f, 0, SEEK_END) != 0) return -1;
+    long size = ftell(f);
+    if (fseek(f, pos, SEEK_SET) != 0) return -1;
+    return size;
+}
+
+static void refresh_rom_bus_fastpath(Bus *bus, ROM *rom)
+{
+    for (int i = 0; i < bus->num_devices; i++) {
+        if (bus->devices[i].device == rom) {
+            bus->devices[i].linear_data = rom->data;
+            bus->devices[i].linear_flags = 0;
+        }
+    }
+}
+
+static int load_prg_file(Bus *bus, CPU6502 *cpu, const char *path, bool start)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "drop: cannot open PRG '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+
+    long size = file_size(f);
+    if (size < 3) {
+        fclose(f);
+        fprintf(stderr, "drop: PRG '%s' is too small\n", path);
+        return -1;
+    }
+
+    int lo = fgetc(f);
+    int hi = fgetc(f);
+    if (lo == EOF || hi == EOF) {
+        fclose(f);
+        fprintf(stderr, "drop: PRG '%s' has no load address\n", path);
+        return -1;
+    }
+
+    uint16_t load_addr = (uint16_t)((uint8_t)lo | ((uint16_t)(uint8_t)hi << 8));
+    uint16_t addr = load_addr;
+    long payload = 0;
+    int c;
+    while ((c = fgetc(f)) != EOF) {
+        bus_write(bus, addr++, (uint8_t)c);
+        payload++;
+    }
+    fclose(f);
+
+    if (start) {
+        cpu->A = cpu->X = cpu->Y = 0;
+        cpu->SP = 0xFD;
+        cpu->P = FLAG_U | FLAG_I;
+        cpu->PC = load_addr;
+        cpu->stopped = false;
+        cpu->reset_pending = false;
+        cpu->nmi_pending = false;
+        cpu->irq_pending = false;
+
+        printf("\ndrop: loaded PRG '%s' at $%04X (%ld bytes), PC=$%04X\n",
+               path_basename(path), load_addr, payload, cpu->PC);
+    } else {
+        printf("\ndrop: loaded PRG data '%s' at $%04X (%ld bytes)\n",
+               path_basename(path), load_addr, payload);
+    }
+    return 0;
+}
+
+static int load_rom_file(DropLoadContext *ctx, const char *path)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) {
+        fprintf(stderr, "drop: cannot open ROM '%s': %s\n", path, strerror(errno));
+        return -1;
+    }
+    long size = file_size(f);
+    fclose(f);
+    if (size <= 0) {
+        fprintf(stderr, "drop: ROM '%s' is empty\n", path);
+        return -1;
+    }
+
+    bool split_rom = false;
+    for (int i = 0; i < ctx->rom_count; i++) {
+        split_rom = split_rom || ctx->rom_slots[i].has_file_offset;
+    }
+
+    int loaded = 0;
+    for (int i = 0; i < ctx->rom_count; i++) {
+        RomSlot *slot = &ctx->rom_slots[i];
+        bool should_load = false;
+        uint32_t offset = 0;
+
+        if (split_rom && slot->has_file_offset) {
+            offset = slot->file_offset;
+            if (size == 0x4000) {
+                should_load = (uint32_t)size > offset;
+            } else if ((uint32_t)size == slot->size) {
+                offset = 0;
+                should_load = true;
+            } else if (slot->base == 0xA000 && (uint32_t)size < slot->size) {
+                offset = 0;
+                should_load = true;
+            }
+        } else if ((uint32_t)size <= slot->size) {
+            should_load = true;
+        } else if (ctx->rom_count == 1) {
+            should_load = true;
+        }
+
+        if (!should_load) {
+            continue;
+        }
+
+        rom_free(slot->rom);
+        int rc = slot->has_file_offset || (uint32_t)size > slot->size
+            ? rom_load_segment(slot->rom, path, slot->size, offset)
+            : rom_load(slot->rom, path, slot->size);
+        if (rc != 0) {
+            rom_init(slot->rom, slot->size);
+            refresh_rom_bus_fastpath(ctx->bus, slot->rom);
+            fprintf(stderr, "drop: failed to load ROM window $%04X-$%04X\n",
+                    slot->base, (uint16_t)(slot->base + slot->size - 1));
+            return -1;
+        }
+        refresh_rom_bus_fastpath(ctx->bus, slot->rom);
+        loaded++;
+    }
+
+    if (loaded == 0) {
+        fprintf(stderr, "drop: ROM '%s' does not fit any configured ROM window\n",
+                path_basename(path));
+        return -1;
+    }
+
+    ctx->cpu->stopped = false;
+    cpu6502_reset(ctx->cpu);
+    printf("\ndrop: loaded ROM '%s' into %d window(s), CPU reset requested\n",
+           path_basename(path), loaded);
+    return 0;
+}
+
+static void handle_load_file(const char *path, void *user, bool start_prg)
+{
+    DropLoadContext *ctx = (DropLoadContext *)user;
+    if (!path || !ctx) {
+        return;
+    }
+
+    if (ends_with_ignore_case(path, ".prg")) {
+        load_prg_file(ctx->bus, ctx->cpu, path, start_prg);
+    } else if (ends_with_ignore_case(path, ".rom") ||
+               ends_with_ignore_case(path, ".bin")) {
+        load_rom_file(ctx, path);
+    } else {
+        fprintf(stderr, "\ndrop: unsupported file '%s' (use .prg, .rom, or .bin)\n",
+                path_basename(path));
+    }
+}
+
+static void handle_drop_file(const char *path, void *user)
+{
+    handle_load_file(path, user, true);
+}
+
+static bool maybe_save_screenshot(const char *path,
+                                  int *frames_seen,
+                                  int target_frames,
+                                  bool *saved)
+{
+    if (!path || !*path || *saved) {
+        return false;
+    }
+
+    (*frames_seen)++;
+    if (*frames_seen < target_frames) {
+        return false;
+    }
+
+    if (vic_sdl_save_screenshot(path) == 0) {
+        *saved = true;
+    }
+    return true;
+}
+
 int main(int argc, char *argv[])
 {
     Config  cfg;
     char    cfg_file[256] = "sbc.ini";
     char    rom_override[256] = "";
+    char    auto_load_files[AUTO_LOAD_MAX][256];
+    bool    auto_load_starts[AUTO_LOAD_MAX];
+    int     auto_load_count = 0;
+    char    screenshot_file[256] = "";
     int     speed_override = -1;
+    int     screenshot_frames = 120;
     bool    debug_flag    = false;
     bool    show_map      = false;
     bool    trace_flag    = false;
@@ -159,6 +396,35 @@ int main(int argc, char *argv[])
         if (strcmp(argv[i], "-d") == 0) { debug_flag = true; continue; }
         if (strcmp(argv[i], "-m") == 0) { show_map = true; continue; }
         if (strcmp(argv[i], "-p") == 0) { profile_flag = true; continue; }
+        if (strcmp(argv[i], "--load") == 0 && i+1 < argc) {
+            if (auto_load_count < AUTO_LOAD_MAX) {
+                snprintf(auto_load_files[auto_load_count],
+                         sizeof(auto_load_files[auto_load_count]), "%s", argv[++i]);
+                auto_load_starts[auto_load_count++] = true;
+            } else {
+                i++;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--load-data") == 0 && i+1 < argc) {
+            if (auto_load_count < AUTO_LOAD_MAX) {
+                snprintf(auto_load_files[auto_load_count],
+                         sizeof(auto_load_files[auto_load_count]), "%s", argv[++i]);
+                auto_load_starts[auto_load_count++] = false;
+            } else {
+                i++;
+            }
+            continue;
+        }
+        if (strcmp(argv[i], "--screenshot") == 0 && i+1 < argc) {
+            snprintf(screenshot_file, sizeof(screenshot_file), "%s", argv[++i]);
+            continue;
+        }
+        if (strcmp(argv[i], "--screenshot-frames") == 0 && i+1 < argc) {
+            screenshot_frames = atoi(argv[++i]);
+            if (screenshot_frames < 1) screenshot_frames = 1;
+            continue;
+        }
         if (strcmp(argv[i], "-t") == 0) {
             trace_flag = true;
             if (i+1 < argc && argv[i+1][0] != '-') {
@@ -229,13 +495,29 @@ int main(int argc, char *argv[])
     VIA6522 vias[CFG_MAX_DEVS];
     UART6551 uarts[CFG_MAX_DEVS];
     DiskDev  disks[CFG_MAX_DEVS];
+    RomSlot  rom_slots[CFG_MAX_DEVS];
+    KeyboardRegs keyboard_regs;
+    MathCopro math_copro;
+    CIA6526 cia1;
+    SIDStub sid;
     int ns = 0, nr = 0, nv = 0, nu = 0, nd = 0;
+    int rom_slot_count = 0;
 
     Bus bus;
     bus_init(&bus);
 
     /* ── Initialize VIC (Video Interface Controller) ────── */
     vic_init();
+    keyboard_regs_init(&keyboard_regs);
+    g_keyboard_regs = &keyboard_regs;
+    math_copro_init(&math_copro);
+    cia_init(&cia1);
+    sid_init(&sid);
+
+    bus_register(&bus, "VIC-BITMAP", NULL,
+                 0x6000, 0x2000,  /* Tang FPGA: 8KB banked framebuffer window */
+                 vic_bitmap_read, vic_bitmap_write, NULL);
+
     bus_register(&bus, "VIC-VIDEO", NULL,
                  0x8000, 2048,  /* 2KB: text video RAM at $8000-$87FF */
                  vic_bus_read, vic_bus_write, vic_bus_tick);
@@ -243,10 +525,6 @@ int main(int argc, char *argv[])
     bus_register(&bus, "VIC-REGS", NULL,
                  0x9000, 16,    /* VIC control registers at $9000-$900F */
                  vic_reg_read, vic_reg_write, NULL);
-
-    bus_register(&bus, "VIC-BITMAP", NULL,
-                 0x9010, 8000,  /* Bitmap RAM at $9010-$AF4F (320x200 pixels) */
-                 vic_bitmap_read, vic_bitmap_write, NULL);
 
     bus_register(&bus, "VIC-BLITTER", NULL,
                  0x8840, 16,    /* Blitter registers: $8840-$884F */
@@ -273,6 +551,26 @@ int main(int argc, char *argv[])
                  SOUND_VOICE3_BASE, SOUND_REG_COUNT,
                  soundchip_voice_read, soundchip_voice_write, NULL);
 
+    bus_register(&bus, "KEYBOARD", &keyboard_regs,
+                 0x8820, 4,
+                 keyboard_regs_read, keyboard_regs_write, NULL);
+
+    bus_register(&bus, "MATH-COPRO", &math_copro,
+                 0x88B0, 16,
+                 math_copro_read, math_copro_write, NULL);
+
+    bus_register(&bus, "VIC-II", NULL,
+                 0xD000, 0x40,
+                 vicii_read, vicii_write, NULL);
+
+    bus_register(&bus, "SID-6581", &sid,
+                 0xD400, 0x1D,
+                 sid_read, sid_write, sid_tick);
+
+    bus_register(&bus, "CIA1-6526", &cia1,
+                 0xDC00, 16,
+                 cia_read, cia_write, cia_tick);
+
     for (int i = 0; i < cfg.num_devs; i++) {
         DevConfig *dc = &cfg.devs[i];
         switch (dc->type) {
@@ -289,7 +587,10 @@ int main(int argc, char *argv[])
             if (nr >= CFG_MAX_DEVS) { fprintf(stderr,"Too many ROMs\n"); break; }
             uint32_t rsize = dc->size ? dc->size : 0x4000;
             if (dc->rom_file[0]) {
-                if (rom_load(&roms[nr], dc->rom_file, rsize) != 0) {
+                int rom_rc = dc->has_rom_file_offset
+                    ? rom_load_segment(&roms[nr], dc->rom_file, rsize, dc->rom_file_offset)
+                    : rom_load(&roms[nr], dc->rom_file, rsize);
+                if (rom_rc != 0) {
                     fprintf(stderr, "Warning: ROM load failed, using blank ROM\n");
                     rom_init(&roms[nr], rsize);
                 }
@@ -300,6 +601,15 @@ int main(int argc, char *argv[])
             bus_register(&bus, "ROM", &roms[nr],
                          dc->base, rsize,
                          rom_read, rom_write, NULL);
+            if (rom_slot_count < CFG_MAX_DEVS) {
+                rom_slots[rom_slot_count++] = (RomSlot){
+                    .rom = &roms[nr],
+                    .base = dc->base,
+                    .size = rsize,
+                    .file_offset = dc->rom_file_offset,
+                    .has_file_offset = dc->has_rom_file_offset,
+                };
+            }
             nr++;
             break;
         }
@@ -338,7 +648,7 @@ int main(int argc, char *argv[])
             if (nd >= CFG_MAX_DEVS) { fprintf(stderr,"Too many DISKs\n"); break; }
             if (diskdev_init(&disks[nd], &bus, dc->disk_path) != 0) return 1;
             bus_register(&bus, "DISK-MVP", &disks[nd],
-                         dc->base, 16,
+                         dc->base, 12,
                          diskdev_read, diskdev_write, NULL);
             nd++;
             break;
@@ -384,6 +694,18 @@ int main(int argc, char *argv[])
 
     cpu6502_reset(&cpu);
 
+    DropLoadContext drop_ctx = {
+        .bus = &bus,
+        .cpu = &cpu,
+        .rom_slots = rom_slots,
+        .rom_count = rom_slot_count,
+    };
+    vic_sdl_set_drop_file_handler(handle_drop_file, &drop_ctx);
+
+    for (int i = 0; i < auto_load_count; i++) {
+        handle_load_file(auto_load_files[i], &drop_ctx, auto_load_starts[i]);
+    }
+
     /* ── VIC Demo messages disabled - MS BASIC will initialize the screen ──── */
     /*
     vic_clear_screen();
@@ -396,6 +718,8 @@ int main(int argc, char *argv[])
 
     /* ── Initialize SDL2 for VIC display ──────────────────── */
     bool use_sdl = (vic_sdl_init() == 0);
+    int screenshot_frames_seen = 0;
+    bool screenshot_saved = false;
     if (use_sdl) {
         printf("SDL2 display enabled. Press ESC to quit.\n");
         vic_sdl_render();   /* Initial blank render so window appears */
@@ -475,6 +799,8 @@ int main(int argc, char *argv[])
         bool irq = false;
         for (int i = 0; i < nv; i++) irq |= via_irq(&vias[i]);
         for (int i = 0; i < nu; i++) irq |= uart_irq(&uarts[i]);
+        irq |= keyboard_regs_irq(&keyboard_regs);
+        irq |= cia_irq(&cia1);
         irq |= vic_irq();
         if (irq) cpu6502_irq(&cpu);
         else     cpu6502_irq_clear(&cpu);
@@ -500,6 +826,10 @@ int main(int argc, char *argv[])
                     goto done;
                 }
                 vic_sdl_render();
+                if (maybe_save_screenshot(screenshot_file, &screenshot_frames_seen,
+                                          screenshot_frames, &screenshot_saved)) {
+                    goto done;
+                }
             }
         }
         /* Also render periodically when throttle not active (unlimited speed) */
@@ -510,11 +840,20 @@ int main(int argc, char *argv[])
                 goto done;
             }
             vic_sdl_render();
+            if (maybe_save_screenshot(screenshot_file, &screenshot_frames_seen,
+                                      screenshot_frames, &screenshot_saved)) {
+                goto done;
+            }
             last_render_cycle = cpu.cycles;
         }
     }
 
 done:
+    if (use_sdl && screenshot_file[0] && !screenshot_saved) {
+        vic_sdl_render();
+        vic_sdl_save_screenshot(screenshot_file);
+    }
+
     printf("\nEmulator stopped after %llu cycles.\n",
            (unsigned long long)cpu.cycles);
 

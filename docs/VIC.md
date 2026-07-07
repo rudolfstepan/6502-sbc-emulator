@@ -84,8 +84,8 @@ See [examples/bitmaptest.bas](../examples/bitmaptest.bas) for a full demo.
 | `$9007` | 7 | R/W | **IER** | Interrupt Enable Register (see below) |
 | `$9008` | 8 | R/W | **RASTER** | Raster compare value (0–199) — triggers RASTER interrupt |
 | `$9009` | 9 | R | **RLINE** | Current raster line (0–199), read-only |
-| `$900A` | 10 | R/W | **CPL_LO** | Cycles per raster line, low byte (default `100`) |
-| `$900B` | 11 | R/W | **CPL_HI** | Cycles per raster line, high byte (default `0`) |
+| `$900A` | 10 | R/W | **CPL_LO** | Cycles per raster line, low byte (default `2252`) |
+| `$900B` | 11 | R/W | **CPL_HI** | Cycles per raster line, high byte (default `8`) |
 
 ---
 
@@ -118,8 +118,9 @@ The VIC advances the raster line counter in `vic_bus_tick()`, which is called af
 CPL = CPL_HI * 256 + CPL_LO
 ```
 
-Default is 100, which matches a 1 MHz CPU at 50 Hz with 200 raster lines.  
-At 2 MHz use `CPL = 200`. At 4 MHz use `CPL = 400`.
+Default is 2252, which matches the Tang FPGA's 27 MHz effective CPU clock to
+the 59.94 Hz HDMI frame cadence while keeping the emulator's 200 logical raster
+lines.
 
 ### Interrupt Handler Example
 
@@ -159,10 +160,10 @@ not_frame:
 ### Adjusting CPL for non-default CPU speeds
 
 ```asm
-; Set CPL = 200  (2 MHz CPU, 50 Hz, 200 lines)
-LDA #200
+; Set CPL = 2252  (Tang FPGA default: 27 MHz CPU, 59.94 Hz frame cadence)
+LDA #204
 STA $900A       ; CPL_LO
-LDA #0
+LDA #8
 STA $900B       ; CPL_HI
 ```
 
@@ -286,7 +287,7 @@ STA $9000
 
 ## SDL Rendering
 
-The SDL backend opens a 640×400 window (2× scale) and renders VIC state at the end of each emulation batch (~10 ms at 1 MHz).
+The SDL backend opens a 640×400 window (2× scale) and renders VIC state at the end of each emulation batch (~10 ms at the configured CPU speed).
 
 - ESC or window close exits emulation
 - Keyboard input is injected into the VIA 6522 keyboard queue

@@ -100,7 +100,7 @@ KEY_CLEAR      = $93
 KEY_CRSR_LEFT  = $9D
 KEY_BACKSPACE  = $08
 
-BASIC_ENTRY = $D000     ; BASIC ROM entry point
+BASIC_ENTRY = $A000     ; BASIC ROM entry point (EhBASIC relocated to $A000-$CFFF)
 
 ; ============================================================
 ; JUMP TABLE  -- placed first so it lands exactly at $C000
@@ -1137,3 +1137,12 @@ help_str:
 unknown_str:
     .byte " ?UNKNOWN COMMAND", $0D
     .byte 0
+
+; ============================================================
+; 6502 hardware vectors at $FFFA-$FFFF.  The kernel ROM owns them and
+; points reset/IRQ/NMI at EhBASIC's fixed entry table ($A000/$A003/$A006).
+; ============================================================
+.segment "VECTORS"
+    .word $A006             ; $FFFA NMI   -> EhBASIC ENTRY_TABLE+6
+    .word $A000             ; $FFFC RESET -> EhBASIC ENTRY_TABLE+0
+    .word $A003             ; $FFFE IRQ   -> EhBASIC ENTRY_TABLE+3

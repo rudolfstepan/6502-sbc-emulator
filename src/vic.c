@@ -8,7 +8,9 @@
 // Video RAM size and base address
 #define VIDEO_RAM_SIZE 2048   // 2KB for text mode
 #define TEXT_RAM_SIZE 2048    // 2KB for 40x25 text mode
-#define BITMAP_RAM_SIZE 8000  // 8000 bytes for 320x200 bitmap
+#define BITMAP_WINDOW_SIZE 8192
+#define LEGACY_BITMAP_RAM_SIZE 8000
+#define BITMAP_RAM_SIZE (640 * 400)  // Largest Tang DDR3 bitmap mode: 640x400 8bpp
 #define TEXT_CELL_COUNT (VIC_SCREEN_COLS * VIC_SCREEN_ROWS)
 #define COLOR_RAM_OFFSET 1024
 
@@ -20,6 +22,7 @@
 // VIC registers
 #define VIC_SCREEN_COLS 40
 #define VIC_SCREEN_ROWS 25
+#define VIC_DEFAULT_CYCLES_PER_LINE 2252u  /* 27 MHz / 59.94 Hz / 200 logical lines */
 
 // VIC Bitmap mode
 #define VIC_BITMAP_WIDTH 320
@@ -27,7 +30,8 @@
 
 // Video RAM (dual-port RAM)
 static uint8_t video_ram[VIDEO_RAM_SIZE];    // Text mode: 2KB
-static uint8_t bitmap_ram[BITMAP_RAM_SIZE];  // Bitmap mode: 8000 bytes
+static uint8_t bitmap_ram[BITMAP_RAM_SIZE];
+static uint8_t vicii_regs[0x40];
 
 static uint8_t vic_frame_lo = 0;  /* incremented by renderer each frame */
 
@@ -39,13 +43,15 @@ static struct {
     uint16_t cursor_y;
     uint8_t text_color;
     uint8_t background_color;
+    uint8_t text_attr_mode;
+    uint8_t bitmap_bank_ext;
 
     /* Interrupt system */
     uint8_t  irq_status;       /* ISR: pending interrupt flags */
     uint8_t  irq_enable;       /* IER: enabled interrupt sources */
     uint8_t  raster_compare;   /* raster line that triggers RASTER irq */
     uint8_t  raster_line;      /* current raster line (0..VIC_BITMAP_HEIGHT-1) */
-    uint16_t cycles_per_line;  /* CPU cycles per raster line (default 100) */
+    uint16_t cycles_per_line;  /* CPU cycles per logical raster line */
     uint32_t raster_cycle_acc; /* accumulated cycles within current line */
 
     /* Scrolling */
@@ -201,6 +207,7 @@ void vic_init() {
     // Clear video RAM
     memset(video_ram, 0x20, VIDEO_RAM_SIZE);  // Fill with spaces
     memset(bitmap_ram, 0x00, BITMAP_RAM_SIZE); // Clear bitmap RAM
+    memset(vicii_regs, 0x00, sizeof(vicii_regs));
 
     // Initialize VIC state
     vic_state.enabled = 1;
@@ -209,13 +216,16 @@ void vic_init() {
     vic_state.cursor_y = 0;
     vic_state.text_color = 15;        // brighter startup text
     vic_state.background_color = 6;   // C64-style blue
+    vic_state.text_attr_mode = 0;
+    vic_state.bitmap_bank_ext = 0;
+    vicii_regs[0x21] = vic_state.background_color & 0x0F;
     memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
 
     vic_state.irq_status      = 0;
     vic_state.irq_enable      = 0;
     vic_state.raster_compare  = 0;
     vic_state.raster_line     = 0;
-    vic_state.cycles_per_line = 100;  /* default: 1 MHz @ 50 Hz, 200 lines */
+    vic_state.cycles_per_line = VIC_DEFAULT_CYCLES_PER_LINE;
     vic_state.raster_cycle_acc = 0;
 
     printf("VIC initialized: %dx%d text mode\n", VIC_SCREEN_COLS, VIC_SCREEN_ROWS);
@@ -265,29 +275,24 @@ uint8_t vic_reg_read(void *dev, uint16_t offset) {
         case 2: return (uint8_t)vic_state.cursor_y;
         case 3: return vic_state.text_color & 0x0F;
         case 4: return vic_state.background_color & 0x0F;
-        case 5: return vic_frame_lo;   /* read-only: incremented each render */
-        case 6: {  /* ISR: interrupt status; bit 7 = any active */
+        case 5: return vic_state.text_attr_mode;
+        case 6: return vic_state.bitmap_bank_ext;
+        case 7: {  /* ISR: interrupt status; bit 7 = any active */
             uint8_t isr = vic_state.irq_status;
             if (isr & vic_state.irq_enable) isr |= 0x80;
             return isr;
         }
-        case 7: return vic_state.irq_enable;
-        case 8: return vic_state.raster_compare;
-        case 9: return vic_state.raster_line;   /* read-only */
-        case 10: return (uint8_t)(vic_state.cycles_per_line & 0xFF);
-        case 11: return (uint8_t)(vic_state.cycles_per_line >> 8);
-        case 12: return vic_state.scroll_x;
-        case 13: return vic_state.scroll_y;
-        case 14: {
+        case 8: return vic_state.irq_enable;
+        case 9: return vic_state.raster_compare;
+        case 10: return vic_state.raster_line;   /* read-only */
+        case 11: return (uint8_t)(vic_state.cycles_per_line & 0xFF);
+        case 12: return (uint8_t)(vic_state.cycles_per_line >> 8);
+        case 13: return vic_state.scroll_x;
+        case 14: return vic_state.scroll_y;
+        case 15: {
             uint8_t val = vic_state.ss_collision;
             vic_state.ss_collision = 0;  /* read clears */
             if (val) vic_state.irq_status &= ~VIC_IRQ_SS;  /* ACK IRQ */
-            return val;
-        }
-        case 15: {
-            uint8_t val = vic_state.sb_collision;
-            vic_state.sb_collision = 0;  /* read clears */
-            if (val) vic_state.irq_status &= ~VIC_IRQ_SB;  /* ACK IRQ */
             return val;
         }
         default: return 0;
@@ -300,8 +305,7 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
 
     switch (offset) {
         case 0:
-            /* bit 0 = bitmap mode, bit 1 = sprites enable */
-            vic_state.graphics_mode = val & 0x03;
+            vic_state.graphics_mode = val;
             break;
         case 1:
             vic_state.cursor_x = val;
@@ -317,30 +321,36 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
             vic_state.background_color = val & 0x0F;
             refresh_text_attr_background();
             break;
+        case 5:
+            vic_state.text_attr_mode = val & 0x03;
+            break;
         case 6:
+            vic_state.bitmap_bank_ext = val & 0x1F;
+            break;
+        case 7:
             /* Writing a 1 to any bit clears that interrupt flag (ACK) */
             vic_state.irq_status &= (uint8_t)~val;
             break;
-        case 7:
+        case 8:
             vic_state.irq_enable = val & 0x0F;
             break;
-        case 8:
+        case 9:
             if (val < VIC_BITMAP_HEIGHT)
                 vic_state.raster_compare = val;
             break;
-        /* case 9: raster_line is read-only */
-        case 10:
+        /* case 10: raster_line is read-only */
+        case 11:
             vic_state.cycles_per_line =
                 (uint16_t)((vic_state.cycles_per_line & 0xFF00) | val);
             break;
-        case 11:
+        case 12:
             vic_state.cycles_per_line =
                 (uint16_t)((vic_state.cycles_per_line & 0x00FF) | ((uint16_t)val << 8));
             break;
-        case 12:
+        case 13:
             vic_state.scroll_x = val & 0x07;  /* only 3 bits valid */
             break;
-        case 13:
+        case 14:
             vic_state.scroll_y = val & 0x07;  /* only 3 bits valid */
             break;
         default:
@@ -348,12 +358,27 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
     }
 }
 
+static uint32_t bitmap_window_to_addr(uint16_t offset)
+{
+    uint8_t bank;
+
+    if (vic_state.graphics_mode & 0x60) {
+        bank = vic_state.bitmap_bank_ext & 0x1F;
+    } else {
+        bank = (uint8_t)((vic_state.graphics_mode >> 5) & 0x07);
+    }
+
+    return (uint32_t)bank * BITMAP_WINDOW_SIZE +
+           (uint32_t)(offset & (BITMAP_WINDOW_SIZE - 1));
+}
+
 // VIC bitmap RAM interface: read from bitmap RAM
 uint8_t vic_bitmap_read(void *dev, uint16_t offset) {
     (void)dev;  // Unused
 
-    if (offset < BITMAP_RAM_SIZE) {
-        return bitmap_ram[offset];
+    uint32_t addr = bitmap_window_to_addr(offset);
+    if (addr < BITMAP_RAM_SIZE) {
+        return bitmap_ram[addr];
     }
     return 0;
 }
@@ -362,8 +387,9 @@ uint8_t vic_bitmap_read(void *dev, uint16_t offset) {
 void vic_bitmap_write(void *dev, uint16_t offset, uint8_t val) {
     (void)dev;  // Unused
 
-    if (offset < BITMAP_RAM_SIZE) {
-        bitmap_ram[offset] = val;
+    uint32_t addr = bitmap_window_to_addr(offset);
+    if (addr < BITMAP_RAM_SIZE) {
+        bitmap_ram[addr] = val;
     }
 }
 
@@ -383,7 +409,7 @@ uint8_t vic_read_video_ram(uint16_t address) {
 }
 
 // Read from bitmap RAM (for rendering)
-uint8_t vic_read_bitmap_ram(uint16_t address) {
+uint8_t vic_read_bitmap_ram(uint32_t address) {
     if (address < BITMAP_RAM_SIZE) {
         return bitmap_ram[address];
     }
@@ -519,12 +545,20 @@ void vic_render_screen() {
 
 // Get current graphics mode
 uint8_t vic_get_graphics_mode(void) {
-    return vic_state.graphics_mode & 0x01;
+    return (vic_state.graphics_mode & 0x71) ? 1 : 0;
 }
 
 // Set graphics mode
 void vic_set_graphics_mode(uint8_t mode) {
     vic_state.graphics_mode = (vic_state.graphics_mode & ~0x01) | (mode & 0x01);
+}
+
+uint8_t vic_get_mode_raw(void) {
+    return vic_state.graphics_mode;
+}
+
+uint8_t vic_get_text_attr_mode(void) {
+    return vic_state.text_attr_mode;
 }
 
 /* ──────────────────────────────────────────────────────────────────
@@ -847,4 +881,35 @@ void vic_detect_collisions(const uint8_t sprite_mask[320*200])
 bool vic_irq(void)
 {
     return (vic_state.irq_status & vic_state.irq_enable) != 0;
+}
+
+uint8_t vicii_read(void *dev, uint16_t offset)
+{
+    (void)dev;
+    offset &= 0x3F;
+
+    if (offset == 0x11) {
+        return (uint8_t)((vicii_regs[offset] & 0x7F) |
+                         ((vic_state.raster_line & 0x100) ? 0x80 : 0x00));
+    }
+    if (offset == 0x12) {
+        return (uint8_t)(vic_state.raster_line & 0xFF);
+    }
+    return vicii_regs[offset];
+}
+
+void vicii_write(void *dev, uint16_t offset, uint8_t val)
+{
+    (void)dev;
+    offset &= 0x3F;
+
+    if (offset == 0x20 || offset == 0x21) {
+        val &= 0x0F;
+    }
+    vicii_regs[offset] = val;
+
+    if (offset == 0x21) {
+        vic_state.background_color = val;
+        refresh_text_attr_background();
+    }
 }

@@ -35,6 +35,8 @@ static SoundVoice    voices[SOUND_VOICES];
 static SDL_AudioDeviceID audio_device;
 static int           initialized = 0;
 static int           sample_rate = SAMPLE_RATE;
+static soundchip_sample_source_fn sid_source = NULL;
+static void *sid_source_user = NULL;
 
 /* ── Envelope helper ────────────────────────────────────────── */
 static float envelope_at(float t, float dur,
@@ -106,6 +108,12 @@ static void audio_callback(void *userdata, uint8_t *stream, int len)
             v->phase  += step;
             if (v->phase >= TWO_PI) v->phase -= TWO_PI;
             v->time_ms += dt_ms;
+        }
+    }
+
+    if (sid_source) {
+        for (int i = 0; i < nsamples; i++) {
+            out[i] += sid_source(sid_source_user, sample_rate);
         }
     }
 
@@ -219,6 +227,12 @@ void soundchip_shutdown(void)
     SDL_CloseAudioDevice(audio_device);
     audio_device = 0;
     initialized  = 0;
+}
+
+void soundchip_set_sid_source(soundchip_sample_source_fn fn, void *user)
+{
+    sid_source = fn;
+    sid_source_user = user;
 }
 
 /* ── Bus interface (dev = voice index as uintptr_t) ─────────── */

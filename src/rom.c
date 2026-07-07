@@ -40,7 +40,7 @@ int rom_load(ROM *rom, const char *filename, uint32_t size)
         return -1;
     }
 
-    /* load into the end of the ROM region (top-aligned) */
+    /* Legacy behaviour: small ROMs are top-aligned in their CPU window. */
     uint32_t load_size = (uint32_t)fsize < size ? (uint32_t)fsize : size;
     uint32_t offset    = size - load_size;
     size_t   n         = fread(rom->data + offset, 1, load_size, f);
@@ -53,6 +53,61 @@ int rom_load(ROM *rom, const char *filename, uint32_t size)
 
     printf("ROM: loaded '%s' (%ld bytes) into %u-byte window\n",
            filename, fsize, size);
+    return 0;
+}
+
+int rom_load_segment(ROM *rom, const char *filename, uint32_t size,
+                     uint32_t file_offset)
+{
+    FILE *f = fopen(filename, "rb");
+    if (!f) {
+        fprintf(stderr, "rom_load: cannot open '%s': ", filename);
+        perror("");
+        return -1;
+    }
+
+    /* determine file size */
+    fseek(f, 0, SEEK_END);
+    long fsize = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    if (fsize <= 0) {
+        fprintf(stderr, "rom_load: empty file '%s'\n", filename);
+        fclose(f);
+        return -1;
+    }
+
+    if (rom_init(rom, size) != 0) {
+        fclose(f);
+        return -1;
+    }
+
+    if (file_offset >= (uint32_t)fsize) {
+        fclose(f);
+        fprintf(stderr, "rom_load_segment: offset %u beyond '%s' (%ld bytes)\n",
+                file_offset, filename, fsize);
+        return -1;
+    }
+
+    uint32_t available = (uint32_t)fsize - file_offset;
+    uint32_t load_size = available < size ? available : size;
+
+    if (fseek(f, (long)file_offset, SEEK_SET) != 0) {
+        fclose(f);
+        fprintf(stderr, "rom_load_segment: seek failed for '%s'\n", filename);
+        return -1;
+    }
+
+    size_t n = fread(rom->data, 1, load_size, f);
+    fclose(f);
+
+    if (n != load_size) {
+        fprintf(stderr, "rom_load_segment: short read from '%s'\n", filename);
+        return -1;
+    }
+
+    printf("ROM: loaded '%s'+$%04X (%u bytes) into %u-byte window\n",
+           filename, file_offset, load_size, size);
     return 0;
 }
 

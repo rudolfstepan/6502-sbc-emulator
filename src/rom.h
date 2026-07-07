@@ -9,6 +9,8 @@ typedef struct {
 
 int     rom_init(ROM *rom, uint32_t size);
 int     rom_load(ROM *rom, const char *filename, uint32_t size);
+int     rom_load_segment(ROM *rom, const char *filename, uint32_t size,
+                         uint32_t file_offset);
 void    rom_free(ROM *rom);
 uint8_t rom_read(void *dev, uint16_t offset);
 void    rom_write(void *dev, uint16_t offset, uint8_t val); /* no-op */
