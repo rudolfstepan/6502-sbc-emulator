@@ -1,7 +1,0 @@
-{
-  "permissions": {
-    "allow": [
-      "Bash(grep -n '= $E' tools/ehbasic_port/.cache/basic.asm)"
-    ]
-  }
-}
