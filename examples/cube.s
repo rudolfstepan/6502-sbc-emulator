@@ -3,8 +3,9 @@
 ;
 ;  Runs as a PRG under fpga.ini.  Load/entry address is $1000.
 ;
-;  Unlike a table-playback demo, this program computes the whole 3D pipeline
-;  live on the 6502 every frame:
+;  The 6502 computes the whole 3D pipeline live every frame and hands the line
+;  drawing to the hardware 2D blitter ($8840-$884F), so it never plots pixels
+;  over the (slow, DDR3-backed) framebuffer bus itself:
 ;
 ;    1. 8 model vertices at (+/-R, +/-R, +/-R)          -> vx/vy/vz tables
 ;    2. rotation about the Y axis, then the X axis       -> sin/cos table + 8x8
@@ -13,12 +14,14 @@
 ;    4. double buffering via the hardware page flip       -> $900F, banks 0-31
 ;                                                            (page 0) / 32-63
 ;                                                            (page 1)
-;    5. edges drawn with an exact integer Bresenham line  -> no gaps, no jitter
+;    5. each edge is one blitter LINE command; the CPU just writes the two
+;       endpoints + colour + page and polls BUSY.  The startup clear is two
+;       blitter FILL commands.
 ;
 ;  The cube is drawn into the *hidden* framebuffer page, then $900F is flipped
 ;  during vertical blank, so the visible image is always a finished frame
 ;  (flicker-free).  To stay fast, each page only erases the twelve edges it drew
-;  two frames ago instead of clearing the whole 256 KB page.
+;  two frames ago (twelve black LINE commands) instead of clearing the page.
 ;
 ;  Fixed-point conventions
 ;  -----------------------
@@ -38,12 +41,29 @@
 
 ; ---- VIC registers -------------------------------------------------------
 VIC_MODE = $9000            ; graphics mode
-VIC_BANK = $9006            ; framebuffer bank (0..63, 8 KB each)
 VIC_ISR  = $9007            ; interrupt status; bit1 = new frame
 VIC_PAGE = $900F            ; visible framebuffer page (0/1)
 
 MODE_HIRES_RGB332 = $20     ; 640x400, 1 byte/pixel
 IRQ_FRAME         = $02     ; ISR bit: raster wrapped -> new frame
+
+; ---- hardware 2D blitter ($8840-$884F) ----------------------------------
+; Byte index into the active 640x400 8bpp frame; X is 10-bit, Y is 9-bit.
+BLIT_X0LO = $8840
+BLIT_X0HI = $8841           ; x0[9:8]
+BLIT_Y0LO = $8842
+BLIT_Y0HI = $8843           ; y0[8]
+BLIT_X1LO = $8844
+BLIT_X1HI = $8845
+BLIT_Y1LO = $8846
+BLIT_Y1HI = $8847
+BLIT_COL  = $8848           ; RGB332 colour byte
+BLIT_OP   = $8849           ; 0 = FILL rect, 3 = LINE
+BLIT_PG   = $884A           ; target framebuffer page (bit 0)
+BLIT_TRIG = $884F           ; write = start; read bit7 = BUSY
+
+OP_FILL = 0
+OP_LINE = 3
 
 ; ---- geometry / projection constants ------------------------------------
 R          = 60             ; cube half-size (corner magnitude = R*sqrt3 = 104)
@@ -89,54 +109,20 @@ scrxlo   = $2A             ; projected screen coordinate of current vertex
 scrxhi   = $2B
 scrylo   = $2C
 scryhi   = $2D
-lx0lo    = $2E             ; Bresenham endpoints (16-bit)
-lx0hi    = $2F
-ly0lo    = $30
-ly0hi    = $31
-lx1lo    = $32
-lx1hi    = $33
-ly1lo    = $34
-ly1hi    = $35
-dxlo     = $36
-dxhi     = $37
-dylo     = $38
-dyhi     = $39
-sx_step  = $3A             ; +1 / -1
-sy_step  = $3B
-errlo    = $3C
-errhi    = $3D
-e2lo     = $3E
-e2hi     = $3F
-px_lo    = $40             ; plot_pixel input
-px_hi    = $41
-py_lo    = $42
-py_hi    = $43
-ADDRL    = $44             ; plot_pixel linear byte address (24-bit)
-ADDRM    = $45
-ADDRH    = $46
-PTRL     = $47
-PTRH     = $48
-COLOR    = $49
-BANK_BASE= $4A             ; 0 for page 0, 32 for page 1
-tmp      = $4B
-tmp16lo  = $4C
-tmp16hi  = $4D
-angA     = $4E             ; rotation angle about Y
-angB     = $4F             ; rotation angle about X
-backpg   = $50
-frontpg  = $51
-edgei    = $52
-p0       = $53
-p1       = $54
-svalid0  = $55             ; SAVE0/SAVE1 hold a drawn cube yet?
-svalid1  = $56
-bank     = $57             ; current framebuffer bank while walking a line
-cntlo    = $58             ; remaining pixels on the current line
-cnthi    = $59
-dx2lo    = $5A             ; 2*|dx| and 2*|dy| (Bresenham increments)
-dx2hi    = $5B
-dy2lo    = $5C
-dy2hi    = $5D
+COLOR    = $2E             ; line/fill colour for the current pass
+tmp      = $2F
+tmp16lo  = $30
+tmp16hi  = $31
+angA     = $32             ; rotation angle about Y
+angB     = $33             ; rotation angle about X
+backpg   = $34
+frontpg  = $35
+blit_pg  = $36             ; blitter target page for this frame
+edgei    = $37
+p0       = $38
+p1       = $39
+svalid0  = $3A             ; SAVE0/SAVE1 hold a drawn cube yet?
+svalid1  = $3B
 
 .segment "CODE"
 
@@ -160,7 +146,7 @@ start:
     sta svalid1
     sta VIC_PAGE                ; show page 0 (blank) first
 
-    jsr clear_all_pages
+    jsr clear_pages             ; blitter-fill both pages to black
 
 ; ---------------------------------------------------------------------------
 ;  Main loop: transform -> pick hidden page -> erase old -> draw new -> flip
@@ -205,20 +191,13 @@ main_loop:
     cpx #8
     bne @vloop
 
-    ; --- back page = the one not currently visible ---
+    ; --- back page = the one not currently visible; blitter targets it ---
     lda frontpg
     eor #$01
     sta backpg
-    beq @base0                  ; back page 0 -> banks 0..31
-    lda #$20                    ; back page 1 -> banks 32..63
-    sta BANK_BASE
-    jmp @erase
-@base0:
-    lda #$00
-    sta BANK_BASE
+    sta blit_pg
 
     ; --- erase what this page drew two frames ago (if any) ---
-@erase:
     lda backpg
     bne @erase_p1
     lda svalid0
@@ -641,7 +620,8 @@ divide16:
     rts
 
 ; ---------------------------------------------------------------------------
-;  draw_edges - draw all 12 edges of the point set PSET in COLOR
+;  draw_edges - draw all 12 edges of point set PSET in COLOR on page blit_pg,
+;  one hardware blitter LINE command per edge.
 ; ---------------------------------------------------------------------------
 draw_edges:
     ldx #0
@@ -653,51 +633,63 @@ draw_edges:
     lda edge_to,x
     sta p1
 
-    ldy p0                      ; endpoint 0: x_lo/x_hi/y_lo/y_hi
+    ; endpoint 0 -> blitter (x0,y0).  Point set: xlo@+0 xhi@+8 ylo@+16 yhi@+24
+    ldy p0
     lda (PSET),y
-    sta lx0lo
+    sta BLIT_X0LO
     lda p0
     clc
     adc #8
     tay
     lda (PSET),y
-    sta lx0hi
+    sta BLIT_X0HI
     lda p0
     clc
     adc #16
     tay
     lda (PSET),y
-    sta ly0lo
+    sta BLIT_Y0LO
     lda p0
     clc
     adc #24
     tay
     lda (PSET),y
-    sta ly0hi
+    sta BLIT_Y0HI
 
-    ldy p1                      ; endpoint 1
+    ; endpoint 1 -> blitter (x1,y1)
+    ldy p1
     lda (PSET),y
-    sta lx1lo
+    sta BLIT_X1LO
     lda p1
     clc
     adc #8
     tay
     lda (PSET),y
-    sta lx1hi
+    sta BLIT_X1HI
     lda p1
     clc
     adc #16
     tay
     lda (PSET),y
-    sta ly1lo
+    sta BLIT_Y1LO
     lda p1
     clc
     adc #24
     tay
     lda (PSET),y
-    sta ly1hi
+    sta BLIT_Y1HI
 
-    jsr draw_line
+    lda COLOR
+    sta BLIT_COL
+    lda #OP_LINE
+    sta BLIT_OP
+    lda blit_pg
+    sta BLIT_PG
+    sta BLIT_TRIG               ; any write triggers the op
+@busy:
+    lda BLIT_TRIG              ; bit7 = BUSY
+    bmi @busy
+
     ldx edgei
     inx
     cpx #12
@@ -705,381 +697,45 @@ draw_edges:
     rts
 
 ; ---------------------------------------------------------------------------
-;  Framebuffer pointer stepping macros (inlined by draw_line).
-;  PTR walks the visible 8 KB window $6000-$7FFF; when a step crosses a window
-;  edge, wrap PTR and adjust the bank register.  Bank changes are rare (every
-;  8 KB for x, ~12 rows for y), so the common case is a single inc/dec.
+;  clear_pages - blitter-FILL both framebuffer pages to black
 ; ---------------------------------------------------------------------------
-.macro STEP_XP                  ; PTR += 1
-.local done
-    inc PTRL
-    bne done
-    inc PTRH
-    lda PTRH
-    cmp #$80
-    bne done
-    lda #$60
-    sta PTRH
-    inc bank
-    lda bank
-    sta VIC_BANK
-done:
-.endmacro
-
-.macro STEP_XN                  ; PTR -= 1
-.local done, skip
-    lda PTRL
-    bne skip
-    dec PTRH
-skip:
-    dec PTRL
-    lda PTRH
-    cmp #$60
-    bcs done
-    lda #$7f
-    sta PTRH
-    dec bank
-    lda bank
-    sta VIC_BANK
-done:
-.endmacro
-
-.macro STEP_YP                  ; PTR += 640
-.local done
-    clc
-    lda PTRL
-    adc #$80
-    sta PTRL
-    lda PTRH
-    adc #$02
-    sta PTRH
-    cmp #$80
-    bcc done
-    sec
-    sbc #$20
-    sta PTRH
-    inc bank
-    lda bank
-    sta VIC_BANK
-done:
-.endmacro
-
-.macro STEP_YN                  ; PTR -= 640
-.local done
-    sec
-    lda PTRL
-    sbc #$80
-    sta PTRL
-    lda PTRH
-    sbc #$02
-    sta PTRH
-    cmp #$60
-    bcs done
-    clc
-    adc #$20
-    sta PTRH
-    dec bank
-    lda bank
-    sta VIC_BANK
-done:
-.endmacro
-
-; ---------------------------------------------------------------------------
-;  draw_line - axis-split Bresenham with an incrementally walked framebuffer
-;  pointer.  The start address is derived once; thereafter the major axis steps
-;  the pointer every pixel and the minor axis steps only when the decision
-;  value D turns non-negative - a single sign test per pixel, no per-pixel
-;  address computation.  This is the demo's hot loop, so it is kept lean.
-;
-;  Endpoints are guaranteed on-screen by the projection constants (no clipping).
-; ---------------------------------------------------------------------------
-draw_line:
-    ; |dx| and sx_step
-    sec
-    lda lx1lo
-    sbc lx0lo
-    sta dxlo
-    lda lx1hi
-    sbc lx0hi
-    sta dxhi
-    bpl @dxpos
-    sec
-    lda #0
-    sbc dxlo
-    sta dxlo
-    lda #0
-    sbc dxhi
-    sta dxhi
-    lda #$ff
-    sta sx_step
-    jmp @dyc
-@dxpos:
-    lda #$01
-    sta sx_step
-@dyc:
-    ; |dy| and sy_step
-    sec
-    lda ly1lo
-    sbc ly0lo
-    sta dylo
-    lda ly1hi
-    sbc ly0hi
-    sta dyhi
-    bpl @dypos
-    sec
-    lda #0
-    sbc dylo
-    sta dylo
-    lda #0
-    sbc dyhi
-    sta dyhi
-    lda #$ff
-    sta sy_step
-    jmp @two
-@dypos:
-    lda #$01
-    sta sy_step
-@two:
-    lda dxlo                    ; dx2 = 2*|dx|
-    asl
-    sta dx2lo
-    lda dxhi
-    rol
-    sta dx2hi
-    lda dylo                    ; dy2 = 2*|dy|
-    asl
-    sta dy2lo
-    lda dyhi
-    rol
-    sta dy2hi
-
-    ; start pointer/bank for (lx0,ly0):  linear = ly0*640 + lx0
-    ldy ly0lo
-    lda ly0hi
-    bne @up
-    lda row_lo,y
-    sta ADDRL
-    lda row_mid,y
-    sta ADDRM
-    lda row_hi,y
-    sta ADDRH
-    jmp @ax
-@up:
-    lda row_lo+256,y
-    sta ADDRL
-    lda row_mid+256,y
-    sta ADDRM
-    lda row_hi+256,y
-    sta ADDRH
-@ax:
-    clc
-    lda ADDRL
-    adc lx0lo
-    sta ADDRL
-    lda ADDRM
-    adc lx0hi
-    sta ADDRM
-    lda ADDRH
-    adc #0
-    sta ADDRH
-    lda ADDRM                   ; bank = (linear >> 13) + BANK_BASE
-    lsr
-    lsr
-    lsr
-    lsr
-    lsr
-    sta tmp
-    lda ADDRH
-    and #3
-    asl
-    asl
-    asl
-    ora tmp
-    clc
-    adc BANK_BASE
-    sta bank
-    sta VIC_BANK
-    lda ADDRM                   ; PTR = $6000 + (linear & $1FFF)
-    and #$1f
-    ora #$60
-    sta PTRH
-    lda ADDRL
-    sta PTRL
-
-    ldy #0                      ; Y stays 0 for every (PTR),y store
-
-    lda dxlo                    ; major axis: |dx| >= |dy| ?
-    cmp dylo
-    lda dxhi
-    sbc dyhi
-    bcs dl_shallow
-    jmp dl_steep
-
-; ---- shallow (X-major): step X every pixel, Y when D >= 0 ----
-; (labels here are global, not cheap-local, because the STEP_* macros define
-;  their own local labels which would otherwise close the cheap-local scope.)
-dl_shallow:
-    lda dxlo                    ; cnt = |dx|
-    sta cntlo
-    lda dxhi
-    sta cnthi
-    sec                         ; D = dy2 - |dx|
-    lda dy2lo
-    sbc dxlo
-    sta errlo
-    lda dy2hi
-    sbc dxhi
-    sta errhi
-dl_shloop:
-    lda COLOR                   ; plot
-    sta (PTRL),y
-    lda cntlo
-    ora cnthi
-    bne dl_sh1
-    rts
-dl_sh1:
-    lda errhi                   ; D >= 0 ?  -> step minor axis (Y)
-    bmi dl_shx
-    sec                         ; D -= dx2
-    lda errlo
-    sbc dx2lo
-    sta errlo
-    lda errhi
-    sbc dx2hi
-    sta errhi
-    lda sy_step
-    bmi dl_shyn
-    STEP_YP
-    jmp dl_shx
-dl_shyn:
-    STEP_YN
-dl_shx:
-    clc                         ; D += dy2
-    lda errlo
-    adc dy2lo
-    sta errlo
-    lda errhi
-    adc dy2hi
-    sta errhi
-    lda sx_step                 ; step X (every pixel)
-    bmi dl_shxn
-    STEP_XP
-    jmp dl_shc
-dl_shxn:
-    STEP_XN
-dl_shc:
-    lda cntlo
-    bne dl_shd
-    dec cnthi
-dl_shd:
-    dec cntlo
-    jmp dl_shloop
-
-; ---- steep (Y-major): step Y every pixel, X when D >= 0 ----
-dl_steep:
-    lda dylo                    ; cnt = |dy|
-    sta cntlo
-    lda dyhi
-    sta cnthi
-    sec                         ; D = dx2 - |dy|
-    lda dx2lo
-    sbc dylo
-    sta errlo
-    lda dx2hi
-    sbc dyhi
-    sta errhi
-dl_stloop:
-    lda COLOR                   ; plot
-    sta (PTRL),y
-    lda cntlo
-    ora cnthi
-    bne dl_st1
-    rts
-dl_st1:
-    lda errhi                   ; D >= 0 ?  -> step minor axis (X)
-    bmi dl_sty
-    sec                         ; D -= dy2
-    lda errlo
-    sbc dy2lo
-    sta errlo
-    lda errhi
-    sbc dy2hi
-    sta errhi
-    lda sx_step
-    bmi dl_stxn
-    STEP_XP
-    jmp dl_sty
-dl_stxn:
-    STEP_XN
-dl_sty:
-    clc                         ; D += dx2
-    lda errlo
-    adc dx2lo
-    sta errlo
-    lda errhi
-    adc dx2hi
-    sta errhi
-    lda sy_step                 ; step Y (every pixel)
-    bmi dl_styn
-    STEP_YP
-    jmp dl_stc
-dl_styn:
-    STEP_YN
-dl_stc:
-    lda cntlo
-    bne dl_std
-    dec cnthi
-dl_std:
-    dec cntlo
-    jmp dl_stloop
-
-; ---------------------------------------------------------------------------
-;  clear_all_pages - zero both framebuffer pages (all 64 banks)
-; ---------------------------------------------------------------------------
-clear_all_pages:
-    ldx #0
-@bank:
-    stx VIC_BANK
-    stx tmp                     ; remember current bank
-    lda #$60
-    sta PTRH
+clear_pages:
     lda #$00
-    sta PTRL
-    tay
-@page:
-    lda #0
-@byte:
-    sta (PTRL),y
-    iny
-    bne @byte
-    inc PTRH
-    lda PTRH
-    cmp #$80
-    bne @page
-    ldx tmp
-    inx
-    cpx #64
-    bne @bank
+    sta BLIT_X0LO
+    sta BLIT_X0HI
+    sta BLIT_Y0LO
+    sta BLIT_Y0HI
+    lda #<639
+    sta BLIT_X1LO
+    lda #>639
+    sta BLIT_X1HI
+    lda #<399
+    sta BLIT_Y1LO
+    lda #>399
+    sta BLIT_Y1HI
+    lda #$00
+    sta BLIT_COL
+    lda #OP_FILL
+    sta BLIT_OP
+    lda #$00                    ; page 0
+    sta BLIT_PG
+    sta BLIT_TRIG
+    jsr blit_wait
+    lda #$01                    ; page 1
+    sta BLIT_PG
+    sta BLIT_TRIG
+    jsr blit_wait
+    rts
+
+blit_wait:
+    lda BLIT_TRIG
+    bmi blit_wait
     rts
 
 ; ===========================================================================
 ;  Data
 ; ===========================================================================
 .segment "RODATA"
-
-; y*640 as a 24-bit value, one entry per screen row (0..399)
-row_lo:
-    .repeat 400, I
-    .byte <(I * 640)
-    .endrepeat
-row_mid:
-    .repeat 400, I
-    .byte >((I * 640) & $ffff)
-    .endrepeat
-row_hi:
-    .repeat 400, I
-    .byte ((I * 640) >> 16) & $ff
-    .endrepeat
 
 ; the 12 cube edges as (from,to) vertex indices
 edge_from:

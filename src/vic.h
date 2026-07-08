@@ -40,6 +40,7 @@ uint8_t vic_read_video_ram(uint16_t address);
 
 // Bitmap RAM access (for rendering)
 uint8_t vic_read_bitmap_ram(uint32_t address);
+uint32_t vic_get_display_bitmap_base(void);
 
 // Character ROM access
 const uint8_t* vic_get_char_pattern(uint8_t char_code);

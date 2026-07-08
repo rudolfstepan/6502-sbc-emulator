@@ -95,3 +95,4 @@ uint8_t via_get_portb_output(const VIA6522 *via);
 bool    via_keyboard_push(VIA6522 *via, uint8_t keycode);
 bool    via_keyboard_available(const VIA6522 *via);
 uint8_t via_keyboard_pop(VIA6522 *via);
+void    via_keyboard_release_key(VIA6522 *via, uint8_t keycode);

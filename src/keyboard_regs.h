@@ -18,6 +18,7 @@ typedef struct {
 
 void keyboard_regs_init(KeyboardRegs *kbd);
 bool keyboard_regs_push_ascii(KeyboardRegs *kbd, uint8_t ascii);
+void keyboard_regs_release_ascii(KeyboardRegs *kbd, uint8_t ascii);
 bool keyboard_regs_irq(const KeyboardRegs *kbd);
 uint8_t keyboard_regs_read(void *dev, uint16_t offset);
 void keyboard_regs_write(void *dev, uint16_t offset, uint8_t val);

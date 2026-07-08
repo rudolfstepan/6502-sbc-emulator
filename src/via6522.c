@@ -246,3 +246,32 @@ uint8_t via_keyboard_pop(VIA6522 *via)
     
     return keycode;
 }
+
+void via_keyboard_release_key(VIA6522 *via, uint8_t keycode)
+{
+    uint8_t kept[VIA_KB_BUFFER_SIZE];
+    uint8_t kept_count = 0;
+    uint8_t pos = via->kb_read_pos;
+
+    for (unsigned int i = 0; i < via->kb_count; i++) {
+        uint8_t v = via->kb_buffer[pos];
+        if (v != keycode) {
+            kept[kept_count++] = v;
+        }
+        pos = (uint8_t)((pos + 1) % VIA_KB_BUFFER_SIZE);
+    }
+
+    for (unsigned int i = 0; i < kept_count; i++) {
+        via->kb_buffer[i] = kept[i];
+    }
+    via->kb_read_pos = 0;
+    via->kb_write_pos = (uint8_t)(kept_count % VIA_KB_BUFFER_SIZE);
+    via->kb_count = kept_count;
+
+    if (via->kb_count > 0) {
+        via->ifr |= VIA_IRQ_CA1;
+    } else {
+        via->ifr &= ~VIA_IRQ_CA1;
+    }
+    via_update_irq(via);
+}

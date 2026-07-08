@@ -24,6 +24,40 @@ bool keyboard_regs_push_ascii(KeyboardRegs *kbd, uint8_t ascii)
     return true;
 }
 
+void keyboard_regs_release_ascii(KeyboardRegs *kbd, uint8_t ascii)
+{
+    uint8_t kept[sizeof(kbd->fifo)];
+    uint8_t kept_count = 0;
+    uint8_t pos = kbd->read_pos;
+
+    for (unsigned int i = 0; i < kbd->count; i++) {
+        uint8_t v = kbd->fifo[pos];
+        if (v != ascii) {
+            kept[kept_count++] = v;
+        }
+        pos = (uint8_t)((pos + 1) % sizeof(kbd->fifo));
+    }
+
+    for (unsigned int i = 0; i < kept_count; i++) {
+        kbd->fifo[i] = kept[i];
+    }
+    kbd->read_pos = 0;
+    kbd->write_pos = (uint8_t)(kept_count % sizeof(kbd->fifo));
+    kbd->count = kept_count;
+
+    if (kbd->count > 0) {
+        kbd->keycode = kbd->fifo[kbd->read_pos];
+        kbd->modifier = 0;
+        kbd->ascii = kbd->keycode;
+        kbd->key_ready = 1;
+    } else if (kbd->ascii == ascii || kbd->keycode == ascii) {
+        kbd->keycode = 0;
+        kbd->modifier = 0;
+        kbd->ascii = 0;
+        kbd->key_ready = 0;
+    }
+}
+
 bool keyboard_regs_irq(const KeyboardRegs *kbd)
 {
     return kbd->key_ready != 0;

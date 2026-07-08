@@ -71,8 +71,25 @@ static uint32_t *framebuffer = NULL;
 static bool sdl_initialized = false;
 static vic_sdl_drop_file_fn drop_file_handler = NULL;
 static void *drop_file_user = NULL;
+static bool key_repeat_pending[256];
 
 #define CURSOR_BLINK_MS 500
+
+static uint8_t sdl_special_key_ascii(SDL_Keycode key, SDL_Keymod mod)
+{
+    switch (key) {
+    case SDLK_LEFT:      return 0x9D;  /* PETSCII/SBC cursor left */
+    case SDLK_RIGHT:     return 0x1D;  /* PETSCII/SBC cursor right */
+    case SDLK_UP:        return 0x91;  /* PETSCII/SBC cursor up */
+    case SDLK_DOWN:      return 0x11;  /* PETSCII/SBC cursor down */
+    case SDLK_RETURN:
+    case SDLK_KP_ENTER:  return '\r';
+    case SDLK_BACKSPACE: return '\b';
+    case SDLK_HOME:      return (mod & KMOD_SHIFT) ? 0x93 : 0x13;
+    case SDLK_c:         return (mod & KMOD_CTRL) ? 0x03 : 0;
+    default:             return 0;
+    }
+}
 
 void vic_sdl_set_drop_file_handler(vic_sdl_drop_file_fn fn, void *user)
 {
@@ -338,9 +355,10 @@ void vic_sdl_render(void) {
         uint8_t mode = vic_get_mode_raw();
         if (mode & 0x40) {
             /* Tang FPGA: 320x200 RGB565, centred vertically in the 640x400 window. */
+            uint32_t display_base = vic_get_display_bitmap_base();
             for (int y = 0; y < 200; y++) {
                 for (int x = 0; x < 320; x++) {
-                    uint32_t byte_addr = (uint32_t)(y * 320 + x) * 2u;
+                    uint32_t byte_addr = display_base + (uint32_t)(y * 320 + x) * 2u;
                     uint32_t c = rgb565_to_argb(vic_read_bitmap_ram(byte_addr),
                                                 vic_read_bitmap_ram(byte_addr + 1));
                     int fx0 = x * 2;
@@ -353,20 +371,22 @@ void vic_sdl_render(void) {
             }
         } else if (mode & 0x20) {
             /* Tang FPGA: 640x400 RGB332, 1 byte per pixel. */
+            uint32_t display_base = vic_get_display_bitmap_base();
             for (int y = 0; y < 400; y++) {
                 for (int x = 0; x < 640; x++) {
                     framebuffer[y * WINDOW_WIDTH + x] =
-                        rgb332_to_argb(vic_read_bitmap_ram((uint32_t)y * 640u + (uint32_t)x));
+                        rgb332_to_argb(vic_read_bitmap_ram(display_base + (uint32_t)y * 640u + (uint32_t)x));
                 }
             }
         } else if (mode & 0x10) {
             /* Tang FPGA: 320x200 RGB332, scaled 2x to the emulator window. */
+            uint32_t display_base = vic_get_display_bitmap_base();
             for (int y = 0; y < 200; y++) {
                 uint32_t *row0 = framebuffer + (size_t)(y * 2) * WINDOW_WIDTH;
                 uint32_t *row1 = row0 + WINDOW_WIDTH;
                 for (int x = 0; x < 320; x++) {
                     uint32_t c = rgb332_to_argb(
-                        vic_read_bitmap_ram((uint32_t)y * 320u + (uint32_t)x));
+                        vic_read_bitmap_ram(display_base + (uint32_t)y * 320u + (uint32_t)x));
                     row0[x * 2] = c;
                     row0[x * 2 + 1] = c;
                     row1[x * 2] = c;
@@ -569,10 +589,15 @@ bool vic_sdl_handle_events(void) {
                     uint8_t ascii = (uint8_t)event.text.text[0];
                     // Only accept printable ASCII (0x20-0x7E)
                     if (ascii >= 0x20 && ascii <= 0x7E) {
+                        // Feed only the active keyboard source so the kernel
+                        // does not read the same key from both keyboard_regs and
+                        // the VIA (which doubled every typed character): use
+                        // keyboard_regs when mapped (matches the FPGA), else VIA.
                         if (kbd) {
                             keyboard_regs_push_ascii(kbd, ascii);
+                        } else {
+                            via_keyboard_push(via, ascii);
                         }
-                        via_keyboard_push(via, ascii);
                     }
                 }
                 break;
@@ -589,60 +614,66 @@ bool vic_sdl_handle_events(void) {
                 if (via) {
                     SDL_Keycode key = event.key.keysym.sym;
                     SDL_Keymod mod = SDL_GetModState();
-                    uint8_t ascii = 0;
+                    uint8_t ascii = sdl_special_key_ascii(key, mod);
 
-                    // Only handle non-printable keys here
-                    switch (key) {
-                        case SDLK_LEFT:
-                            ascii = 0x9D;  // PETSCII/SBC cursor left
-                            break;
-                        case SDLK_RIGHT:
-                            ascii = 0x1D;  // PETSCII/SBC cursor right
-                            break;
-                        case SDLK_UP:
-                            ascii = 0x91;  // PETSCII/SBC cursor up
-                            break;
-                        case SDLK_DOWN:
-                            ascii = 0x11;  // PETSCII/SBC cursor down
-                            break;
-                        case SDLK_RETURN:
-                        case SDLK_KP_ENTER:
-                            ascii = '\r';  // Carriage return
-                            break;
-                        case SDLK_BACKSPACE:
-                            ascii = '\b';  // Backspace
-                            break;
-                        case SDLK_HOME:
-                            if (mod & KMOD_SHIFT) {
-                                ascii = 0x93;  // Clear/Home
-                            } else {
-                                ascii = 0x13;  // Home
-                            }
-                            break;
-                        case SDLK_l:
-                            if (mod & KMOD_CTRL) {
-                                vic_clear_screen();
-                            }
-                            break;
-                        case SDLK_c:
-                            if (mod & KMOD_CTRL) {
-                                ascii = 0x03;  // BASIC STOP / Ctrl-C
-                            }
-                            break;
-                        case SDLK_PAUSE:
-                        case SDLK_CANCEL:
-                            ascii = 0x03;      // Pause/Break as RUN-STOP
-                            break;
-                        default:
-                            break;
+                    if (key == SDLK_l && (mod & KMOD_CTRL)) {
+                        vic_clear_screen();
+                    } else if (key == SDLK_PAUSE || key == SDLK_CANCEL) {
+                        ascii = 0x03;      // Pause/Break as RUN-STOP
                     }
 
                     // Push to VIA keyboard buffer
                     if (ascii != 0) {
+                        if (event.key.repeat) {
+                            key_repeat_pending[ascii] = true;
+                        }
+                        // Feed only the active keyboard source so the kernel
+                        // does not read the same key from both keyboard_regs and
+                        // the VIA (which doubled every typed character): use
+                        // keyboard_regs when mapped (matches the FPGA), else VIA.
                         if (kbd) {
                             keyboard_regs_push_ascii(kbd, ascii);
+                        } else {
+                            via_keyboard_push(via, ascii);
                         }
-                        via_keyboard_push(via, ascii);
+                    }
+                }
+                break;
+            }
+
+            case SDL_KEYUP: {
+                VIA6522 *via = get_keyboard_via();
+                KeyboardRegs *kbd = get_keyboard_regs();
+                SDL_Keycode key = event.key.keysym.sym;
+                SDL_Keymod mod = event.key.keysym.mod;
+                uint8_t ascii = sdl_special_key_ascii(key, mod);
+                bool flush_repeat = (ascii != 0 && key_repeat_pending[ascii]);
+                if (key == SDLK_HOME) {
+                    flush_repeat = flush_repeat || key_repeat_pending[0x13] || key_repeat_pending[0x93];
+                }
+
+                if (flush_repeat) {
+                    if (ascii != 0) {
+                        if (kbd) {
+                            keyboard_regs_release_ascii(kbd, ascii);
+                        }
+                        if (via) {
+                            via_keyboard_release_key(via, ascii);
+                        }
+                        key_repeat_pending[ascii] = false;
+                    }
+
+                    if (key == SDLK_HOME) {
+                        if (kbd) {
+                            keyboard_regs_release_ascii(kbd, 0x13);
+                            keyboard_regs_release_ascii(kbd, 0x93);
+                        }
+                        if (via) {
+                            via_keyboard_release_key(via, 0x13);
+                            via_keyboard_release_key(via, 0x93);
+                        }
+                        key_repeat_pending[0x13] = false;
+                        key_repeat_pending[0x93] = false;
                     }
                 }
                 break;

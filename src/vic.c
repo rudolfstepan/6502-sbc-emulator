@@ -10,7 +10,9 @@
 #define TEXT_RAM_SIZE 2048    // 2KB for 40x25 text mode
 #define BITMAP_WINDOW_SIZE 8192
 #define LEGACY_BITMAP_RAM_SIZE 8000
-#define BITMAP_RAM_SIZE (640 * 400)  // Largest Tang DDR3 bitmap mode: 640x400 8bpp
+#define HIGHRES_FRAME_SIZE (640 * 400)
+#define HIGHRES_PAGE_SIZE (BITMAP_WINDOW_SIZE * 32)
+#define BITMAP_RAM_SIZE (HIGHRES_PAGE_SIZE * 2)  // Two bank-aligned high-res pages
 #define TEXT_CELL_COUNT (VIC_SCREEN_COLS * VIC_SCREEN_ROWS)
 #define COLOR_RAM_OFFSET 1024
 
@@ -45,6 +47,7 @@ static struct {
     uint8_t background_color;
     uint8_t text_attr_mode;
     uint8_t bitmap_bank_ext;
+    uint8_t display_page;      /* $900F: visible high-res framebuffer page (0/1) */
 
     /* Interrupt system */
     uint8_t  irq_status;       /* ISR: pending interrupt flags */
@@ -218,6 +221,7 @@ void vic_init() {
     vic_state.background_color = 6;   // C64-style blue
     vic_state.text_attr_mode = 0;
     vic_state.bitmap_bank_ext = 0;
+    vic_state.display_page = 0;
     vicii_regs[0x21] = vic_state.background_color & 0x0F;
     memset(video_ram + COLOR_RAM_OFFSET, default_text_attr(), TEXT_CELL_COUNT);
 
@@ -327,7 +331,7 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
             vic_state.text_attr_mode = val & 0x07;
             break;
         case 6:
-            vic_state.bitmap_bank_ext = val & 0x1F;
+            vic_state.bitmap_bank_ext = val & 0x3F;  /* 0-63: two 32-bank pages */
             break;
         case 7:
             /* Writing a 1 to any bit clears that interrupt flag (ACK) */
@@ -355,6 +359,9 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
         case 14:
             vic_state.scroll_y = val & 0x07;  /* only 3 bits valid */
             break;
+        case 15:
+            vic_state.display_page = val & 0x01;  /* visible high-res page */
+            break;
         default:
             break;
     }
@@ -365,7 +372,7 @@ static uint32_t bitmap_window_to_addr(uint16_t offset)
     uint8_t bank;
 
     if (vic_state.graphics_mode & 0x60) {
-        bank = vic_state.bitmap_bank_ext & 0x1F;
+        bank = vic_state.bitmap_bank_ext & 0x3F;
     } else {
         bank = (uint8_t)((vic_state.graphics_mode >> 5) & 0x07);
     }
@@ -416,6 +423,13 @@ uint8_t vic_read_bitmap_ram(uint32_t address) {
         return bitmap_ram[address];
     }
     return 0;
+}
+
+// Byte offset of the currently visible high-res page (page 0 = banks 0-31,
+// page 1 = banks 32-63). Selected by $900F; used by the renderer for flicker-
+// free double buffering.
+uint32_t vic_get_display_bitmap_base(void) {
+    return (uint32_t)(vic_state.display_page & 1u) * HIGHRES_PAGE_SIZE;
 }
 
 // Read from character ROM
@@ -643,8 +657,66 @@ static void blit_fill_circle(int cx, int cy, int r, int c)
     }
 }
 
+/* ---- Hi-res RGB332 blitter (640x400 byte-per-pixel page framebuffer) ----
+ * Active when the VIC is in hi-res mode ($9000 bit 5). Registers are captured
+ * raw (blit_raw) and reinterpreted for the wider hi-res geometry:
+ *   [0]x0lo [1]x0hi(9:8) [2]y0lo [3]y0hi(8) [4]x1lo [5]x1hi [6]y1lo [7]y1hi
+ *   [8]color(RGB332) [9]op(0=FILL,3=LINE) [10]page(0/1)
+ * This mirrors the FPGA vic_blit engine so the emulator is its reference model. */
+static uint8_t blit_raw[16];
+
+static inline void hires_pixel(uint32_t base, int x, int y, uint8_t c)
+{
+    if ((unsigned)x < 640u && (unsigned)y < 400u)
+        bitmap_ram[base + (uint32_t)y * 640u + (uint32_t)x] = c;
+}
+
+static void hires_line(uint32_t base, int x0, int y0, int x1, int y1, uint8_t c)
+{
+    int dx = abs(x1 - x0), dy = -abs(y1 - y0);
+    int sx = (x0 < x1) ? 1 : -1, sy = (y0 < y1) ? 1 : -1;
+    int err = dx + dy;
+    for (;;) {
+        hires_pixel(base, x0, y0, c);
+        if (x0 == x1 && y0 == y1) break;
+        int e2 = 2 * err;
+        if (e2 >= dy) { err += dy; x0 += sx; }
+        if (e2 <= dx) { err += dx; y0 += sy; }
+    }
+}
+
+static void hires_blit_execute(void)
+{
+    int x0 = blit_raw[0] | ((blit_raw[1] & 0x03) << 8);
+    int y0 = blit_raw[2] | ((blit_raw[3] & 0x01) << 8);
+    int x1 = blit_raw[4] | ((blit_raw[5] & 0x03) << 8);
+    int y1 = blit_raw[6] | ((blit_raw[7] & 0x01) << 8);
+    uint8_t c  = blit_raw[8];
+    uint8_t op = blit_raw[9];
+    uint32_t base = (uint32_t)(blit_raw[10] & 1) * HIGHRES_PAGE_SIZE;
+
+    if (op == BLIT_LINE) {
+        hires_line(base, x0, y0, x1, y1, c);
+    } else if (op == BLIT_FILL) {
+        int lx0 = x0 < x1 ? x0 : x1, lx1 = x0 < x1 ? x1 : x0;
+        int ly0 = y0 < y1 ? y0 : y1, ly1 = y0 < y1 ? y1 : y0;
+        if (lx0 < 0) lx0 = 0;
+        if (ly0 < 0) ly0 = 0;
+        if (lx1 > 639) lx1 = 639;
+        if (ly1 > 399) ly1 = 399;
+        for (int y = ly0; y <= ly1; y++)
+            for (int x = lx0; x <= lx1; x++)
+                bitmap_ram[base + (uint32_t)y * 640u + (uint32_t)x] = c;
+    }
+}
+
 static void blit_execute(void)
 {
+    if (vic_state.graphics_mode & 0x20) {   /* hi-res 640x400 8bpp */
+        hires_blit_execute();
+        return;
+    }
+
     int x  = (int)blit.x, y  = (int)blit.y;
     int sx = (int)blit.src_x, sy = (int)blit.src_y;
     int w  = blit.w  ? blit.w  : 256;
@@ -720,6 +792,7 @@ uint8_t vic_blitter_read(void *dev, uint16_t offset)
 void vic_blitter_write(void *dev, uint16_t offset, uint8_t val)
 {
     (void)dev;
+    if (offset < 16) blit_raw[offset] = val;   /* hi-res blitter reads these */
     switch (offset) {
     case 0: blit.x = (uint16_t)((blit.x & 0x100) | val); break;
     case 1: blit.x = (uint16_t)((blit.x & 0x0FF) | ((val & 1) << 8)); break;
