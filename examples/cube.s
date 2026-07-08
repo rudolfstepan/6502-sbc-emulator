@@ -11,17 +11,16 @@
 ;    2. rotation about the Y axis, then the X axis       -> sin/cos table + 8x8
 ;                                                            signed multiply
 ;    3. perspective projection  x' = x*FOCAL/(z+DIST)     -> signed 16/16 divide
-;    4. double buffering via the hardware page flip       -> $900F, banks 0-31
-;                                                            (page 0) / 32-63
-;                                                            (page 1)
-;    5. each edge is one blitter LINE command; the CPU just writes the two
-;       endpoints + colour + page and polls BUSY.  The startup clear is two
-;       blitter FILL commands.
+;    4. each edge is one blitter LINE command; the CPU just writes the two
+;       endpoints + colour + page and polls BUSY.  The startup clear is one
+;       blitter FILL command.
 ;
-;  The cube is drawn into the *hidden* framebuffer page, then $900F is flipped
-;  during vertical blank, so the visible image is always a finished frame
-;  (flicker-free).  To stay fast, each page only erases the twelve edges it drew
-;  two frames ago (twelve black LINE commands) instead of clearing the page.
+;  Single-buffered: the FPGA hi-res framebuffer is one page, so each frame waits
+;  for the vertical-blank edge and then erases the previous cube (12 black LINEs)
+;  and draws the new one (12 white LINEs) directly on the visible page.  The
+;  hardware blitter is fast enough to finish those 24 short LINEs in the top
+;  margin, before the raster reaches the cube, so it stays flicker-free.
+;  (In the emulator, which has two pages, this simply draws page 0.)
 ;
 ;  Fixed-point conventions
 ;  -----------------------
@@ -40,9 +39,11 @@
     .word __LOADADDR__
 
 ; ---- VIC registers -------------------------------------------------------
-VIC_MODE = $9000            ; graphics mode
-VIC_ISR  = $9007            ; interrupt status; bit1 = new frame
-VIC_PAGE = $900F            ; visible framebuffer page (0/1)
+VIC_MODE   = $9000          ; graphics mode
+VIC_ISR    = $9007          ; emulator: interrupt status, bit1 = new frame
+                            ; (FPGA: reads as $00 -- no frame flag there!)
+VIC_PAGE   = $900F          ; visible framebuffer page (0/1)
+VIC2_CTRL1 = $D011          ; FPGA: C64-style read-back, bit 7 = raster bit 8
 
 MODE_HIRES_RGB332 = $20     ; 640x400, 1 byte/pixel
 IRQ_FRAME         = $02     ; ISR bit: raster wrapped -> new frame
@@ -60,6 +61,7 @@ BLIT_Y1HI = $8847
 BLIT_COL  = $8848           ; RGB332 colour byte
 BLIT_OP   = $8849           ; 0 = FILL rect, 3 = LINE
 BLIT_PG   = $884A           ; target framebuffer page (bit 0)
+BLIT_GAP  = $884B           ; FPGA: idle cycles between blit DDR3 writes (pacing)
 BLIT_TRIG = $884F           ; write = start; read bit7 = BUSY
 
 OP_FILL = 0
@@ -74,10 +76,11 @@ CENTER_Y   = 200
 ; screen scale is x3, applied as (q<<1)+q below.
 
 ; ---- read/write scratch in RAM ($0000-$5FFF is real board RAM) -----------
-; Each "point set" is 32 bytes: [x_lo*8][x_hi*8][y_lo*8][y_hi*8]
-NEWPTS = $4000              ; freshly projected vertices for this frame
-SAVE0  = $4020             ; what is currently drawn on page 0
-SAVE1  = $4040             ; what is currently drawn on page 1
+; Each "point set" is 48 bytes: [x_lo*12][x_hi*12][y_lo*12][y_hi*12].
+; Points 0..7 are the projected cube corners; points 8..11 are the midpoints of
+; the 4-5-6-7 face edges, which carry the yellow surface-pattern diamond.
+NEWPTS = $4000              ; freshly projected points for this frame
+SAVE0  = $4030              ; what is currently drawn on the screen
 
 ; ---- zero page -----------------------------------------------------------
 m_a      = $10              ; signed 8x8 multiply inputs / result
@@ -141,15 +144,16 @@ start:
     lda #0
     sta angA
     sta angB
-    sta frontpg
     sta svalid0
-    sta svalid1
-    sta VIC_PAGE                ; show page 0 (blank) first
+    sta VIC_PAGE                ; show page 0
 
-    jsr clear_pages             ; blitter-fill both pages to black
+    lda #32
+    sta BLIT_GAP                ; DDR3 write pacing (FPGA; emulator ignores it)
+
+    jsr clear_page              ; blitter-fill the visible page to black
 
 ; ---------------------------------------------------------------------------
-;  Main loop: transform -> pick hidden page -> erase old -> draw new -> flip
+;  Main loop: transform -> wait vblank -> erase old cube -> draw new cube
 ; ---------------------------------------------------------------------------
 main_loop:
     ; --- trig for this frame: sin = sintab[a], cos = sintab[a+64] ---
@@ -182,24 +186,87 @@ main_loop:
     lda scrxlo
     sta NEWPTS+0,x
     lda scrxhi
-    sta NEWPTS+8,x
+    sta NEWPTS+12,x
     lda scrylo
-    sta NEWPTS+16,x
-    lda scryhi
     sta NEWPTS+24,x
+    lda scryhi
+    sta NEWPTS+36,x
     inx
     cpx #8
     bne @vloop
 
-    ; --- back page = the one not currently visible; blitter targets it ---
-    lda frontpg
-    eor #$01
-    sta backpg
+    ; --- surface pattern: midpoints of the 4-5-6-7 face edges -> points 8..11.
+    ; The 2D midpoint of two projected corners is (for our mild perspective) a
+    ; very close approximation of the projected 3D edge midpoint, so the yellow
+    ; diamond visually sticks to the face while the cube tumbles.
+    ldx #0
+@mloop:
+    stx tmp                     ; k = 0..3
+    lda mid_from,x
+    sta p0
+    lda mid_to,x
+    sta p1
+
+    ldx p0                      ; x midpoint: (x_a + x_b) >> 1 (16-bit)
+    ldy p1
+    clc
+    lda NEWPTS+0,x
+    adc NEWPTS+0,y
+    sta tmp16lo
+    lda NEWPTS+12,x
+    adc NEWPTS+12,y
+    ror a                       ; carry (bit 16) shifts in from the add
+    sta tmp16hi
+    lda tmp16lo
+    ror a
+    sta tmp16lo
+    lda tmp                     ; dest point = 8+k
+    clc
+    adc #8
+    tax
+    lda tmp16lo
+    sta NEWPTS+0,x
+    lda tmp16hi
+    sta NEWPTS+12,x
+
+    ldx p0                      ; y midpoint: (y_a + y_b) >> 1
+    ldy p1
+    clc
+    lda NEWPTS+24,x
+    adc NEWPTS+24,y
+    sta tmp16lo
+    lda NEWPTS+36,x
+    adc NEWPTS+36,y
+    ror a
+    sta tmp16hi
+    lda tmp16lo
+    ror a
+    sta tmp16lo
+    lda tmp
+    clc
+    adc #8
+    tax
+    lda tmp16lo
+    sta NEWPTS+24,x
+    lda tmp16hi
+    sta NEWPTS+36,x
+
+    ldx tmp
+    inx
+    cpx #4
+    bne @mloop
+
+    ; --- single-buffer: draw straight onto the visible page (page 0) ---
+    ; The FPGA hi-res framebuffer is a single page, so we erase the previous cube
+    ; and draw the new one right after the vblank edge; the hardware blitter is
+    ; fast enough (24 short LINEs) to finish in the top margin before the raster
+    ; reaches the cube, so it stays flicker-free.
+    lda #$00
     sta blit_pg
 
-    ; --- erase what this page drew two frames ago (if any) ---
-    lda backpg
-    bne @erase_p1
+    jsr wait_frame
+
+    ; --- erase last frame's cube (if any) in black ---
     lda svalid0
     beq @draw_new
     lda #<SAVE0
@@ -207,17 +274,6 @@ main_loop:
     lda #>SAVE0
     sta PSET+1
     lda #$00                    ; background colour = black
-    sta COLOR
-    jsr draw_edges
-    jmp @draw_new
-@erase_p1:
-    lda svalid1
-    beq @draw_new
-    lda #<SAVE1
-    sta PSET
-    lda #>SAVE1
-    sta PSET+1
-    lda #$00
     sta COLOR
     jsr draw_edges
 
@@ -231,36 +287,16 @@ main_loop:
     sta COLOR
     jsr draw_edges
 
-    ; --- remember what we just drew on this page ---
-    lda backpg
-    bne @save1
+    ; --- remember it for next frame's erase ---
     ldx #0
 @cp0:
     lda NEWPTS,x
     sta SAVE0,x
     inx
-    cpx #32
+    cpx #48
     bne @cp0
     lda #1
     sta svalid0
-    jmp @flip
-@save1:
-    ldx #0
-@cp1:
-    lda NEWPTS,x
-    sta SAVE1,x
-    inx
-    cpx #32
-    bne @cp1
-    lda #1
-    sta svalid1
-
-    ; --- wait for vertical blank, then reveal the finished page ---
-@flip:
-    jsr wait_frame
-    lda backpg
-    sta VIC_PAGE
-    sta frontpg
 
     ; --- advance the two rotation angles ---
     lda angA
@@ -274,17 +310,33 @@ main_loop:
     jmp main_loop
 
 ; ---------------------------------------------------------------------------
-;  wait_frame - poll the VIC frame flag and acknowledge it
+;  wait_frame - wait for the next vertical-blanking edge, on BOTH targets:
+;   * emulator: VIC frame flag $9007 bit 1 (cleared first, set at vblank)
+;   * FPGA: $9007 has no frame flag (reads $00). Use the C64-style raster
+;     read-back at $D011 instead: bit 7 = raster bit 8 of the 525-line scan
+;     counter -- high from line 256, low again at line 512 (inside vertical
+;     blanking, visible lines end at 479). The falling edge is once per frame.
+;  Both conditions are polled together, so the same PRG runs everywhere.
 ; ---------------------------------------------------------------------------
 wait_frame:
-    lda #IRQ_FRAME              ; drop any frame flag already pending, so we
-    sta VIC_ISR                 ; block until the *next* real vblank edge
+    lda #IRQ_FRAME              ; drop a pending emulator frame flag (FPGA: no-op)
+    sta VIC_ISR
+    ldy #0                      ; raster phase: 0 = wait for high, 1 = wait for low
 @poll:
     lda VIC_ISR
     and #IRQ_FRAME
-    beq @poll
+    bne @done                   ; emulator vblank edge
+    lda VIC2_CTRL1
+    bmi @high                   ; raster >= 256
+    cpy #1
+    beq @done                   ; bit 8 fell after being high -> FPGA vblank
+    bne @poll
+@high:
+    ldy #1
+    bne @poll                   ; always taken (Y=1)
+@done:
     lda #IRQ_FRAME
-    sta VIC_ISR                 ; acknowledge (write-1-to-clear)
+    sta VIC_ISR                 ; acknowledge (emulator; harmless on the FPGA)
     rts
 
 ; ---------------------------------------------------------------------------
@@ -620,8 +672,10 @@ divide16:
     rts
 
 ; ---------------------------------------------------------------------------
-;  draw_edges - draw all 12 edges of point set PSET in COLOR on page blit_pg,
-;  one hardware blitter LINE command per edge.
+;  draw_edges - draw all 16 edges (12 cube + 4 pattern) of point set PSET,
+;  one hardware blitter LINE command per edge.  COLOR = 0 erases every edge in
+;  black; otherwise each edge uses its entry from edge_color (white cube,
+;  yellow surface diamond).
 ; ---------------------------------------------------------------------------
 draw_edges:
     ldx #0
@@ -633,25 +687,25 @@ draw_edges:
     lda edge_to,x
     sta p1
 
-    ; endpoint 0 -> blitter (x0,y0).  Point set: xlo@+0 xhi@+8 ylo@+16 yhi@+24
+    ; endpoint 0 -> blitter (x0,y0).  Point set: xlo@+0 xhi@+12 ylo@+24 yhi@+36
     ldy p0
     lda (PSET),y
     sta BLIT_X0LO
     lda p0
     clc
-    adc #8
+    adc #12
     tay
     lda (PSET),y
     sta BLIT_X0HI
     lda p0
     clc
-    adc #16
+    adc #24
     tay
     lda (PSET),y
     sta BLIT_Y0LO
     lda p0
     clc
-    adc #24
+    adc #36
     tay
     lda (PSET),y
     sta BLIT_Y0HI
@@ -662,24 +716,28 @@ draw_edges:
     sta BLIT_X1LO
     lda p1
     clc
-    adc #8
+    adc #12
     tay
     lda (PSET),y
     sta BLIT_X1HI
     lda p1
     clc
-    adc #16
+    adc #24
     tay
     lda (PSET),y
     sta BLIT_Y1LO
     lda p1
     clc
-    adc #24
+    adc #36
     tay
     lda (PSET),y
     sta BLIT_Y1HI
 
-    lda COLOR
+    lda COLOR                   ; 0 = erase pass -> black for every edge
+    beq @setcol
+    ldx edgei                   ; draw pass -> per-edge colour
+    lda edge_color,x
+@setcol:
     sta BLIT_COL
     lda #OP_LINE
     sta BLIT_OP
@@ -692,14 +750,16 @@ draw_edges:
 
     ldx edgei
     inx
-    cpx #12
-    bne @loop
+    cpx #16
+    beq @done
+    jmp @loop                   ; (out of branch range)
+@done:
     rts
 
 ; ---------------------------------------------------------------------------
-;  clear_pages - blitter-FILL both framebuffer pages to black
+;  clear_page - blitter-FILL the visible framebuffer page (page 0) to black
 ; ---------------------------------------------------------------------------
-clear_pages:
+clear_page:
     lda #$00
     sta BLIT_X0LO
     sta BLIT_X0HI
@@ -721,10 +781,6 @@ clear_pages:
     sta BLIT_PG
     sta BLIT_TRIG
     jsr blit_wait
-    lda #$01                    ; page 1
-    sta BLIT_PG
-    sta BLIT_TRIG
-    jsr blit_wait
     rts
 
 blit_wait:
@@ -737,11 +793,22 @@ blit_wait:
 ; ===========================================================================
 .segment "RODATA"
 
-; the 12 cube edges as (from,to) vertex indices
+; the 12 cube edges plus the 4 surface-pattern edges (diamond between the
+; midpoints 8..11 of the 4-5-6-7 face)
 edge_from:
-    .byte 0,1,2,3, 4,5,6,7, 0,1,2,3
+    .byte 0,1,2,3, 4,5,6,7, 0,1,2,3, 8,9,10,11
 edge_to:
-    .byte 1,2,3,0, 5,6,7,4, 4,5,6,7
+    .byte 1,2,3,0, 5,6,7,4, 4,5,6,7, 9,10,11,8
+
+; per-edge draw colour: cube white, pattern diamond yellow (RGB332 $FC)
+edge_color:
+    .byte $FF,$FF,$FF,$FF, $FF,$FF,$FF,$FF, $FF,$FF,$FF,$FF, $FC,$FC,$FC,$FC
+
+; the face edges whose midpoints carry the pattern (edges of face 4-5-6-7)
+mid_from:
+    .byte 4,5,6,7
+mid_to:
+    .byte 5,6,7,4
 
 ; 8 model vertices, signed bytes: +/-60 = $3C / $C4
 vx_tab:
