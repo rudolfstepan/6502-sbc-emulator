@@ -2,7 +2,8 @@
 
 An 80-column spreadsheet for the 6502 SBC (FPGA build) in the spirit of the
 80s classics Multiplan and Lotus 1-2-3.  It is a real cc65/cl65 machine-code
-PRG linked at `$1000` — not a tokenized BASIC wrapper.  It draws straight into
+PRG with a C64-style BASIC loader: `LIST` shows only `10 CALL 4096`, while the
+machine-code image remains hidden and linked at `$1000`.  It draws straight into
 the VIC 80-column text RAM, reads raw keys from the VIA keyboard port, and
 loads/saves worksheets through the disk device.
 
@@ -24,11 +25,18 @@ Outputs:
 
 MultiCalc targets the **FPGA machine configuration** (`fpga.ini`).
 
-- **Real FPGA (UART upload):** upload `data/disk/spreadsheet.prg` with the
-  monitor, then start it from EhBASIC with **`CALL 4096`** (the PRG loads at
-  `$1000`).  It opens on a title screen; press any key (or `?` for help).
+- **Real FPGA:** mount the D64, `LOAD "SPREADSHEET"`, then start it with
+  **`RUN`**.  The visible BASIC loader calls the cc65 entry at `$1000`.
+- **UART monitor upload:** parse the PRG, upload the BASIC loader to `$0301`
+  and the hidden machine-code part to `$1000`, then release back to EhBASIC:
+  `D:\Development\6502-sbc-fpga\roms\6502\upload\spreadsheet.bat [COMx]`.
+  `RUN` then executes the uploaded loader's `CALL 4096`. Add `run` as second
+  argument to start `$1000` immediately.
 - **Emulator:** drag-and-drop `data/disk/spreadsheet.prg` onto the `fpga.ini`
   window (or `--load`).
+
+Quit with `/ Q Q`; MultiCalc restores the 80-column BASIC screen state and
+re-enters EhBASIC.
 
 ### Fitting real hardware RAM
 

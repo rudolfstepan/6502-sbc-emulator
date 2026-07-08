@@ -19,10 +19,31 @@ def petscii_name(name):
     return stem.encode("ascii", "replace").ljust(16, b"\xA0")
 
 
+def track_sector_order(track, interleave=11):
+    """Return a C1541-ish sector order for a track.
+
+    Sequential PRG chains make the FPGA SD backend read the lower and upper
+    halves of the same 512-byte card sector back-to-back.  A real disk normally
+    uses an interleave; doing the same here avoids that hot path and keeps the
+    image closer to physical 1541 layout.
+    """
+    total = SECTORS_PER_TRACK[track]
+    seen = set()
+    sector = 0
+    order = []
+    while len(order) < total:
+        while sector in seen:
+            sector = (sector + 1) % total
+        order.append(sector)
+        seen.add(sector)
+        sector = (sector + interleave) % total
+    return order
+
+
 def allocate_chain(blocks_needed):
     blocks = []
     for track in list(range(1, DIR_TRACK)) + list(range(DIR_TRACK + 1, 36)):
-        for sector in range(SECTORS_PER_TRACK[track]):
+        for sector in track_sector_order(track):
             blocks.append((track, sector))
             if len(blocks) == blocks_needed:
                 return blocks

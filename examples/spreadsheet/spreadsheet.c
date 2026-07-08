@@ -44,25 +44,29 @@
 #define COLOR_GREEN       5
 #define COLOR_LIGHT_GREEN 13
 
-/* Disk register block.  On the FPGA config (fpga.ini) the disk / SD-card
- * loader lives at $8824-$882F; the same device also answers the "disk MVP"
- * SAVE/LOAD command set used here (see src/diskdev.c). */
-#define DISK      ((volatile unsigned char*)0x8824)
-#define D_CMD     0
-#define D_STATUS  1
-#define D_ADDR_LO 2
-#define D_ADDR_HI 3
-#define D_LEN_LO  4
-#define D_LEN_HI  5
-#define D_ACT_LO  6
-#define D_ACT_HI  7
-#define D_FN_IDX  9
-#define D_FN_CHR  10
-#define DCMD_SAVE 1
-#define DCMD_LOAD 2
-#define DST_OK    2
+/* Raw SD2 sector controller at $88C0-$88CF.  The FPGA side buffers one 512-byte
+ * sector; software streams bytes through DATA and then starts a read/write CMD. */
+#define SDRAW      ((volatile unsigned char*)0x88C0)
+#define SD_CMD     0
+#define SD_STATUS  1
+#define SD_LBA0    2
+#define SD_LBA1    3
+#define SD_LBA2    4
+#define SD_LBA3    5
+#define SD_DATA    6
+#define SD_DPTR_L  7
+#define SD_DPTR_H  8
+#define SDC_READ   1
+#define SDC_WRITE  2
+#define SDS_BUSY   1
+#define SDS_ERROR  2
+#define SDS_READY  4
+#define SDS_INIT   0x80
+
+#define SHEET_SLOT_LBA 225U
 
 unsigned char sbc_getch(void);
+void sbc_basic(void);
 
 static void vic_cursor(unsigned char x, unsigned char y) { VIC_CX = x; VIC_CY = y; }
 
@@ -82,7 +86,10 @@ static unsigned char sel_row;
 static unsigned char view_col0;    /* first visible column / row (scroll)     */
 static unsigned char view_row0;
 static char          message[42];
+#ifdef __CC65__
 static char          entrybuf[ENTRY_LEN];
+static unsigned char quit_requested;
+#endif
 
 /* --------------------------------------------------------------- screen util */
 
@@ -95,16 +102,73 @@ static unsigned char str_len(const char *s)
 
 static void put_at(unsigned char x, unsigned char y, unsigned char ch)
 {
+    unsigned int i;
+
     /* The 80-column character ROM only has glyphs for upper-case letters;
      * lower-case codes render as graphics symbols.  Fold to upper case at the
      * single point where anything reaches the screen. */
     if (ch >= 'a' && ch <= 'z') ch = (unsigned char)(ch - 32);
-    if (x < SCREEN_W && y < SCREEN_H) SCR[y * SCREEN_W + x] = ch;
+    if (x < SCREEN_W && y < SCREEN_H) {
+        i = (unsigned int)y * SCREEN_W + x;
+        if (SCR[i] != ch) SCR[i] = ch;
+    }
 }
 
-static void print_at(unsigned char x, unsigned char y, const char *s)
+static void line_clear(char *line)
 {
-    while (*s && x < SCREEN_W) { put_at(x, y, (unsigned char)*s); ++x; ++s; }
+    unsigned char x;
+    for (x = 0; x < SCREEN_W; ++x) line[x] = ' ';
+}
+
+static void line_put(char *line, unsigned char x, unsigned char ch)
+{
+    if (x < SCREEN_W) line[x] = (char)ch;
+}
+
+static void line_print(char *line, unsigned char x, const char *s)
+{
+    while (*s && x < SCREEN_W) {
+        line_put(line, x, (unsigned char)*s);
+        ++x;
+        ++s;
+    }
+}
+
+static void line_field(char *line, unsigned char x, unsigned char w,
+                       const char *s, unsigned char right,
+                       unsigned char numeric)
+{
+    unsigned char n = str_len(s);
+    unsigned char i, start;
+
+    if (numeric && n > w) {
+        for (i = 0; i < w; ++i) line_put(line, (unsigned char)(x + i), '#');
+        return;
+    }
+
+    if (n > w) n = w;
+    start = right ? (unsigned char)(w - n) : 0;
+    for (i = 0; i < w; ++i) {
+        unsigned char ch = ' ';
+        if (i >= start && i < (unsigned char)(start + n)) {
+            ch = (unsigned char)s[i - start];
+        }
+        line_put(line, (unsigned char)(x + i), ch);
+    }
+}
+
+static void flush_line(unsigned char y, const char *line)
+{
+    unsigned char x;
+    for (x = 0; x < SCREEN_W; ++x) put_at(x, y, (unsigned char)line[x]);
+}
+
+static void draw_text_line(unsigned char y, const char *s)
+{
+    char line[SCREEN_W];
+    line_clear(line);
+    line_print(line, 0, s);
+    flush_line(y, line);
 }
 
 static void clear_line(unsigned char y)
@@ -113,31 +177,18 @@ static void clear_line(unsigned char y)
     for (x = 0; x < SCREEN_W; ++x) put_at(x, y, ' ');
 }
 
+#ifdef __CC65__
+static void print_at(unsigned char x, unsigned char y, const char *s)
+{
+    while (*s && x < SCREEN_W) { put_at(x, y, (unsigned char)*s); ++x; ++s; }
+}
+
 static void clear_screen(void)
 {
     unsigned int i;
     for (i = 0; i < SCREEN_W * SCREEN_H; ++i) SCR[i] = ' ';
 }
-
-/* Draw s into a field [x, x+w) with optional right alignment.  Numbers that
- * do not fit are shown as a run of '#', the way real spreadsheets do. */
-static void field(unsigned char x, unsigned char y, unsigned char w,
-                  const char *s, unsigned char right, unsigned char numeric)
-{
-    unsigned char n = str_len(s);
-    unsigned char i;
-    if (numeric && n > w) {
-        for (i = 0; i < w; ++i) put_at(x + i, y, '#');
-        return;
-    }
-    for (i = 0; i < w; ++i) put_at(x + i, y, ' ');
-    if (n > w) n = w;
-    if (right) {
-        for (i = 0; i < n; ++i) put_at(x + (w - n) + i, y, (unsigned char)s[i]);
-    } else {
-        for (i = 0; i < n; ++i) put_at(x + i, y, (unsigned char)s[i]);
-    }
-}
+#endif
 
 /* ------------------------------------------------------------- column layout */
 
@@ -179,24 +230,25 @@ static void ensure_visible(void)
 
 static void draw_status(void)
 {
+    char line[SCREEN_W];
     char ref[6];
     Cell *c;
     unsigned char x;
     char info[24];
     unsigned char n, i;
 
-    clear_line(STATUS_Y);
+    line_clear(line);
     sheet_ref_name(sel_col, sel_row, ref);
-    print_at(0, STATUS_Y, ref);
-    put_at(str_len(ref), STATUS_Y, ':');
+    line_print(line, 0, ref);
+    line_put(line, str_len(ref), ':');
 
     c = sheet_find(sel_col, sel_row);
     if (c) {
         if (c->kind == CK_LABEL) {
-            put_at(str_len(ref) + 2, STATUS_Y, '"');
-            print_at((unsigned char)(str_len(ref) + 3), STATUS_Y, c->text);
+            line_put(line, (unsigned char)(str_len(ref) + 2), '"');
+            line_print(line, (unsigned char)(str_len(ref) + 3), c->text);
         } else {
-            print_at((unsigned char)(str_len(ref) + 2), STATUS_Y, c->text);
+            line_print(line, (unsigned char)(str_len(ref) + 2), c->text);
         }
     }
 
@@ -216,95 +268,99 @@ static void draw_status(void)
     }
     n = str_len(info);
     x = (n < SCREEN_W) ? (unsigned char)(SCREEN_W - n) : 0;
-    for (i = 0; i < n; ++i) put_at(x + i, STATUS_Y, (unsigned char)info[i]);
+    for (i = 0; i < n; ++i) line_put(line, (unsigned char)(x + i), (unsigned char)info[i]);
+    flush_line(STATUS_Y, line);
 }
 
 static void draw_headers(void)
 {
+    char line[SCREEN_W];
     unsigned char c, lastc, x, w, mid;
-    clear_line(HEAD_Y);
+
+    line_clear(line);
     lastc = last_visible_col();
     for (c = view_col0; c <= lastc; ++c) {
         x = col_x(c);
         w = sheet_colw(c);
         mid = (unsigned char)(x + w / 2);
         if (c == sel_col) {
-            put_at((unsigned char)(mid - 1), HEAD_Y, '[');
-            put_at(mid, HEAD_Y, (unsigned char)('A' + c));
-            put_at((unsigned char)(mid + 1), HEAD_Y, ']');
+            line_put(line, (unsigned char)(mid - 1), '[');
+            line_put(line, mid, (unsigned char)('A' + c));
+            line_put(line, (unsigned char)(mid + 1), ']');
         } else {
-            put_at(mid, HEAD_Y, (unsigned char)('A' + c));
+            line_put(line, mid, (unsigned char)('A' + c));
         }
     }
+    flush_line(HEAD_Y, line);
 }
 
-static void draw_cell(unsigned char col, unsigned char row, unsigned char y,
-                      unsigned char selected)
+static void draw_grid_row(unsigned char row)
 {
+    char line[SCREEN_W];
     char out[ENTRY_LEN];
-    unsigned char x = col_x(col);
-    unsigned char w = sheet_colw(col);
-    unsigned char kind = sheet_kind(col, row);
-    unsigned char numeric = (kind == CK_NUMBER || kind == CK_FORMULA);
+    unsigned char lastc, y, i, x, w, numeric;
+    Cell *cell, *selected_cell = 0;
 
-    sheet_cell_display(col, row, out, sizeof(out));
-    if (selected) {
-        put_at(x, y, '[');
-        field((unsigned char)(x + 1), y, (unsigned char)(w - 2), out, numeric, numeric);
-        put_at((unsigned char)(x + w - 1), y, ']');
-    } else {
-        field(x, y, w, out, numeric, numeric);
+    if (row < view_row0 || row >= (unsigned char)(view_row0 + VIS_ROWS)) return;
+    y = (unsigned char)(GRID_Y + (row - view_row0));
+    line_clear(line);
+    if (row >= SHEET_ROWS) {
+        flush_line(y, line);
+        return;
     }
+
+    if (row == sel_row) line_put(line, 0, '>');
+    if (row + 1 >= 10) line_put(line, 1, (unsigned char)('0' + ((row + 1) / 10)));
+    line_put(line, 2, (unsigned char)('0' + ((row + 1) % 10)));
+
+    lastc = last_visible_col();
+    for (i = 0; i < MAX_CELLS; ++i) {
+        cell = sheet_slot(i);
+        if (cell->kind == CK_EMPTY) continue;
+        if (cell->row != row) continue;
+        if (cell->col < view_col0 || cell->col > lastc) continue;
+        if (cell->col == sel_col && cell->row == sel_row) {
+            selected_cell = cell;
+            continue;
+        }
+
+        x = col_x(cell->col);
+        w = sheet_colw(cell->col);
+        numeric = (unsigned char)(cell->kind == CK_NUMBER || cell->kind == CK_FORMULA);
+        sheet_format_cell(cell, out, sizeof(out));
+        line_field(line, x, w, out, numeric, numeric);
+    }
+
+    if (row == sel_row && sel_col >= view_col0 && sel_col <= lastc) {
+        x = col_x(sel_col);
+        w = sheet_colw(sel_col);
+        if (selected_cell) {
+            numeric = (unsigned char)(selected_cell->kind == CK_NUMBER ||
+                                      selected_cell->kind == CK_FORMULA);
+            sheet_format_cell(selected_cell, out, sizeof(out));
+        } else {
+            numeric = 0;
+            out[0] = 0;
+        }
+        line_put(line, x, '[');
+        line_field(line, (unsigned char)(x + 1), (unsigned char)(w - 2),
+                   out, numeric, numeric);
+        line_put(line, (unsigned char)(x + w - 1), ']');
+    }
+    flush_line(y, line);
 }
 
 static void draw_grid(void)
 {
-    unsigned char vr, r, lastc, y, i;
-
-    lastc = last_visible_col();
-
-    /* 1) clear the grid area and paint the row-number gutter */
-    for (vr = 0; vr < VIS_ROWS; ++vr) {
-        r = (unsigned char)(view_row0 + vr);
-        y = (unsigned char)(GRID_Y + vr);
-        clear_line(y);
-        if (r >= SHEET_ROWS) continue;
-        if (r == sel_row) put_at(0, y, '>');
-        if (r + 1 >= 10) put_at(1, y, (unsigned char)('0' + ((r + 1) / 10)));
-        put_at(2, y, (unsigned char)('0' + ((r + 1) % 10)));
-    }
-
-    /* 2) place the non-empty cells in a single pass over the pool.  This is
-     *    O(cells), not O(visible positions * cells), so paging stays fast even
-     *    though cell lookup is a linear scan. */
-    for (i = 0; i < MAX_CELLS; ++i) {
-        Cell *c = sheet_slot(i);
-        char out[ENTRY_LEN];
-        unsigned char x, w, numeric;
-        if (c->kind == CK_EMPTY) continue;
-        if (c->col < view_col0 || c->col > lastc) continue;
-        if (c->row < view_row0 || c->row >= (unsigned char)(view_row0 + VIS_ROWS)) continue;
-        if (c->col == sel_col && c->row == sel_row) continue;   /* drawn below */
-        x = col_x(c->col);
-        w = sheet_colw(c->col);
-        y = (unsigned char)(GRID_Y + (c->row - view_row0));
-        numeric = (unsigned char)(c->kind == CK_NUMBER || c->kind == CK_FORMULA);
-        sheet_format_cell(c, out, sizeof(out));
-        field(x, y, w, out, numeric, numeric);
-    }
-
-    /* 3) draw the cursor cell last, with its highlight brackets */
-    if (sel_row >= view_row0 && sel_row < (unsigned char)(view_row0 + VIS_ROWS) &&
-        sel_col >= view_col0 && sel_col <= lastc) {
-        draw_cell(sel_col, sel_row, (unsigned char)(GRID_Y + (sel_row - view_row0)), 1);
-    }
+    unsigned char vr;
+    for (vr = 0; vr < VIS_ROWS; ++vr)
+        draw_grid_row((unsigned char)(view_row0 + vr));
 }
 
 static void draw_menu(void)
 {
-    clear_line(MENU_Y);
-    print_at(0, MENU_Y,
-             "/ MENU   ARROWS MOVE   RET EDIT   TYPE NUMBER/LABEL/=FORMULA");
+    draw_text_line(MENU_Y,
+                   "/ MENU   ARROWS MOVE   RET EDIT   TYPE NUMBER/LABEL/=FORMULA");
     put_at(0, MENU_Y, (unsigned char)('/' | 0x80));   /* underline the menu key */
 }
 
@@ -314,37 +370,30 @@ static const char *const g_cmd_names[] = {
 };
 #define CMD_COUNT 11
 
-/* Write a single character underlined, using the VIC underline attribute
- * (bit 7 of the character code, enabled via VIC_ATTR bit 2). */
-static void put_ul(unsigned char x, unsigned char y, unsigned char ch)
-{
-    if (ch >= 'a' && ch <= 'z') ch = (unsigned char)(ch - 32);
-    put_at(x, y, (unsigned char)(ch | 0x80));
-}
-
 /* The "/" command bar: the command list on MENU_Y with each hot-key (the
  * first letter) underlined by the VIC's underline text attribute, the way
  * Multiplan marked its command keys. */
 static void draw_command_bar(void)
 {
+    char line[SCREEN_W];
     unsigned char i, x;
-    clear_line(MSG_Y);
-    clear_line(MENU_Y);
-    clear_line(ENTRY_Y);
-    print_at(0, MSG_Y, "SELECT A COMMAND BY ITS UNDERLINED LETTER   (ESC CANCELS)");
-    print_at(0, MENU_Y, "CMD:");
+
+    draw_text_line(MSG_Y, "SELECT A COMMAND BY ITS UNDERLINED LETTER   (ESC CANCELS)");
+    line_clear(line);
+    line_print(line, 0, "CMD:");
     x = 5;
     for (i = 0; i < CMD_COUNT; ++i) {
-        print_at(x, MENU_Y, g_cmd_names[i]);
-        put_ul(x, MENU_Y, (unsigned char)g_cmd_names[i][0]);  /* underline hot key */
+        line_print(line, x, g_cmd_names[i]);
+        line_put(line, x, (unsigned char)(g_cmd_names[i][0] | 0x80));
         x = (unsigned char)(x + str_len(g_cmd_names[i]) + 1);
     }
+    flush_line(MENU_Y, line);
+    clear_line(ENTRY_Y);
 }
 
 static void draw_message(void)
 {
-    clear_line(MSG_Y);
-    print_at(0, MSG_Y, message);
+    draw_text_line(MSG_Y, message);
 }
 
 static void draw_all(void)
@@ -370,6 +419,15 @@ static void set_message(const char *m)
  *  and main().  The host render harness calls the drawing code directly.
  * ===================================================================== */
 #ifdef __CC65__
+
+static void draw_movement(unsigned char old_row)
+{
+    draw_status();
+    draw_headers();
+    draw_grid_row(old_row);
+    if (old_row != sel_row) draw_grid_row(sel_row);
+    vic_cursor(col_x(sel_col), (unsigned char)(GRID_Y + (sel_row - view_row0)));
+}
 
 static unsigned char upcase(unsigned char ch)
 {
@@ -482,73 +540,116 @@ static void edit_current(void)
 
 /* ------------------------------------------------------------ disk transfer */
 
-static void disk_set_filename(const char *name)
+static unsigned char sd_wait(void)
 {
-    unsigned char i;
-    for (i = 0; name[i]; ++i) {
-        DISK[D_FN_IDX] = i;
-        DISK[D_FN_CHR] = (unsigned char)name[i];
-    }
+    unsigned int guard = 30000;
+    unsigned char st;
+    do {
+        st = SDRAW[SD_STATUS];
+        if (st == 0xFF || !(st & SDS_INIT)) return 0;
+        if (!(st & SDS_BUSY)) return (st & SDS_ERROR) ? 0 : 1;
+    } while (--guard);
+    return 0;
 }
 
-/* Append ".mc" if the user gave no extension. */
-static void make_fname(const char *in, char *out)
+static void sd_lba(unsigned int lba)
 {
-    unsigned char i = 0, dot = 0;
-    while (in[i] && i < 20) { out[i] = in[i]; if (in[i] == '.') dot = 1; ++i; }
-    if (!dot) { out[i++] = '.'; out[i++] = 'm'; out[i++] = 'c'; }
-    out[i] = 0;
+    SDRAW[SD_LBA0] = (unsigned char)(lba & 0xFF);
+    SDRAW[SD_LBA1] = (unsigned char)(lba >> 8);
+    SDRAW[SD_LBA2] = 0;
+    SDRAW[SD_LBA3] = 0;
+}
+
+static unsigned char sd_read_sector(unsigned int lba)
+{
+    sd_lba(lba);
+    SDRAW[SD_CMD] = SDC_READ;
+    if (!sd_wait()) return 0;
+    SDRAW[SD_DPTR_L] = 0;
+    SDRAW[SD_DPTR_H] = 0;
+    return (SDRAW[SD_STATUS] & SDS_READY) ? 1 : 0;
+}
+
+static unsigned char sd_write_sector(unsigned int lba)
+{
+    sd_lba(lba);
+    SDRAW[SD_CMD] = SDC_WRITE;
+    return sd_wait();
+}
+
+static unsigned char sd_has_sbcfs(void)
+{
+    if (!sd_read_sector(0)) return 0;
+    return SDRAW[SD_DATA] == 'S' &&
+           SDRAW[SD_DATA] == 'B' &&
+           SDRAW[SD_DATA] == 'C' &&
+           SDRAW[SD_DATA] == 'F' &&
+           SDRAW[SD_DATA] == 'S' &&
+           SDRAW[SD_DATA] == '1';
+}
+
+static unsigned char sheet_save_slot(const unsigned char *src, unsigned int len)
+{
+    unsigned int lba = SHEET_SLOT_LBA;
+    unsigned int rem = len;
+    unsigned int chunk, i;
+    const unsigned char *p = src;
+    if (!sd_has_sbcfs()) return 0;
+    do {
+        chunk = rem > 512U ? 512U : rem;
+        SDRAW[SD_DPTR_L] = 0;
+        SDRAW[SD_DPTR_H] = 0;
+        for (i = 0; i < 512U; ++i) {
+            SDRAW[SD_DATA] = (i < chunk) ? *p++ : 0;
+        }
+        if (!sd_write_sector(lba++)) return 0;
+        rem -= chunk;
+    } while (rem);
+    return 1;
+}
+
+static unsigned char sheet_load_slot(unsigned char *dst, unsigned int len)
+{
+    unsigned int lba = SHEET_SLOT_LBA;
+    unsigned int rem = len;
+    unsigned int chunk, i;
+    unsigned char *p = dst;
+    if (!sd_has_sbcfs()) return 0;
+    while (rem) {
+        chunk = rem > 512U ? 512U : rem;
+        if (!sd_read_sector(lba++)) return 0;
+        for (i = 0; i < chunk; ++i) *p++ = SDRAW[SD_DATA];
+        for (; i < 512U; ++i) (void)SDRAW[SD_DATA];
+        rem -= chunk;
+    }
+    return 1;
 }
 
 static void cmd_save(void)
 {
     char raw[24];
-    char name[28];
-    unsigned int addr;
     int len;
 
     if (!read_entry("SAVE AS: ", raw, sizeof(raw), "", 0)) { set_message("SAVE CANCELLED"); return; }
     if (!raw[0]) { set_message("SAVE CANCELLED"); return; }
-    make_fname(raw, name);
 
     sheet_image_prepare();
-    addr = (unsigned int)(void*)sheet_image_ptr();
     len  = sheet_image_size();
 
-    disk_set_filename(name);
-    DISK[D_ADDR_LO] = (unsigned char)(addr & 0xFF);
-    DISK[D_ADDR_HI] = (unsigned char)(addr >> 8);
-    DISK[D_LEN_LO]  = (unsigned char)(len & 0xFF);
-    DISK[D_LEN_HI]  = (unsigned char)((unsigned int)len >> 8);
-    DISK[D_CMD]     = DCMD_SAVE;
-
-    if (DISK[D_STATUS] & DST_OK) set_message("SAVED");
-    else set_message("SAVE FAILED - DISK ERROR");
+    if (sheet_save_slot(sheet_image_ptr(), (unsigned int)len)) set_message("SAVED");
+    else set_message("SAVE DISK ERROR");
 }
 
 static void cmd_load(void)
 {
     char raw[24];
-    char name[28];
-    unsigned int addr;
-    unsigned int actual;
-    int len;
+    int actual;
 
     if (!read_entry("LOAD FILE: ", raw, sizeof(raw), "", 0)) { set_message("LOAD CANCELLED"); return; }
     if (!raw[0]) { set_message("LOAD CANCELLED"); return; }
-    make_fname(raw, name);
 
-    addr = (unsigned int)(void*)sheet_image_ptr();
-    len  = sheet_image_size();
-    disk_set_filename(name);
-    DISK[D_ADDR_LO] = (unsigned char)(addr & 0xFF);
-    DISK[D_ADDR_HI] = (unsigned char)(addr >> 8);
-    DISK[D_LEN_LO]  = (unsigned char)(len & 0xFF);
-    DISK[D_LEN_HI]  = (unsigned char)((unsigned int)len >> 8);
-    DISK[D_CMD]     = DCMD_LOAD;
-
-    if (!(DISK[D_STATUS] & DST_OK)) { set_message("LOAD FAILED - NOT FOUND"); return; }
-    actual = (unsigned int)DISK[D_ACT_LO] | ((unsigned int)DISK[D_ACT_HI] << 8);
+    actual = sheet_image_size();
+    if (!sheet_load_slot(sheet_image_ptr(), (unsigned int)actual)) { set_message("LOAD DISK ERROR"); return; }
     if (sheet_image_reload((int)actual) != 0) { set_message("LOAD FAILED - BAD FILE"); return; }
     sel_col = 0; sel_row = 0; view_col0 = 0; view_row0 = 0;
     set_message("LOADED");
@@ -660,6 +761,18 @@ static void cmd_help(void)
     wait_key();
 }
 
+static void restore_basic_screen(void)
+{
+    VIC_MODE = 0;
+    VIC_ATTR = 0x02;              /* 80-column text, underline attribute off */
+    VIC_FG = 0x0E;                /* EhBASIC default: light blue on black */
+    VIC_BG = 0x00;
+    VIC_SX = 0;
+    VIC_SY = 0;
+    clear_screen();
+    vic_cursor(0, 0);
+}
+
 static void menu(void)
 {
     unsigned char ch;
@@ -682,10 +795,8 @@ static void menu(void)
         case 'Q': set_message("QUIT? PRESS Q AGAIN, ANY OTHER KEY CANCELS");
                   draw_message();
                   if (upcase(sbc_getch()) == 'Q') {
-                      clear_screen();
-                      print_at(2, 2, "MULTICALC ENDED.  THANK YOU.");
-                      vic_cursor(0, 4);
-                      for (;;) { }
+                      quit_requested = 1;
+                      return;
                   }
                   set_message("");
                   break;
@@ -699,23 +810,6 @@ static void menu(void)
 #define KEY_RIGHT 0x1D
 #define KEY_UP    0x91
 #define KEY_LEFT  0x9D
-
-static void welcome(void)
-{
-    clear_screen();
-    print_at(20, 3,  "########################################");
-    print_at(20, 5,  "            M U L T I C A L C           ");
-    print_at(20, 7,  "     THE 80-COLUMN SPREADSHEET FOR      ");
-    print_at(20, 8,  "          THE 6502 SBC SYSTEM          ");
-    print_at(20, 11, "   A1..Z60   FORMULAS   SUM AVG MIN MAX ");
-    print_at(20, 12, "   FORMATS   COLUMN WIDTHS   COPY       ");
-    print_at(20, 13, "   LOAD AND SAVE TO DISK               ");
-    print_at(20, 16, "        WRITTEN BY STEPAN.SCIENCE       ");
-    print_at(20, 18, "            VERSION 1.0  -  2026         ");
-    print_at(20, 21, "     PRESS ANY KEY TO BEGIN  ( ? = HELP )");
-    print_at(20, 23, "########################################");
-    vic_cursor(0, 24);
-}
 
 void main(void)
 {
@@ -732,16 +826,20 @@ void main(void)
     sheet_reset();
     sel_col = 0; sel_row = 0; view_col0 = 0; view_row0 = 0;
     message[0] = 0;
+    quit_requested = 0;
 
-    welcome();
-    ch = sbc_getch();
-    if (ch == '?') cmd_help();
     set_message("READY - TYPE A VALUE OR PRESS / FOR THE MENU");
 
     ensure_visible();
     draw_all();
 
     for (;;) {
+        unsigned char old_sel_col = sel_col;
+        unsigned char old_sel_row = sel_row;
+        unsigned char old_view_col0 = view_col0;
+        unsigned char old_view_row0 = view_row0;
+        unsigned char full_redraw = 0;
+
         ch = sbc_getch();
         if (ch == KEY_LEFT) {
             if (sel_col) --sel_col;
@@ -763,18 +861,30 @@ void main(void)
             }
         } else if (ch == 13 || ch == 10) {
             edit_current();
+            full_redraw = 1;
         } else if (ch == '/') {
             menu();
+            if (quit_requested) break;
+            full_redraw = 1;
         } else if (ch == '?') {
             cmd_help();
+            full_redraw = 1;
         } else if (ch >= 32 && ch < 127) {
             char first[2];
             first[0] = (char)upcase(ch); first[1] = 0;
             commit_entry(first);
+            full_redraw = 1;
         }
         ensure_visible();
-        draw_all();
+        if (full_redraw || old_view_col0 != view_col0 || old_view_row0 != view_row0) {
+            draw_all();
+        } else if (old_sel_col != sel_col || old_sel_row != sel_row) {
+            draw_movement(old_sel_row);
+        }
     }
+
+    restore_basic_screen();
+    sbc_basic();
 }
 
 #endif /* __CC65__ */

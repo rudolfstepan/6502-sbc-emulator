@@ -2,9 +2,9 @@
 
 MultiCalc is an 80-column spreadsheet for the 6502 SBC in the spirit of the
 1980s classics Multiplan and Lotus 1-2-3. It is a real cc65/cl65 machine-code
-PRG (linked at `$1000`), not a tokenized BASIC wrapper: it draws straight into
-the VIC 80-column text RAM, reads raw keys from the UART/VIA, and loads/saves
-worksheets through the disk device.
+PRG with a tiny BASIC loader and hidden machine-code entry at `$1000`: it draws
+straight into the VIC 80-column text RAM, reads raw keys from the VIA/PS/2
+keyboard path, and loads/saves worksheets through the disk device.
 
 Source lives in [examples/spreadsheet/](../examples/spreadsheet/); its
 [README](../examples/spreadsheet/README.md) is the quick source tour. This page
@@ -23,13 +23,18 @@ Outputs `data/disk/spreadsheet.prg`, `data/sdcard/spreadsheet.d64`, the sample
 
 MultiCalc targets the FPGA machine configuration (`fpga.ini`).
 
-- **Real FPGA (UART upload):** upload `data/disk/spreadsheet.prg` with the
-  monitor loader, then start it from EhBASIC with **`CALL 4096`** (the PRG loads
-  at `$1000`).
+- **Real FPGA (UART upload):** run
+  `D:\Development\6502-sbc-fpga\roms\6502\upload\spreadsheet.bat [COMx]`.
+  The monitor parses the PRG, uploads the BASIC loader to `$0301` and the hidden
+  machine-code part to `$1000`, then releases back to EhBASIC. `RUN` starts it
+  via `CALL 4096`. Add `run` as second argument to start `$1000` immediately.
+- **Real FPGA (D64):** mount the D64, `LOAD "SPREADSHEET"`, then `RUN`.
 - **Emulator:** drag-and-drop `data/disk/spreadsheet.prg` onto the `fpga.ini`
   window (or pass `--load`).
 
-It opens on a title screen; press any key, or `?` for on-screen help.
+It opens directly on the worksheet grid; press `?` for on-screen help.
+Quit with `/ Q Q`; MultiCalc restores the BASIC screen state and re-enters
+EhBASIC.
 
 ## The screen
 
@@ -133,11 +138,11 @@ stack at `$8000` ran on the emulator but crashed on hardware.
 
 ## Keyboard
 
-Raw key input can arrive on either the serial UART (`$8810/$8811` — a PC
-terminal over the CH340 link) or the VIA keyboard port (`$8801/$880D` — a PS/2
-keyboard), so MultiCalc polls both, the same way the kernel's `CHRIN` does.
-Terminal arrow keys (`ESC [ A/B/C/D`) and PS/2 arrows (PETSCII `$11/$1D/$91/$9D`)
-both move the cursor.
+Raw key input arrives through the VIA keyboard port (`$8801/$880D`) fed by the
+PS/2 keyboard path. MultiCalc deliberately does not poll the serial UART in the
+normal UI; UART remains reserved for monitor/upload workflows. PS/2 arrows
+(PETSCII `$11/$1D/$91/$9D`) and terminal-style escape sequences injected through
+the keyboard path both move the cursor.
 
 ## Architecture
 
@@ -151,9 +156,11 @@ The logic is split from the hardware:
   glue (screen drawing, keyboard, disk). The drawing routines also compile on
   the host so the 80×25 layout can be rendered with `tools/render_sheet.c`.
 
-The grid is redrawn by iterating the (small) cell pool once per frame rather
-than looking up every screen position, so paging stays fast even though cell
-lookup is a linear scan.
+The grid renderer keeps redraws incremental: simple cursor moves repaint only
+the affected rows, while full grid refreshes compose one 80-column line at a
+time from the sparse cell pool and write only character positions whose final
+value changed.  That avoids clear-then-redraw flicker without turning cursor
+movement into a full-screen update.
 
 ## Tests
 
