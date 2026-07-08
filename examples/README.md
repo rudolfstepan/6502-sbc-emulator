@@ -59,6 +59,28 @@ Tests the 320x200 bitmap mode with basic drawing operations:
 
 Press any key to return to text mode.
 
+### cube.s — Real-Time 3D Rotating Wireframe Cube
+
+FPGA-runtime PRG that shows a rotating 3D wireframe cube in 640x400 RGB332
+mode. The full 3D pipeline runs live on the 6502 every frame — no baked
+tables: eight vertices are rotated about two axes with a sin/cos table and a
+signed 8×8 multiply, perspective-projected with a signed 16-bit divide, and
+drawn with an axis-split Bresenham rasterizer. Hardware page flipping (`$900F`,
+banks 0–31 / 32–63 in the `$6000-$7FFF` window selected by `$9006`) gives
+flicker-free, tear-free double buffering locked to vertical blank at 60 fps.
+
+See [docs/CUBE.md](../docs/CUBE.md) for the full walk-through of the math,
+fixed-point conventions, double buffering and the rasterizer.
+
+```
+make cube-prg
+cd bin
+./sbc6502 fpga.ini --load data/disk/cube.prg
+```
+
+From EhBASIC under `fpga.ini`, load it from the disk folder with `LOAD "CUBE"`
+and start it with `CALL 4096`.
+
 ### petscii_gfx.bas — PETSCII Graphics Demo
 
 Direct VRAM POKE demo that writes PETSCII block and line-drawing characters to the 40x25 text screen. Bypasses `CHROUT` to place raw character codes (`$60`-`$7F`) that would otherwise be converted by the kernel's `to_upper` routine.
