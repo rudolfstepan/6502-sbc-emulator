@@ -10,7 +10,7 @@
 ;
 ; EhBASIC page-2 I/O vectors (in SRAM - set by RESET_ENTRY):
 ;   $0205  VEC_IN   -> KERNAL_CHRIN_NB  (non-halting scan)
-;   $0207  VEC_OUT  -> KERNAL_CHROUT    (character output)
+;   $0207  VEC_OUT  -> KERNAL_CHROUT    (VIC character output)
 ;   $0209  VEC_LD   -> EHB_LOAD         (load BASIC program)
 ;   $020B  VEC_SV   -> EHB_SAVE         (save BASIC program)
 ;
@@ -25,12 +25,6 @@ KERNAL_CHRIN_NB = $C009
 KERNAL_CLRSCR   = $C00C
 KERNAL_PENDING_CHAR = $02F7
 KERNAL_PENDING_FLAG = $02F8
-
-; UART hardware registers
-UART_DATA   = $8810
-UART_SR     = $8811
-UART_TDRE   = $10
-UART_RDRF   = $08
 
 ; EhBASIC page-2 vector addresses (written to SRAM at startup)
 VEC_IN_LO   = $0205
@@ -97,10 +91,6 @@ RESET_ENTRY:
 
     jsr KERNAL_CLRSCR           ; clear VIC screen
 
-    ; Diagnostic A: CLRSCR returned, about to start SDRAM writes
-    lda #'A'
-    jsr EHB_UART_CHROUT
-
     ; Set EhBASIC I/O vectors in page-2 SRAM.
     ; LAB_COLD only copies 5 bytes (PG2_TABS: ccflag/ccbyte/ccnull/VEC_CC)
     ; to $0200-$0204, so $0205-$020C are OURS to set here.
@@ -109,9 +99,9 @@ RESET_ENTRY:
     lda #>KERNAL_CHRIN_NB
     sta VEC_IN_HI
 
-    lda #<EHB_UART_CHROUT
+    lda #<KERNAL_CHROUT
     sta VEC_OUT_LO
-    lda #>EHB_UART_CHROUT
+    lda #>KERNAL_CHROUT
     sta VEC_OUT_HI
 
     lda #<EHB_LOAD
@@ -131,23 +121,7 @@ COPY_IRQ_NMI:
     dey
     bpl COPY_IRQ_NMI
 
-    ; Diagnostic R: all SDRAM vector writes done
-    lda #'R'
-    jsr EHB_UART_CHROUT
-
-    ; Diagnostic S: test indirect call via JMP ($0207) = same as EhBASIC V_OUTP
-    lda #'S'
-    jsr EHB_UART_CHROUT
-    lda #'H'                    ; char to output via indirect path
-    jsr diag_v_outp             ; JSR pushes return addr, then JMP ($0207)
-    ; If 'H' printed: indirect jump + EHB_UART_CHROUT both work
-    lda #'U'                    ; U = survived indirect test, about to jmp LAB_COLD
-    jsr EHB_UART_CHROUT
-
     jmp LAB_COLD                ; EhBASIC cold start (never returns)
-
-diag_v_outp:
-    jmp (VEC_OUT_LO)            ; JMP ($0207) - reads both $0207 and $0208 from SDRAM
 
 ; ============================================================
 ; Page-2 IRQ/NMI stubs expected by EhBASIC's original monitor.
@@ -585,42 +559,6 @@ MSG_IOERR:
     .byte "I/O ERROR"
     .byte $0D, $0A, 0
 
-; ============================================================
-; EHB_UART_CHROUT -- direct UART character output
-; Called via JMP ($0207) from EhBASIC's output dispatch.
-; A = character on entry.  $0D -> CR+LF;  $0A -> ignored.
-; ============================================================
-EHB_UART_CHROUT:
-    cmp #$0A
-    beq uc_done
-    pha
-    cmp #$0D
-    bne uc_char
-uc_cr_wait:
-    lda UART_SR
-    and #UART_TDRE
-    beq uc_cr_wait
-    lda #$0D
-    sta UART_DATA
-uc_lf_wait:
-    lda UART_SR
-    and #UART_TDRE
-    beq uc_lf_wait
-    lda #$0A
-    sta UART_DATA
-    pla
-    rts
-uc_char:
-uc_char_wait:
-    lda UART_SR
-    and #UART_TDRE
-    beq uc_char_wait
-    pla
-    sta UART_DATA
-uc_done:
-    rts
-
-; ============================================================
 ; EHB_CTRLC -- EhBASIC STOP/Ctrl-C poll hook.
 ; The stock handler reads VEC_IN and consumes every non-Ctrl-C byte while
 ; BASIC is polling.  Put normal bytes back for the real input loop.

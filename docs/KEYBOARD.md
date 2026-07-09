@@ -4,6 +4,8 @@
 
 Keyboard input is routed through VIA6522 Port A and exposed to 6502 software via memory-mapped reads.
 SDL keyboard events feed an internal FIFO queue in the VIA implementation.
+The normal kernel input path does not poll the UART in parallel; UART is kept
+for explicit monitor/upload workflows.
 
 ## Hardware View
 

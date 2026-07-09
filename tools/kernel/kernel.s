@@ -24,6 +24,7 @@
 ; Hardware:
 ;   VIC video RAM  $8000-$87FF  (40 x 25 = 1000 bytes)
 ;   VIA 6522       $8800-$880F  (keyboard on Port A / CA1)
+;   UART 6551      $8810-$8813  (reserved for monitor/upload; not normal console)
 ; ============================================================
 
 COLS        = 40
@@ -49,11 +50,6 @@ DISK_ACT_HI = $8827
 VIC_GFX_MODE = $9000
 VIC_CURSOR_X = $9001
 VIC_CURSOR_Y = $9002
-
-UART_DATA   = $8810         ; write = TX byte, read = RX byte
-UART_SR     = $8811         ; bit 4 = TDRE (TX ready), bit 3 = RDRF (RX data)
-UART_TDRE   = $10
-UART_RDRF   = $08
 
 DISK_CMD_DIR = $03
 DISK_ST_OK   = $02
@@ -168,7 +164,6 @@ no_suppress:
     ; Get A back for comparison
     tsx
     lda $0103,x             ; peek at saved A (3 bytes down from SP)
-    jsr uart_put            ; mirror to UART (preserves A, $0D -> CR+LF)
 
     cmp #$0D
     beq newline_cr
@@ -300,15 +295,6 @@ no_pending:
     jsr replay_next
     bcs got_char
 
-    lda UART_SR             ; check UART RX first
-    and #UART_RDRF
-    beq try_via
-    lda UART_DATA           ; read byte (clears RDRF)
-    jsr handle_screen_key
-    bcc nothing
-    jsr to_upper
-    jmp got_char
-try_via:
     lda VIA_IFR
     and #CA1_BIT
     beq nothing
@@ -602,15 +588,6 @@ done:
 ; CLRSCR -- fill VIC RAM with spaces, reset cursor to (0,0)
 ; ------------------------------------------------------------
 .proc CLRSCR
-    ; Diagnostic: busy-wait for TDRE then send '*' to confirm kernel alive
-    pha
-clrscr_diag:
-    lda UART_SR
-    and #UART_TDRE
-    beq clrscr_diag
-    lda #'*'
-    sta UART_DATA
-    pla
     ; Fill character area ($8000-$83FF) with spaces
     lda #<VIC_BASE
     sta SCRPTR_LO
@@ -1059,42 +1036,6 @@ dir_error:
     lda #<dir_err_str
     ldy #>dir_err_str
     jsr STROUT
-    rts
-.endproc
-
-; ------------------------------------------------------------
-; uart_put -- send char in A to hardware UART ($8810)
-;             $0D -> CR + LF;  $0A -> ignored (VIC handles it)
-;             Preserves: A, X, Y
-; ------------------------------------------------------------
-.proc uart_put
-    cmp #$0A                ; ignore LF
-    beq up_done
-    pha
-    cmp #$0D                ; CR -> send CR then LF
-    bne up_char
-up_cr_wait:
-    lda UART_SR
-    and #UART_TDRE
-    beq up_cr_wait
-    lda #$0D
-    sta UART_DATA
-up_lf_wait:
-    lda UART_SR
-    and #UART_TDRE
-    beq up_lf_wait
-    lda #$0A
-    sta UART_DATA
-    pla
-    rts
-up_char:
-up_char_wait:
-    lda UART_SR
-    and #UART_TDRE
-    beq up_char_wait
-    pla
-    sta UART_DATA
-up_done:
     rts
 .endproc
 

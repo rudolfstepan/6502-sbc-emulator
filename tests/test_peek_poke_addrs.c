@@ -94,6 +94,22 @@ int main(void)
     assert(peek(&bus, 0x8823) == 'A');
     assert((peek(&bus, 0x8820) & 0x01) == 0);
 
+    keyboard_regs_push_ascii(&kbd, 0x1D);
+    keyboard_regs_push_ascii(&kbd, 0x1D);
+    keyboard_regs_push_ascii(&kbd, 'Z');
+    keyboard_regs_release_ascii(&kbd, 0x1D);
+    assert(peek(&bus, 0x8820) == 0x81);
+    assert(peek(&bus, 0x8823) == 'Z');
+    assert((peek(&bus, 0x8820) & 0x01) == 0);
+
+    via_keyboard_push(&via, 0x1D);
+    via_keyboard_push(&via, 0x1D);
+    via_keyboard_push(&via, 'Z');
+    via_keyboard_release_key(&via, 0x1D);
+    assert(via_keyboard_available(&via));
+    assert(via_keyboard_pop(&via) == 'Z');
+    assert(!via_keyboard_available(&via));
+
     /* FPGA GoDrive register window at $8824. */
     poke(&bus, 0x8825, 0x0A);          /* RESET command */
     assert((peek(&bus, 0x8824) & 0x02) != 0); /* DONE */
@@ -136,6 +152,14 @@ int main(void)
     assert(peek(&bus, 0x6000) == 0x55);
     poke(&bus, 0x9000, 0x10);
     assert(peek(&bus, 0x6000) == 0xAA);
+    poke(&bus, 0x9000, 0x20);
+    poke(&bus, 0x9006, 0x23);
+    assert(peek(&bus, 0x9006) == 0x23);
+    poke(&bus, 0x6000, 0x99);
+    poke(&bus, 0x9006, 0x03);
+    assert(peek(&bus, 0x6000) == 0x55);
+    poke(&bus, 0x9006, 0x23);
+    assert(peek(&bus, 0x6000) == 0x99);
 
     /* Math coprocessor: 2.0 * 3.0 in 8.24 -> 6.0 */
     poke(&bus, 0x88BC, 24);

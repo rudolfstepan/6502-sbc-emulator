@@ -87,6 +87,22 @@ See [examples/bitmaptest.bas](../examples/bitmaptest.bas) for a full demo.
 
 ---
 
+## FPGA High-Resolution Framebuffer
+
+The FPGA-compatible renderer also supports RGB framebuffer modes through the
+banked `$6000-$7FFF` window:
+
+- `$9000` bit `$20`: 640×400 RGB332, 1 byte per pixel
+- `$9000` bit `$40`: 320×200 RGB565, 2 bytes per pixel, scaled to 640×400
+- `$9006`: CPU framebuffer bank, 0–63, each bank is 8 KB
+- `$900F`: visible framebuffer page, 0 or 1
+
+Pages are bank-aligned. Page 0 uses banks 0–31 and page 1 uses banks 32–63.
+Programs can draw into the hidden page and then flip `$900F` for flicker-free
+animation.
+
+---
+
 ## VIC Control Registers (`$9000-$900F`)
 
 | Address | Reg | R/W | Name | Description |

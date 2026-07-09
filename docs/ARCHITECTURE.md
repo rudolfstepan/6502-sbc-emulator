@@ -6,7 +6,8 @@
 - `Bus`: device registration and address dispatch
 - `SRAM` / `ROM`: memory devices
 - `VIA6522`: GPIO/timers plus keyboard input path
-- `UART6551`: serial I/O (`stdio` or TCP mode)
+- `UART6551`: serial I/O (`stdio` or TCP mode), reserved for explicit serial
+  workflows such as monitor/upload rather than the default VIC/keyboard console
 - `DiskDev`: host-backed minimal disk interface for BASIC LOAD/SAVE
 - `VIC`: text/bitmap display memory and control registers
 - `Soundchip`: 4-voice synthesizer — ADSR envelopes, selectable waveforms (sine/square/sawtooth/triangle/noise), SDL audio mix
@@ -60,6 +61,11 @@ VIC provides two rendering paths:
 Hardware sprites (up to 8, 8×8 or 16×16 pixels) and a blitter (fill, copy, line, circle, scroll, invert) operate on the bitmap RAM.
 
 `vic_sdl.c` translates VIC state into an SDL window and handles keyboard events.
+
+Normal ROM and application console I/O is VIC output plus VIA/PS2 keyboard
+input.  The UART device remains memory-mapped, but kernel `CHROUT` does not
+mirror characters to it and kernel `CHRIN` does not poll it in parallel with
+the keyboard path.
 
 ## Interrupt Model
 
