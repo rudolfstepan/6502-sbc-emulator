@@ -53,8 +53,6 @@ start:
     sta VIC_MODE            ; 640x400 hi-res
     lda #$00
     sta VIC_PAGE            ; page 0
-    lda #32
-    sta $884B               ; DDR3 write pacing (idle cycles between blit writes)
 
     ; ---- clear the whole screen black (FILL + busy wait) ----
     lda #$00
