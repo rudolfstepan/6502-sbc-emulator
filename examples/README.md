@@ -81,6 +81,31 @@ cd bin
 From EhBASIC under `fpga.ini`, load it from the disk folder with `LOAD "CUBE"`
 and start it with `CALL 4096`.
 
+### fireworks.s — Hardware Blitter Pixel Fireworks
+
+FPGA-runtime PRG that drives the VIC framebuffer blitter directly. It switches
+to 640x400 RGB332 mode, clears the page with a blitter fill, then animates
+expanding colored bursts by issuing many tiny blitter fill commands through
+`$8840-$884F`. No blitter line command is used; the trails are made from
+sprayed 2x2 pixel sparks.
+
+```
+make fireworks-prg
+D:\Development\6502-sbc-fpga\roms\6502\upload\fireworks.bat COM15
+```
+
+### water.s - Hardware Blitter Liquid Water
+
+FPGA-runtime PRG that fills a dark blue base and animates hundreds of tiny,
+offset droplets with the VIC framebuffer blitter. It uses only 1x1 and small
+rectangle fill commands through `$8840-$884F`, plus small bright glints, to
+make the screen feel like moving liquid instead of regular bars.
+
+```
+make water-prg
+D:\Development\6502-sbc-fpga\roms\6502\upload\water.bat COM15
+```
+
 ### petscii_gfx.bas — PETSCII Graphics Demo
 
 Direct VRAM POKE demo that writes PETSCII block and line-drawing characters to the 40x25 text screen. Bypasses `CHROUT` to place raw character codes (`$60`-`$7F`) that would otherwise be converted by the kernel's `to_upper` routine.

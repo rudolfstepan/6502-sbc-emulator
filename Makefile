@@ -87,7 +87,7 @@ OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
-.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom adventure spreadsheet test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo ehbasic software-test
+.PHONY: all clean run check roms kernel-rom chess-rom ehbasic-rom soundtest-rom avdemo-rom cube-prg fireworks-prg water-prg adventure spreadsheet test-chess-rom test-diskdir test-peek-poke test-klaus-6502 release bench-mandelbrot demo demo-rom avdemo cube fireworks water ehbasic software-test
 
 all: $(TARGET)
 
@@ -247,6 +247,27 @@ avdemo-rom:
 
 avdemo: all avdemo-rom
 	$(call RUN_BIN,$(TARGET)) $(BINDIR)/avdemo.ini
+
+cube-prg:
+	$(BASH) tools/make_cube_prg.sh
+	$(BASH) tools/stage_runtime.sh "$(BINDIR)"
+
+cube: all cube-prg
+	$(if $(filter Windows_NT,$(OS)),cd /D "$(subst /,\,$(BINDIR))" && .\$(TARGET_NAME) fpga.ini --load data\disk\cube.prg,cd "$(BINDIR)" && ./$(TARGET_NAME) fpga.ini --load data/disk/cube.prg)
+
+fireworks-prg:
+	$(BASH) tools/make_fireworks_prg.sh
+	$(BASH) tools/stage_runtime.sh "$(BINDIR)"
+
+fireworks: all fireworks-prg
+	$(if $(filter Windows_NT,$(OS)),cd /D "$(subst /,\,$(BINDIR))" && .\$(TARGET_NAME) fpga.ini --load data\disk\fireworks.prg,cd "$(BINDIR)" && ./$(TARGET_NAME) fpga.ini --load data/disk/fireworks.prg)
+
+water-prg:
+	$(BASH) tools/make_water_prg.sh
+	$(BASH) tools/stage_runtime.sh "$(BINDIR)"
+
+water: all water-prg
+	$(if $(filter Windows_NT,$(OS)),cd /D "$(subst /,\,$(BINDIR))" && .\$(TARGET_NAME) fpga.ini --load data\disk\water.prg,cd "$(BINDIR)" && ./$(TARGET_NAME) fpga.ini --load data/disk/water.prg)
 
 soundtest: all soundtest-rom
 	$(call RUN_BIN,$(TARGET)) $(BINDIR)/soundtest.ini
