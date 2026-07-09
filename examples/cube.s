@@ -266,6 +266,12 @@ main_loop:
 
     jsr wait_frame
 
+    ; (no background scrub: the DDR3 write path corrupts a small, address-
+    ;  correlated fraction of writes -- PHY margin -- so continuously rewriting
+    ;  the background SPRAYS stray pixels instead of cleaning them. The start
+    ;  clear runs twice and the erase runs twice; the definitive fix for the
+    ;  few remaining static dots is reclocking the DDR3 IP, not more writes.)
+
     ; --- erase last frame's cube (if any) in black ---
     lda svalid0
     beq @draw_new
@@ -276,6 +282,10 @@ main_loop:
     lda #$00                    ; background colour = black
     sta COLOR
     jsr draw_edges
+    jsr draw_edges              ; second erase pass: the DDR3 write path rarely
+                                ; drops a burst; a missed erase pixel would stay
+                                ; on screen forever, so erase twice (independent
+                                ; misses -> residue probability ~squared)
 
     ; --- draw the new cube in white ---
 @draw_new:
@@ -781,6 +791,8 @@ clear_page:
     sta BLIT_PG
     sta BLIT_TRIG
     jsr blit_wait
+    sta BLIT_TRIG               ; clear twice: catches the rare bursts the DDR3
+    jsr blit_wait               ; write path dropped in the first pass
     rts
 
 blit_wait:
