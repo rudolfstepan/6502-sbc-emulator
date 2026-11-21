@@ -551,11 +551,13 @@ Die Abbildung zeigt die automatische Spielszene des europäischen ROMs.
   automatischen Demo des PAL-ROMs mit \texttt{nes-sbc.ini}.}
 
 Unter \texttt{[nes]} bestimmt \texttt{rom\_dir} den Ordner für
-relative ROM-Namen. Das mitgelieferte Profil verweist auf
-\path{E:/Emulatoren/Nintendo/Roms}. Ohne \texttt{--load} startet die
-in \texttt{rom} eingetragene Datei. Sie können ein \path{.nes}-Modul
-oder ein ZIP mit genau einem unterstützten Spielmodul auch auf das
-NES-Fenster ziehen. Eine Datei aus einem Unterordner laden Sie so:
+relative ROM-Namen. Tragen Sie beispielsweise
+\texttt{rom\_dir = ../roms/nes} ein. Beim Start aus \path{bin/}
+liegen die ROMs dann unter \path{roms/nes/} im Projektordner.
+Ohne \texttt{--load} startet die in \texttt{rom} eingetragene Datei.
+Sie können auch ein \path{.nes}-Modul oder ein ZIP mit genau einem unterstützten
+Spielmodul auf das NES-Fenster ziehen. Einen Unterordner geben Sie wie
+im folgenden Aufruf an.
 
 \begin{commandblock}
 .\sbc6502.exe nes-sbc.ini --load 'USA\Contra (U).zip'
@@ -639,8 +641,37 @@ KERNAL-Einsprung, wie in Kapitel~\ref{ch:comparison} beschrieben.
 Die Hauptschleife gibt die verstrichenen CPU-Takte an die Geräte weiter
 und wertet deren Interruptsignale aus. SDL2 übernimmt am PC die
 Fenster- und Audioausgabe und liefert Eingabeereignisse. Die Zuordnung
-zu SBC- oder C64-Eingaben geschieht im jeweiligen Profil. Die Anbindung
-des NES-Kompatibilitätsmodus beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
+zu SBC- oder C64-Eingaben geschieht im jeweiligen Profil. Für NES/Famicom
+lädt die Anwendung den FCEUmm-Kern über Libretro. Den CPU-Adapter
+beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
+
+\begin{figure}[H]
+  \centering
+  \begin{tikzpicture}[
+    x=1mm,y=1mm,
+    block/.style={draw=Teal!55!Ink, fill=Teal!5, rounded corners=1.5pt,
+      line width=.55pt, inner sep=4pt, align=center, font=\tableSize},
+    access/.style={<->, >=Latex, draw=Teal!75!Ink, line width=.7pt}
+  ]
+    \node[block, minimum width=39mm] (frontend) at (-55,0)
+      {\textbf{SDL2-Anwendung}};
+    \node[block, minimum width=77mm] (fceumm) at (38,0)
+      {\textbf{FCEUmm}\\PPU, APU, DMA, Interrupts und Mapper};
+    \node[block, minimum width=39mm] (nesCpu) at (-55,-20)
+      {\texttt{CPU6502} (2A03)};
+    \node[block, minimum width=34mm] (nesBus) at (-5,-20)
+      {SBC-Speicherbus};
+    \node[block, minimum width=44mm] (nesHandlers) at (48,-20)
+      {NES-Adresshandler};
+    \draw[access] (frontend.east) -- node[above,text=Muted,font=\captionSize]
+      {Libretro} (fceumm.west);
+    \draw[access] (nesCpu.east) -- (nesBus.west);
+    \draw[access] (nesBus.east) -- (nesHandlers.west);
+    \draw[access] (nesHandlers.north) -- (nesHandlers.north |- fceumm.south);
+  \end{tikzpicture}
+  \caption{Anbindung des angepassten FCEUmm-Kerns im Profil \texttt{nes-sbc.ini}.
+    Im Referenzprofil \texttt{nes.ini} führt FCEUmm die CPU-Befehle selbst aus.}
+\end{figure}
 
 \clearpage
 \section{Festkomma-Koprozessor des SBC}\label{sec:math-copro}
