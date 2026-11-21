@@ -17,6 +17,12 @@
 #define VEC_RESET 0xFFFC
 #define VEC_IRQ   0xFFFE
 
+typedef enum {
+    CPU_MODEL_6502,
+    CPU_MODEL_65C02,
+    CPU_MODEL_2A03
+} CPUModel;
+
 typedef struct CPU6502 {
     uint8_t  A;           /* Accumulator */
     uint8_t  X;           /* Index X */
@@ -32,7 +38,7 @@ typedef struct CPU6502 {
     bool     reset_pending;
     bool     stopped;     /* STP / halt */
 
-    uint8_t  mode;        /* 0=NMOS 6502, 1=CMOS 65C02 */
+    uint8_t  mode;        /* CPUModel */
     bool     nmos_rmw_writes; /* Drive the original value on NMOS read/modify/write. */
 
     /* Profiling */
@@ -47,6 +53,8 @@ typedef struct CPU6502 {
     uint8_t (*read) (void *ctx, uint16_t addr);
     void    (*write)(void *ctx, uint16_t addr, uint8_t val);
     void    *bus_ctx;
+    /* Optional 2A03 hook for the extra cycle between the two indexed reads. */
+    void    (*clock_indexed_read)(void *ctx);
 } CPU6502;
 
 void cpu6502_init(CPU6502 *cpu,

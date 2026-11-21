@@ -113,6 +113,8 @@ $(OBJDIR)/nes.o: $(SRCDIR)/nes.h $(SRCDIR)/nes_content.h third_party/libretro/li
 $(OBJDIR)/nes_content.o: $(SRCDIR)/nes_content.h third_party/miniz/miniz.h
 $(OBJDIR)/main.o: $(SRCDIR)/nes.h $(SRCDIR)/config.h
 $(addprefix $(OBJDIR)/,config.o config_c64_save.o c64_menu.o c64_input.o vic_sdl.o nes.o): $(SRCDIR)/config.h
+$(addprefix $(OBJDIR)/,cpu6502.o c64_floppy.o main.o monitor.o): $(SRCDIR)/cpu6502.h
+$(OBJDIR)/disasm.o: $(SRCDIR)/disasm.h
 
 $(TARGET): $(OBJS) | $(BINDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
@@ -125,15 +127,25 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-.PHONY: test-config test-c64 test-sbc-boot test-nes
+.PHONY: test-config test-c64 test-sbc-boot test-nes test-2a03 nes-sbc-core test-nes-sbc
 
-check: all test-config test-sbc-boot test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02
+check: all test-config test-sbc-boot test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02 test-2a03
 
 test-sbc-boot: $(TARGET)
 	python3 tests/test_sbc_boot.py $(TARGET)
 
 test-nes: $(TARGET)
 	python3 tests/test_nes.py $(TARGET)
+
+nes-sbc-core: $(TARGET)
+	python3 tools/fceumm_sbc/build_core.py --make "$(MAKE)" --cc "$(CC)"
+
+test-nes-sbc: $(TARGET)
+	python3 tests/test_nes.py $(TARGET) --sbc-cpu
+
+test-2a03: | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_2a03.c src/cpu6502.c src/disasm.c -o $(OBJDIR)/test_2a03$(EXEEXT)
+	$(call RUN_BIN,$(OBJDIR)/test_2a03$(EXEEXT))
 
 test-c64: $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_c64.c src/bus.c src/c64.c src/c64_vic.c src/cia6526.c \

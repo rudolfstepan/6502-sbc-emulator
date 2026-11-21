@@ -1,5 +1,8 @@
 #pragma once
+#include <stdbool.h>
 #include <stdint.h>
+
+bool disasm_is_official_6502_opcode(uint8_t opcode);
 
 /* Disassemble one instruction at addr, write result to buf.
  * Returns instruction length in bytes.

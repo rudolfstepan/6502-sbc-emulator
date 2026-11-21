@@ -37,6 +37,12 @@ static void check_nes_profile(const char *path)
     assert(strcmp(cfg.nes_rom_dir, "E:/Emulatoren/Nintendo/Roms") == 0);
     assert(strcmp(cfg.nes_rom, "USA/Game #1.zip") == 0);
     assert(strcmp(cfg.nes_core, "bin/cores/fceumm_libretro.dll") == 0);
+    assert(!cfg.nes_sbc_cpu);
+
+    write_config(path, "[nes]\ncpu = sbc\n[machine]\ntype = nes\n");
+    assert(config_load(&cfg, path) == 0 && cfg.nes && cfg.nes_sbc_cpu);
+    write_config(path, "[machine]\ntype = nes\n[nes]\ncpu = 65c02\n");
+    assert(config_load(&cfg, path) == -2);
 }
 
 int main(int argc, char *argv[])

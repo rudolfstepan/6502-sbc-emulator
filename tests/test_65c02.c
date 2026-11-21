@@ -20,7 +20,7 @@ int main(void) {
 
     CPU6502 cpu;
     cpu6502_init(&cpu, ram_read, ram_write, NULL);
-    cpu.mode = 1;  /* 65C02 mode */
+    cpu.mode = CPU_MODEL_65C02;
 
     /* Test BRA (Branch Always) - $80 */
     printf("  BRA: ");

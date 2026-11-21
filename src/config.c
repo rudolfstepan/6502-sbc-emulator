@@ -160,6 +160,18 @@ int config_load(Config *cfg, const char *filename)
                 strncpy(cfg->c64_chargen, val, sizeof(cfg->c64_chargen) - 1);
             }
         } else if (strcmp(section, "nes") == 0) {
+            if (strcmp(key, "cpu") == 0) {
+                if (strcmp(val, "sbc") == 0) {
+                    cfg->nes_sbc_cpu = true;
+                } else if (strcmp(val, "fceumm") == 0) {
+                    cfg->nes_sbc_cpu = false;
+                } else {
+                    fprintf(stderr, "config: %s: [nes] cpu must be fceumm or sbc\n", filename);
+                    fclose(f);
+                    return -2;
+                }
+                continue;
+            }
             char *target = NULL;
             if (strcmp(key, "core") == 0) target = cfg->nes_core;
             else if (strcmp(key, "rom_dir") == 0) target = cfg->nes_rom_dir;

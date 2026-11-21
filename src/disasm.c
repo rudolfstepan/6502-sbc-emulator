@@ -76,6 +76,11 @@ static const OpInfo ops[256] = {
 /*FC*/ {"???",AM_IMP},{"SBC",AM_ABX},{"INC",AM_ABX},{"???",AM_IMP},
 };
 
+bool disasm_is_official_6502_opcode(uint8_t opcode)
+{
+    return ops[opcode].mnem[0] != '?';
+}
+
 int disasm(uint16_t addr,
            uint8_t (*read_fn)(void *ctx, uint16_t addr),
            void    *ctx,

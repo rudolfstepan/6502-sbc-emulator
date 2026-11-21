@@ -12,15 +12,17 @@
 #define PUSH(v)     WR(0x0100u | cpu->SP--, (v))
 #define POP()       RD(0x0100u | (uint8_t)(++cpu->SP))
 
-/* Read 16-bit little-endian */
-#define RD16(a)     ((uint16_t)(RD(a) | (RD((uint16_t)((a)+1)) << 8)))
+static uint16_t read_word(CPU6502 *cpu, uint16_t low_address, uint16_t high_address)
+{
+    uint8_t low = RD(low_address);
+    uint8_t high = RD(high_address);
+    return (uint16_t)(low | (high << 8));
+}
 
 /* 6502 indirect JMP bug: wrap within page */
 static uint16_t rd16_wrap(CPU6502 *cpu, uint16_t a)
 {
-    uint8_t lo = RD(a);
-    uint8_t hi = RD((uint16_t)((a & 0xFF00) | ((a + 1) & 0x00FF)));
-    return (uint16_t)(lo | (hi << 8));
+    return read_word(cpu, a, (uint16_t)((a & 0xFF00) | ((a + 1) & 0x00FF)));
 }
 
 /* ── Flag helpers ─────────────────────────────────────────── */
@@ -37,42 +39,59 @@ static inline void set_nz(CPU6502 *cpu, uint8_t v)
 
 /* ── Addressing mode helpers ──────────────────────────────── */
 static inline uint16_t addr_zp (CPU6502 *cpu)              { return FETCH(); }
-static inline uint16_t addr_zpx(CPU6502 *cpu)              { return (uint8_t)(FETCH() + cpu->X); }
-static inline uint16_t addr_zpy(CPU6502 *cpu)              { return (uint8_t)(FETCH() + cpu->Y); }
+static inline uint8_t addr_zp_indexed(CPU6502 *cpu, uint8_t index)
+{
+    uint8_t base = FETCH();
+    if (cpu->mode == CPU_MODEL_2A03) (void)RD(base);
+    return (uint8_t)(base + index);
+}
+
+static inline uint16_t addr_zpx(CPU6502 *cpu) { return addr_zp_indexed(cpu, cpu->X); }
+static inline uint16_t addr_zpy(CPU6502 *cpu) { return addr_zp_indexed(cpu, cpu->Y); }
 static inline uint16_t addr_abs(CPU6502 *cpu)              { uint16_t a = FETCH(); a |= (uint16_t)(FETCH() << 8); return a; }
+
+static inline uint16_t addr_indexed(CPU6502 *cpu, uint16_t base, uint8_t index, int *extra)
+{
+    uint16_t address = (uint16_t)(base + index);
+    bool crossed_page = (base & 0xFF00) != (address & 0xFF00);
+    /* Indexed stores and RMW always read the intermediate address.
+     * Indexed loads and ALU operands only do so on a page crossing. */
+    if (cpu->mode == CPU_MODEL_2A03 && (!extra || crossed_page)) {
+        (void)RD((base & 0xFF00) | (address & 0x00FF));
+    }
+    if (extra && crossed_page) {
+        (*extra)++;
+        if (cpu->mode == CPU_MODEL_2A03 && cpu->clock_indexed_read) {
+            cpu->clock_indexed_read(cpu->bus_ctx);
+        }
+    }
+    return address;
+}
 
 static inline uint16_t addr_abx(CPU6502 *cpu, int *extra)
 {
-    uint16_t base = addr_abs(cpu);
-    uint16_t eff  = base + cpu->X;
-    if (extra && (base & 0xFF00) != (eff & 0xFF00)) (*extra)++;
-    return eff;
+    return addr_indexed(cpu, addr_abs(cpu), cpu->X, extra);
 }
 static inline uint16_t addr_aby(CPU6502 *cpu, int *extra)
 {
-    uint16_t base = addr_abs(cpu);
-    uint16_t eff  = base + cpu->Y;
-    if (extra && (base & 0xFF00) != (eff & 0xFF00)) (*extra)++;
-    return eff;
+    return addr_indexed(cpu, addr_abs(cpu), cpu->Y, extra);
 }
 static inline uint16_t addr_izx(CPU6502 *cpu)
 {
-    uint8_t zp = (uint8_t)(FETCH() + cpu->X);
-    return (uint16_t)(RD(zp) | (RD((uint8_t)(zp + 1)) << 8));
+    uint8_t zp = addr_zp_indexed(cpu, cpu->X);
+    return read_word(cpu, zp, (uint8_t)(zp + 1));
 }
 static inline uint16_t addr_izy(CPU6502 *cpu, int *extra)
 {
-    uint8_t zp   = FETCH();
-    uint16_t base = (uint16_t)(RD(zp) | (RD((uint8_t)(zp + 1)) << 8));
-    uint16_t eff  = base + cpu->Y;
-    if (extra && (base & 0xFF00) != (eff & 0xFF00)) (*extra)++;
-    return eff;
+    uint8_t zp = FETCH();
+    uint16_t base = read_word(cpu, zp, (uint8_t)(zp + 1));
+    return addr_indexed(cpu, base, cpu->Y, extra);
 }
 
 /* ── ADC / SBC ────────────────────────────────────────────── */
 static void do_adc(CPU6502 *cpu, uint8_t m)
 {
-    if (cpu->P & FLAG_D) {
+    if (cpu->mode != CPU_MODEL_2A03 && (cpu->P & FLAG_D)) {
         /* BCD */
         uint8_t c   = TST_FLAG(FLAG_C) ? 1 : 0;
         uint16_t lo = (cpu->A & 0x0F) + (m & 0x0F) + c;
@@ -85,7 +104,7 @@ static void do_adc(CPU6502 *cpu, uint8_t m)
         cpu->A = (uint8_t)((hi << 4) | (lo & 0x0F));
         if (hi > 15) SET_FLAG(FLAG_C); else CLR_FLAG(FLAG_C);
         /* 65C02: set N/Z from decimal result */
-        if (cpu->mode == 1)
+        if (cpu->mode == CPU_MODEL_65C02)
             set_nz(cpu, cpu->A);
     } else {
         uint16_t res = cpu->A + m + (TST_FLAG(FLAG_C) ? 1 : 0);
@@ -108,7 +127,7 @@ static void do_sbc(CPU6502 *cpu, uint8_t m)
     set_nz(cpu, bres);
     if (diff < 0x100) SET_FLAG(FLAG_C); else CLR_FLAG(FLAG_C); /* no borrow */
 
-    if (cpu->P & FLAG_D) {
+    if (cpu->mode != CPU_MODEL_2A03 && (cpu->P & FLAG_D)) {
         int16_t lo = (int16_t)(a & 0x0F) - (int16_t)(m & 0x0F) - (int16_t)(1u - c);
         int16_t hi = (int16_t)(a >> 4) - (int16_t)(m >> 4);
 
@@ -122,7 +141,7 @@ static void do_sbc(CPU6502 *cpu, uint8_t m)
 
         cpu->A = (uint8_t)(((uint8_t)hi << 4) | ((uint8_t)lo & 0x0F));
         /* 65C02: set N/Z from decimal result */
-        if (cpu->mode == 1)
+        if (cpu->mode == CPU_MODEL_65C02)
             set_nz(cpu, cpu->A);
     } else {
         cpu->A = bres;
@@ -180,7 +199,7 @@ static void do_bit(CPU6502 *cpu, uint8_t m)
 /* ── Interrupt / Reset ─────────────────────────────────────── */
 static int do_reset(CPU6502 *cpu)
 {
-    cpu->PC = RD16(VEC_RESET);
+    cpu->PC = read_word(cpu, VEC_RESET, VEC_RESET + 1);
     cpu->SP = 0xFD;
     cpu->P  = FLAG_I | FLAG_U;
     cpu->A = cpu->X = cpu->Y = 0;
@@ -193,7 +212,7 @@ static int do_nmi(CPU6502 *cpu)
     PUSH(cpu->PC & 0xFF);
     PUSH((cpu->P | FLAG_U) & ~FLAG_B);
     SET_FLAG(FLAG_I);
-    cpu->PC = RD16(VEC_NMI);
+    cpu->PC = read_word(cpu, VEC_NMI, VEC_NMI + 1);
     cpu->nmi_pending = false;
     return 7;
 }
@@ -203,7 +222,7 @@ static int do_irq(CPU6502 *cpu)
     PUSH(cpu->PC & 0xFF);
     PUSH((cpu->P | FLAG_U) & ~FLAG_B);
     SET_FLAG(FLAG_I);
-    cpu->PC = RD16(VEC_IRQ);
+    cpu->PC = read_word(cpu, VEC_IRQ, VEC_IRQ + 1);
     return 7;
 }
 
@@ -221,7 +240,7 @@ static int do_branch(CPU6502 *cpu, bool taken)
 static uint8_t rmw_read(CPU6502 *cpu, uint16_t address)
 {
     uint8_t value = RD(address);
-    if (cpu->nmos_rmw_writes && cpu->mode == 0) {
+    if (cpu->mode == CPU_MODEL_2A03 || (cpu->mode == CPU_MODEL_6502 && cpu->nmos_rmw_writes)) {
         WR(address, value);
     }
     return value;
@@ -268,7 +287,7 @@ int cpu6502_step(CPU6502 *cpu)
         PUSH(cpu->PC & 0xFF);
         PUSH(cpu->P | FLAG_B | FLAG_U);
         SET_FLAG(FLAG_I);
-        cpu->PC = RD16(VEC_IRQ);
+        cpu->PC = read_word(cpu, VEC_IRQ, VEC_IRQ + 1);
         cycles = 7; break;
 
     /* ── NOP ─────────────────────────────────────────── */
@@ -460,11 +479,21 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* ── JSR ─────────────────────────────────────────── */
     case 0x20:
-        ea = addr_abs(cpu);
-        PUSH(((cpu->PC - 1) >> 8) & 0xFF);
-        PUSH((cpu->PC - 1) & 0xFF);
-        cpu->PC = ea;
-        cycles=6; break;
+        if (cpu->mode == CPU_MODEL_2A03) {
+            uint8_t low = FETCH();
+            (void)RD(0x0100u | cpu->SP);
+            PUSH(cpu->PC >> 8);
+            PUSH(cpu->PC & 0xFF);
+            uint8_t high = RD(cpu->PC);
+            cpu->PC = (uint16_t)(low | (high << 8));
+        } else {
+            ea = addr_abs(cpu);
+            PUSH(((cpu->PC - 1) >> 8) & 0xFF);
+            PUSH((cpu->PC - 1) & 0xFF);
+            cpu->PC = ea;
+        }
+        cycles = 6;
+        break;
 
     /* ── RTS ─────────────────────────────────────────── */
     case 0x60: {
@@ -506,7 +535,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* BIT immediate ($89) - 65C02: only affects Z flag */
     case 0x89:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             m = FETCH();
             CLR_FLAG(FLAG_Z);
             if ((cpu->A & m) == 0) SET_FLAG(FLAG_Z);
@@ -519,7 +548,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* TSB: Test and Set Bits */
     case 0x04:  /* TSB zp */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             ea = addr_zp(cpu);
             m = RD(ea);
             CLR_FLAG(FLAG_Z);
@@ -532,7 +561,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0x0C:  /* TSB abs */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             ea = addr_abs(cpu);
             m = RD(ea);
             CLR_FLAG(FLAG_Z);
@@ -547,7 +576,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* TRB: Test and Reset Bits */
     case 0x14:  /* TRB zp */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             ea = addr_zp(cpu);
             m = RD(ea);
             CLR_FLAG(FLAG_Z);
@@ -560,7 +589,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0x1C:  /* TRB abs */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             ea = addr_abs(cpu);
             m = RD(ea);
             CLR_FLAG(FLAG_Z);
@@ -575,7 +604,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* INC A: Increment Accumulator (65C02) */
     case 0x1A:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             cpu->A++;
             set_nz(cpu, cpu->A);
             cycles = 2;
@@ -587,7 +616,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* BIT zp,X: Extended BIT with indexed addressing (65C02) */
     case 0x34:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             do_bit(cpu, RD(addr_zpx(cpu)));
             cycles = 4;
         } else {
@@ -598,7 +627,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* DEC A: Decrement Accumulator (65C02) */
     case 0x3A:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             cpu->A--;
             set_nz(cpu, cpu->A);
             cycles = 2;
@@ -610,7 +639,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* BIT abs,X: Extended BIT with indexed absolute (65C02) */
     case 0x3C:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             do_bit(cpu, RD(addr_abx(cpu, &extra)));
             cycles = 4 + extra;
         } else {
@@ -621,7 +650,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* STZ: Store Zero */
     case 0x64:  /* STZ zp */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             WR(addr_zp(cpu), 0);
             cycles = 3;
         } else {
@@ -630,7 +659,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0x74:  /* STZ zp,X */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             WR(addr_zpx(cpu), 0);
             cycles = 4;
         } else {
@@ -639,7 +668,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0x9C:  /* STZ abs */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             WR(addr_abs(cpu), 0);
             cycles = 4;
         } else {
@@ -648,7 +677,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0x9E:  /* STZ abs,X */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             WR(addr_abx(cpu, NULL), 0);
             cycles = 5;
         } else {
@@ -659,7 +688,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* Push X/Y and Pull X/Y (65C02) */
     case 0x5A:  /* PHY */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             PUSH(cpu->Y);
             cycles = 3;
         } else {
@@ -668,7 +697,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0x7A:  /* PLY */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             cpu->Y = POP();
             set_nz(cpu, cpu->Y);
             cycles = 4;
@@ -678,7 +707,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0xDA:  /* PHX */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             PUSH(cpu->X);
             cycles = 3;
         } else {
@@ -687,7 +716,7 @@ int cpu6502_step(CPU6502 *cpu)
         }
         break;
     case 0xFA:  /* PLX */
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             cpu->X = POP();
             set_nz(cpu, cpu->X);
             cycles = 4;
@@ -699,7 +728,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* WAI: Wait for Interrupt (65C02) */
     case 0xCB:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             cpu->stopped = true;
             cycles = 3;
         } else {
@@ -710,7 +739,7 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* STP: Stop (65C02) */
     case 0xDB:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             cpu->stopped = true;
             cycles = 3;
         } else {
@@ -721,12 +750,12 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* JMP (abs,X): Indirect indexed jump (65C02 - fixes page wrap bug) */
     case 0x7C:
-        if (cpu->mode == 1) {
+        if (cpu->mode == CPU_MODEL_65C02) {
             uint16_t base = addr_abs(cpu);
             uint16_t addr = (uint16_t)(base + cpu->X);
-            if (cpu->mode == 1) {
+            if (cpu->mode == CPU_MODEL_65C02) {
                 /* 65C02: no page wrap bug */
-                cpu->PC = RD16(addr);
+                cpu->PC = read_word(cpu, addr, (uint16_t)(addr + 1));
             } else {
                 /* NMOS: has page wrap bug (shouldn't reach here) */
                 cpu->PC = rd16_wrap(cpu, addr);
@@ -819,7 +848,8 @@ void cpu6502_init(CPU6502 *cpu,
     cpu->cycles = 0;
     cpu->nmi_pending = cpu->irq_pending = cpu->reset_pending = false;
     cpu->stopped = false;
-    cpu->mode = 0;
+    cpu->mode = CPU_MODEL_6502;
+    cpu->nmos_rmw_writes = false;
     memset(cpu->opcode_count, 0, sizeof(cpu->opcode_count));
     memset(cpu->opcode_cycles, 0, sizeof(cpu->opcode_cycles));
     cpu->trace_enabled = false;
@@ -827,6 +857,7 @@ void cpu6502_init(CPU6502 *cpu,
     cpu->read    = read;
     cpu->write   = write;
     cpu->bus_ctx = ctx;
+    cpu->clock_indexed_read = NULL;
 }
 
 void cpu6502_reset(CPU6502 *cpu)

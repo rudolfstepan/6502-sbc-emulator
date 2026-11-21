@@ -7,11 +7,11 @@
 #include <string.h>
 
 #ifdef _WIN32
-#define NES_CORE_FILE "fceumm_libretro.dll"
+#define NES_CORE_SUFFIX ".dll"
 #elif defined(__APPLE__)
-#define NES_CORE_FILE "fceumm_libretro.dylib"
+#define NES_CORE_SUFFIX ".dylib"
 #else
-#define NES_CORE_FILE "fceumm_libretro.so"
+#define NES_CORE_SUFFIX ".so"
 #endif
 
 typedef struct {
@@ -530,19 +530,23 @@ int nes_run(const Config *cfg, const char *rom_override, const char *screenshot,
     void *library = NULL;
     char *base_path = SDL_GetBasePath();
     char *core_path = NULL;
+    const char *core_file = cfg->nes_sbc_cpu ? "cores/fceumm_sbc_cpu_libretro" NES_CORE_SUFFIX
+                                            : "cores/fceumm_libretro" NES_CORE_SUFFIX;
     if (cfg->nes_core[0]) {
         core_path = is_absolute(cfg->nes_core) ? SDL_strdup(cfg->nes_core)
                                                : join_path(".", cfg->nes_core);
     } else if (base_path) {
-        core_path = join_path(base_path, "cores/" NES_CORE_FILE);
+        core_path = join_path(base_path, core_file);
     }
 
     if (!nes_content_load(&nes.cartridge, path)) goto done;
     library = core_path ? SDL_LoadObject(core_path) : NULL;
     if (!library) {
         fprintf(stderr, "NES: could not load the FCEUmm core '%s': %s\n",
-                core_path ? core_path : NES_CORE_FILE, SDL_GetError());
-        fprintf(stderr, "NES: install the core in the executable's cores directory or set [nes] core\n");
+                core_path ? core_path : core_file, SDL_GetError());
+        fprintf(stderr, "%s\n", cfg->nes_sbc_cpu
+                ? "NES: build the SBC CPU core with make nes-sbc-core, or set [nes] core"
+                : "NES: install the core in the executable's cores directory or set [nes] core");
         goto done;
     }
     if (!bind_core(&nes.core, library) || nes.core.api_version() != RETRO_API_VERSION) {
@@ -551,8 +555,9 @@ int nes_run(const Config *cfg, const char *rom_override, const char *screenshot,
     }
     struct retro_system_info info = {0};
     nes.core.get_system_info(&info);
-    if (!info.library_name || SDL_strcasecmp(info.library_name, "FCEUmm") != 0) {
-        fprintf(stderr, "NES: expected the FCEUmm libretro core, got '%s'\n",
+    const char *core_name = cfg->nes_sbc_cpu ? "FCEUmm (SBC CPU)" : "FCEUmm";
+    if (!info.library_name || SDL_strcasecmp(info.library_name, core_name) != 0) {
+        fprintf(stderr, "NES: expected the '%s' libretro core, got '%s'\n", core_name,
                 info.library_name ? info.library_name : "unknown");
         goto done;
     }
@@ -563,7 +568,7 @@ int nes_run(const Config *cfg, const char *rom_override, const char *screenshot,
     }
     if (!capture) {
         SDL_InitSubSystem(SDL_INIT_AUDIO);
-        nes.save_dir = SDL_GetPrefPath("6502-sbc-emulator", "NES");
+        nes.save_dir = SDL_GetPrefPath("6502-sbc-emulator", cfg->nes_sbc_cpu ? "NES SBC CPU" : "NES");
         if (!nes.save_dir) fprintf(stderr, "NES: battery saves unavailable: %s\n", SDL_GetError());
     }
     nes.system_dir = cfg->nes_system_dir[0] ? SDL_strdup(cfg->nes_system_dir) : base_path;

@@ -734,9 +734,9 @@ int main(int argc, char *argv[])
     /* Set CPU model (6502 or 65C02) */
     if (!cfg.c64 &&
         (strcmp(cfg.cpu_model, "65c02") == 0 || strcmp(cfg.cpu_model, "65C02") == 0))
-        cpu.mode = 1;
+        cpu.mode = CPU_MODEL_65C02;
     else
-        cpu.mode = 0;  /* Default to NMOS 6502 */
+        cpu.mode = CPU_MODEL_6502;
 
     /* Setup tracing */
     if (trace_flag || cfg.trace) {

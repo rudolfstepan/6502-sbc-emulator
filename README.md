@@ -170,10 +170,38 @@ Shift for Select. SDL game controllers work for up to two players. F5 resets
 the game, F6 changes the FDS disk side, F7 inserts or ejects an FDS disk,
 F8 inserts a Vs. System coin, and Escape closes the window. Cartridge battery
 saves use the emulator's per-user NES directory (`%APPDATA%` on Windows).
-The ROM collection stays outside the runtime bundle.
+Users supply their own original game ROMs and system firmware. Keep them in
+the local ROM collection. See [ROM and distribution requirements](docs/THIRD_PARTY.md#roms-and-distribution).
 
 Run `make test-nes` with a local FCEUmm core to exercise uncompressed and ZIP
 loading, framebuffer capture, and invalid input using a generated test ROM.
+
+#### NES with the SBC CPU
+
+Build the optional adapted core with `make nes-sbc-core`. This uses Python 3,
+GNU Make and the project's C compiler. The first build fetches the pinned
+FCEUmm source archive and verifies its SHA-256. The adapted library goes in
+`bin/cores/` under its own filename. Rebuild it after changing the CPU or bus
+sources. The runtime package still supports `nes.ini` with the regular FCEUmm
+library for comparison.
+
+```powershell
+cd bin
+.\sbc6502.exe nes-sbc.ini --load ..\nes-game.nes
+.\sbc6502.exe nes-sbc.ini --load 'USA\Contra (U).zip'
+```
+
+In `nes-sbc.ini`, `[nes] cpu = sbc` selects the 2A03 variant of the project's
+6502 core and its bus for documented opcodes. FCEUmm schedules the CPU and
+peripherals, provides the NES address handlers, DMA, interrupts, PPU, APU and
+cartridge mappers, and executes undocumented or mapper-encrypted opcodes.
+The adapter is instruction-based and is still being checked for CPU/PPU
+timing compatibility. It uses a separate per-user battery-save directory
+called `NES SBC CPU` so comparisons leave the reference profile's saves intact.
+
+`make test-2a03` verifies CPU arithmetic and bus access order. With the adapted
+core built, `make test-nes-sbc` verifies cartridge loading and an indexed
+PPU-status read through the NES frontend.
 
 ### Tests
 
@@ -468,4 +496,15 @@ enter its loader.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+The project's own source is released under the [MIT license](LICENSE).
+Publish self-developed ROMs only when you hold all necessary rights, including
+rights to any code, artwork or music they contain. Users provide original game
+and system ROMs locally.
+
+Redistribution of FCEUmm, including the SBC CPU build derived from it, is
+subject to its GPL terms. Provide the license, required notices and the complete
+corresponding source when publishing the adapted binary. Review the licenses
+of the exact libraries, runtime DLLs and third-party code included in each
+release and carry the applicable notices and license texts into the package.
+[FCEUmm GPL](https://github.com/libretro/libretro-fceumm/blob/master/Copying) ·
+[Third-party components and distribution](docs/THIRD_PARTY.md)

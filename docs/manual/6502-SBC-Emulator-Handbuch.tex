@@ -24,10 +24,11 @@
 \definecolor{Teal}{HTML}{00857D}
 \definecolor{Muted}{HTML}{526171}
 \definecolor{Rule}{HTML}{CBD8E0}
-\newcommand{\ProductName}{6502 SBC Emulator}
-\newcommand{\ManualTitle}{Bedienung, Architektur und~Entwicklung}
-\newcommand{\ManualDate}{21. November 2026}
-\newcommand{\SourceRevision}{f8bffa5}
+\newcommand{\ManualTitle}{6502-Systeme emulieren}
+\newcommand{\ManualSubtitle}{6502-SBC, Commodore 64 (PAL) und Nintendo NES/Famicom}
+\newcommand{\ManualScope}{Bedienung, Architektur und Entwicklung}
+\newcommand{\ManualDate}{22. November 2026}
+\newcommand{\SourceRevision}{ef51d23}
 \newcommand{\ui}[1]{\textbf{#1}}
 \newcommand{\metaSize}{\fontsize{8bp}{10bp}\selectfont}
 \newcommand{\tableSize}{\fontsize{9bp}{11bp}\selectfont}
@@ -37,8 +38,8 @@
 
 \hypersetup{
   colorlinks=true,linkcolor=Teal,urlcolor=Teal,
-  pdftitle={\ProductName\space- \ManualTitle},
-  pdfauthor={Rudolf Stepan},pdfsubject={Deutschsprachiges Emulator-Handbuch},
+  pdftitle={\ManualTitle\space- \ManualSubtitle},
+  pdfauthor={Rudolf Stepan},pdfsubject={\ManualScope},
   pdflang=de-DE,bookmarksdepth=1
 }
 \setlength{\parindent}{0pt}
@@ -66,9 +67,9 @@
 
 \clearpairofpagestyles
 \automark[chapter]{chapter}
-\ihead*{\textcolor{Teal}{\textbf{\ProductName}}}
+\ihead*{\textcolor{Teal}{\textbf{\ManualTitle}}}
 \ohead*{\headmark}
-\ifoot*{\ManualTitle\enspace|\enspace Deutsch\enspace|\enspace\ManualDate}
+\ifoot*{\ManualScope\enspace|\enspace Deutsch\enspace|\enspace\ManualDate}
 \ofoot*{Seite\nobreakspace\pagemark}
 \KOMAoptions{headsepline=0.4pt:head,plainheadsepline}
 \setkomafont{pageheadfoot}{\sffamily\metaSize\color{Muted}}
@@ -109,11 +110,11 @@
 \begin{titlepage}
   \sffamily
   \vspace*{14mm}
-  {\color{Teal}\bfseries\fontsize{23bp}{27bp}\selectfont\ProductName\par}
+  {\color{Teal}\bfseries\fontsize{13bp}{17bp}\selectfont\ManualScope\par}
   \vspace{8mm}
   {\color{Ink}\bfseries\fontsize{33bp}{38bp}\selectfont\ManualTitle\par}
   \vspace{7mm}
-  {\color{Teal}\fontsize{17bp}{22bp}\selectfont SBC und Commodore 64 (PAL)\par}
+  {\color{Teal}\fontsize{17bp}{22bp}\selectfont\ManualSubtitle\par}
   \vspace{10mm}
   \noindent\includegraphics[width=\linewidth]{screenshots/sbc-mandelbrot-copro.png}\par
   {\captionSize\color{Muted}Mandelbrot im SBC-Emulator mit dem Original-ROM des FPGA-SBC.\par}
@@ -169,7 +170,8 @@ gemacht haben.
 \textbf{Schneller Einstieg.} Starten Sie den C64 wie in Kapitel~\ref{ch:start}
 beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Kapitel~\ref{ch:menu}
 beschreibt das F12-Menü. Abschnitt~\ref{sec:fpga-roms} zeigt, wie Sie dieselbe
-ROM-Datei im Emulator und auf dem FPGA verwenden.
+ROM-Datei im Emulator und auf dem FPGA verwenden. Zum NES-Kompatibilitätsmodus
+führt Abschnitt~\ref{sec:nes-sbc-start}.
 
 \begingroup
 \linespread{1.0}\selectfont
@@ -181,18 +183,20 @@ ROM-Datei im Emulator und auf dem FPGA verwenden.
 \chapter{Start und erster Test}\label{ch:start}
 
 \section{Windows-Build und Profil}
-Der Emulator bietet ein SBC-Profil mit eigenen ROMs und ein PAL-C64-Profil mit
-separaten C64-ROMs. Beim Start bestimmt die gewählte INI-Datei die Maschine und
-ihre Einstellungen. Dieses Handbuch beschreibt den lokalen Programmstand auf
-Basis von \texttt{\SourceRevision}. Die Abbildungen stammen aus dem Emulator.
+Der Emulator bietet ein SBC-Profil mit eigenen ROMs, ein PAL-C64-Profil mit
+separaten C64-ROMs und Profile für NES/Famicom. Beim Start bestimmt die
+gewählte INI-Datei die Maschine und ihre Einstellungen. Dieses Handbuch
+beschreibt den lokalen Programmstand auf Basis von \texttt{\SourceRevision}.
+Die Abbildungen stammen aus dem Emulator.
 
 Wählen Sie das SBC-Profil, wenn Sie den Projekt-Kernel, die zugehörigen ROMs
 oder Software für die Speicher- und Gerätebelegung des Projekts ausführen.
 Wählen Sie das C64-Profil für Commodore BASIC und Programme für einen
-PAL-C64. Beide Profile verwenden dasselbe Programm und denselben
-Maschinenmonitor. Programme erwarten jeweils die ROM-Einsprungpunkte und
-Geräteregister ihrer Zielmaschine. Die praktische Einordnung des Projekts
-finden Sie in Kapitel~\ref{ch:comparison}.
+PAL-C64. Die SBC- und C64-Profile verwenden denselben Maschinenmonitor.
+NES-Spielmodule starten Sie mit einem der Profile aus
+Abschnitt~\ref{sec:nes-sbc-start}. Programme erwarten jeweils die
+ROM-Einsprungpunkte und Geräteregister ihrer Zielmaschine. Die praktische
+Einordnung des Projekts finden Sie in Kapitel~\ref{ch:comparison}.
 
 \section{C64-ROMs bereitstellen}
 Der C64-Start benötigt drei lokal bereitgestellte ROM-Dateien. Legen Sie sie
@@ -400,7 +404,7 @@ Für den späteren Ladevorgang kann das Programm ein eigenes Protokoll
 verwenden. Kapitel~\ref{ch:comparison} erklärt die Grenze des virtuellen
 Laufwerks und Abschnitt~\ref{sec:disk-diagnosis} beschreibt die Prüfung.
 
-\chapter{SBC-Modus}\label{ch:sbc}
+\chapter{SBC- und NES-Modi}\label{ch:sbc}
 
 \section{Ein Profil starten}
 Starten Sie SBC-Profile aus dem Projektordner mit ihrem INI-Dateinamen. Das
@@ -516,11 +520,60 @@ Der Emulator-Test hat alle 200 Zeilen mit dem unveränderten ROM gezeichnet.
 Auf der Platine prüfen Sie anschließend das HDMI-Bild und bei Bedarf die
 Ansteuerung des seriellen Monitors.
 
+\clearpage
+\section{NES-Kompatibilitätsmodus mit SBC-CPU}\label{sec:nes-sbc-start}
+
+Mit \path{nes-sbc.ini} laufen NES- und Famicom-Spielmodule mit dem
+6502-Kern des Projekts. \path{nes.ini} startet dieselben Module mit dem
+regulären FCEUmm-Kern und dient als Referenz für Vergleiche. Stellen
+Sie Original-Spielmodule und benötigte System-ROMs selbst bereit.
+
+\begin{enumerate}
+  \item Falls der angepasste Kern noch fehlt, führen Sie im Projektordner
+    \texttt{make nes-sbc-core} aus. Unter Windows entsteht
+    \path{bin/cores/fceumm_sbc_cpu_libretro.dll}. Der Build legt die
+    Profil-INI in \path{bin/} ab.
+  \item Wechseln Sie nach \path{bin/} und geben Sie mit \texttt{--load}
+    ein Spielmodul an. Im Beispiel liegt \path{nes-game.nes} im
+    übergeordneten Projektordner.
+\end{enumerate}
+
+\begin{commandblock}
+cd bin
+.\sbc6502.exe nes-sbc.ini --load ..\nes-game.nes
+\end{commandblock}
+
+\textbf{Erwartetes Ergebnis.} Das Spiel erscheint im NES-Fenster.
+Die Konsole nennt \texttt{FCEUmm (SBC CPU)} und die Bildrate des ROMs.
+Die Abbildung zeigt die automatische Spielszene des europäischen ROMs.
+
+\shot{86mm}{nes-sbc-mario}{\emph{Super Mario Bros.}, Welt 1-1 in der
+  automatischen Demo des PAL-ROMs mit \texttt{nes-sbc.ini}.}
+
+Unter \texttt{[nes]} bestimmt \texttt{rom\_dir} den Ordner für
+relative ROM-Namen. Das mitgelieferte Profil verweist auf
+\path{E:/Emulatoren/Nintendo/Roms}. Ohne \texttt{--load} startet die
+in \texttt{rom} eingetragene Datei. Sie können ein \path{.nes}-Modul
+oder ein ZIP mit genau einem unterstützten Spielmodul auch auf das
+NES-Fenster ziehen. Eine Datei aus einem Unterordner laden Sie so:
+
+\begin{commandblock}
+.\sbc6502.exe nes-sbc.ini --load 'USA\Contra (U).zip'
+\end{commandblock}
+
+\textbf{Steuerung.} Verwenden Sie die \ui{Pfeiltasten} für das Steuerkreuz,
+\ui{Z} für A, \ui{X} für B, \ui{Enter} für Start und die rechte
+\ui{Umschalttaste} für Select. Der Modus unterstützt bis zu zwei
+SDL-Gamecontroller. \ui{F5} setzt das Spiel zurück, \ui{Esc} beendet den
+Modus. Unter Windows liegen Spielstände aus dem batteriegepufferten Modul-RAM
+im Ordner \texttt{\%APPDATA\%\textbackslash{}6502-sbc-emulator\textbackslash{}NES SBC CPU}.
+Die Architektur beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
+
 \part{Konfiguration, Diagnose und Referenz}
 \chapter{Softwarearchitektur}\label{ch:architecture}
 
 Beim Start wählt die INI ein Maschinenprofil und damit die Speicher- und
-Gerätebelegung. Beide Maschinen führen ihre Programme mit demselben
+Gerätebelegung. SBC und PAL-C64 führen ihre Programme mit demselben
 CPU-Kern aus. Der Kern verarbeitet Befehle und Interrupts und zählt Takte.
 Für Lese- und Schreibzugriffe übergibt er die Adresse an den Speicherbus.
 Der Monitor verwendet denselben Bus und sieht die jeweils eingeblendeten
@@ -564,8 +617,8 @@ ROMs, RAM-Bereiche und Register.
     \draw[access] (c64.south) -- (c64Devices.north);
     \node[text=Muted,font=\captionSize] at (0,-31) {Auswahl beim Start per INI};
   \end{tikzpicture}
-  \caption{Gemeinsame CPU, Monitor und Speicherbus mit den beiden
-    alternativen Speicher- und Peripheriepfaden.}
+  \caption{Gemeinsame CPU, Monitor und Speicherbus im SBC- und
+    PAL-C64-Profil.}
   \label{fig:architecture}
 \end{figure}
 
@@ -586,7 +639,8 @@ KERNAL-Einsprung, wie in Kapitel~\ref{ch:comparison} beschrieben.
 Die Hauptschleife gibt die verstrichenen CPU-Takte an die Geräte weiter
 und wertet deren Interruptsignale aus. SDL2 übernimmt am PC die
 Fenster- und Audioausgabe und liefert Eingabeereignisse. Die Zuordnung
-zu SBC- oder C64-Eingaben geschieht im jeweiligen Profil.
+zu SBC- oder C64-Eingaben geschieht im jeweiligen Profil. Die Anbindung
+des NES-Kompatibilitätsmodus beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
 
 \clearpage
 \section{Festkomma-Koprozessor des SBC}\label{sec:math-copro}
@@ -619,6 +673,58 @@ Multiplikator für die Quadrate und das gemischte Produkt seiner
 aus. Der Emulator berechnet die beim Registerzugriff sichtbaren Werte im
 gleichen Zahlenformat. Der REIST-Modulo-Kern wird im FPGA-Projekt für
 einen separaten Benchmark verwendet.
+
+\clearpage
+\section{NES-CPU, Speicherbus und FCEUmm}\label{sec:nes-sbc-architecture}
+
+Beide NES-Profile verwenden dieselbe SDL2-Oberfläche. Die INI wählt
+den Libretro-Kern. \path{nes.ini} lädt unter Windows
+\path{fceumm_libretro.dll}. \path{nes-sbc.ini} setzt in \texttt{[nes]}
+den Wert \texttt{cpu = sbc} und lädt
+\path{fceumm_sbc_cpu_libretro.dll}. \texttt{make nes-sbc-core} baut
+die angepasste Bibliothek aus einem festgelegten FCEUmm-Quellstand und
+den aktuellen CPU- und Busquellen des Projekts. Beim ersten Build lädt
+das Skript den Quellstand und prüft seine SHA-256-Prüfsumme.
+
+\begin{referenceTable}{P{39mm} Y}
+\textbf{Komponente} & \textbf{Aufgabe im SBC-CPU-Profil} \\
+\midrule
+\texttt{CPU6502} & Führt dokumentierte Opcodes im Ricoh-2A03-Modus aus. Das
+  Dezimalflag bleibt im Statusregister erhalten. \texttt{ADC} und
+  \texttt{SBC} rechnen auch bei gesetztem Flag binär. \\
+SBC-Speicherbus & Leitet CPU-Lese- und Schreibzugriffe an die NES-Adresshandler
+  von FCEUmm weiter. Diese stellen RAM, Register und den vom Cartridge-Mapper
+  eingeblendeten Speicher bereit. \\
+FCEUmm & Lädt das Spielmodul und liefert NES-Grafik über die PPU sowie NES-Ton
+  über die APU. Es steuert die Taktung, DMA und Interrupts und führt
+  undokumentierte oder vom Mapper verschlüsselte Opcodes aus. \\
+\end{referenceTable}
+
+Der Adapter wird innerhalb der FCEUmm-Ausführungsschleife aufgerufen.
+Er übergibt Programmzähler, Register und den bereits gelesenen Opcode
+an \texttt{CPU6502}. Nach dem Schritt überträgt er den neuen
+Registerzustand zurück. Das vorausgelesene Opcode-Byte wird dabei
+einmal an den SBC-Kern geliefert. Dadurch löst der Befehlsabruf nur
+einen Zugriff auf den NES-Adressraum aus. FCEUmm behält die Verantwortung
+für die Zeitbasis von PPU, APU und Mappern.
+
+Bei I/O-Registern zählt auch die Reihenfolge der Zugriffe. Beispielsweise
+liest \texttt{LDA \$20FF,X} mit \texttt{X = 3} bei der
+Seitenüberschreitung zuerst \texttt{\$2002} und dann \texttt{\$2102}.
+Beide Adressen betreffen das gespiegelte PPU-Statusregister. Der erste
+Lesezugriff löscht das VBlank-Flag. Der 2A03-Modus führt den Zugriff
+aus und lässt den Adapter den zusätzlichen CPU-Takt vor dem zweiten
+Lesen anrechnen. So sieht das ROM beim eigentlichen Lesen bereits den
+geänderten Status.
+
+\textbf{Prüfstand.} \texttt{make test-2a03} prüft Rechenverhalten und
+Buszugriffsfolgen. \texttt{make test-nes-sbc} prüft unter anderem den
+PPU-Statuszugriff mit einem eigens dafür erzeugten NES-ROM. Bei
+\emph{Super Mario Bros.} (PAL), \emph{Contra} und \emph{Tetris} (NTSC)
+war das Bild bei Frame 120 in beiden Profilen bytegleich. Der Vergleich
+erfasst diese Einzelbilder. Der SBC-Maschinenmonitor steht im
+NES-Profil derzeit nicht zur Verfügung. Die Bedingungen für die
+Weitergabe des Kerns stehen in Abschnitt~\ref{sec:rom-licenses}.
 
 \chapter{Entstehung, Systemgedanke und technische Perspektiven}\label{ch:system-concept}
 
@@ -784,7 +890,10 @@ die Gerätemodelle mit ihren zeitlichen Eigenschaften. So kann der
 Emulator die SBC-Peripherie und die C64-Geräte VIC-II, CIA und SID
 über denselben CPU-Kern ansprechen, während jedes Profil seine eigene
 Maschine abbildet. Kapitel~\ref{ch:comparison} beschreibt, wie weit
-die C64-Unterstützung im PC-Emulator reicht.
+die C64-Unterstützung im PC-Emulator reicht. Die Wiederverwendung für
+NES/Famicom geht einen weiteren Schritt. Dort führt der SBC-Kern die
+dokumentierten Opcodes aus, während FCEUmm die NES-Peripherie
+weiter betreibt (Abschnitt~\ref{sec:nes-sbc-architecture}).
 
 \section{Erkenntnisse und weitere Möglichkeiten}
 
@@ -1026,6 +1135,32 @@ Adressraum. Das ist bei umschaltbaren ROM- und I/O-Bereichen zu beachten.
 Monitor. Kehren Sie mit \texttt{c} zur Emulation zurück, wenn Sie danach
 am BASIC-Prompt oder im gestarteten Programm weiterarbeiten möchten.
 
+\section{ROMs, Lizenzen und Weitergabe}\label{sec:rom-licenses}
+
+\begin{description}
+  \item[Original-ROMs] Benutzer stellen Original-Spielmodule und
+    System-ROMs selbst bereit, etwa für NES, Famicom und C64.
+    Halten Sie diese Dateien ausschließlich in der lokalen ROM-Sammlung.
+  \item[Eigene ROMs] Für eine Veröffentlichung müssen alle erforderlichen
+    Rechte vorliegen. Prüfen Sie auch übernommene Bestandteile wie Code,
+    Grafiken und Musik sowie die Lizenz des Ausgangsmaterials einer Portierung.
+  \item[FCEUmm] Bei der Weitergabe gelten die Bedingungen der GNU GPL
+    für FCEUmm und daraus abgeleitete Werke. Bei Veröffentlichung des angepassten Kerns
+    gehören Lizenztext, Urheberrechts- und Änderungshinweise sowie der
+    vollständige zugehörige Quellcode dazu. Dazu zählen der FCEUmm-Stand,
+    der Adapter, die einkompilierten CPU- und Busquellen und die
+    Buildskripte. Stellen Sie Quellcode und Binärdatei am selben
+    Downloadort bereit. Maßgeblich sind die
+    \href{https://github.com/libretro/libretro-fceumm/blob/master/Copying}{Bedingungen der GPL Version 2 im FCEUmm-Projekt}.
+  \item[Weitere Abhängigkeiten] Prüfen Sie die Bedingungen der tatsächlich
+    eingebundenen Versionen. Dazu gehören SDL2, Miniz, der Libretro-Header,
+    mitgelieferte Laufzeitbibliotheken und fremde Codebestandteile in ROMs.
+    Übernehmen Sie die jeweils erforderlichen Lizenztexte und Hinweise ins
+    Veröffentlichungspaket. Die Projektübersicht steht in
+    \path{docs/THIRD_PARTY.md}.
+\end{description}
+
+\addtocontents{toc}{\protect\Needspace{5\protect\baselineskip}}
 \chapter{Fehlerdiagnose}\label{ch:trouble}
 
 \section{Start, Bild und Eingaben}
@@ -1078,7 +1213,6 @@ technischen Aufbau finden Sie in \path{docs/ARCHITECTURE.md}. Änderungen stehen
 in \path{CHANGELOG.md}. Diese Dateien beziehen sich auf den jeweiligen
 Quellstand im Projektordner.
 
-\addtocontents{toc}{\protect\Needspace{5\protect\baselineskip}}
 \chapter{Einsatzbereich und Emulatorvergleich}\label{ch:comparison}
 
 \section{Wofür sich der 6502 SBC Emulator eignet}
@@ -1089,7 +1223,9 @@ im Monitor prüfen und anschließend dasselbe Abbild auf den FPGA laden.
 Für Commodore-Software steht zusätzlich das PAL-C64-Profil zur Verfügung.
 Die INI macht Startparameter und Eingabebelegung als Text nachvollziehbar.
 Das integrierte F12-Menü unterstützt den Wechsel der Belegung während
-eines C64-Tests.
+eines C64-Tests. Für NES/Famicom stehen das FCEUmm-Referenzprofil und
+der Kompatibilitätsmodus mit SBC-CPU zur Verfügung
+(Abschnitt~\ref{sec:nes-sbc-start}).
 
 Der Ansatz ist besonders nützlich, wenn Sie die Auswirkungen einer
 ROM-Änderung sehen, einen Fehler in einem 6502-Programm bis zu einer
@@ -1104,10 +1240,10 @@ mitten in einer Rasterzeile.
 \textbf{Emulator} & \textbf{Relevante Funktionen} & \textbf{Passender Einsatz} \\
 \midrule
 6502 SBC Emulator &
-Projekt-SBC und PAL-C64, gemeinsamer Monitor, INI-Profile, virtueller
-D64-Lader und F12-Belegung. &
+Projekt-SBC, PAL-C64 und NES/Famicom. Monitor für SBC und C64,
+virtueller D64-Lader und F12-Belegung im C64-Profil. &
 Eigene SBC-ROMs, projektnahe FPGA-Softwaretests und C64-BASIC oder PRGs
-mit Standard-Ladeweg. \\
+mit Standard-Ladeweg. NES-ROMs mit Referenzkern oder SBC-CPU prüfen. \\
 VICE \texttt{x64sc} &
 Zyklusbasierter, pixelgenauer VIC-II, Laufwerksemulation auf Hardwareebene
 und detailliertere SID-Emulation. &
