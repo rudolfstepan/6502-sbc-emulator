@@ -25,7 +25,7 @@
 \definecolor{Muted}{HTML}{526171}
 \definecolor{Rule}{HTML}{CBD8E0}
 \newcommand{\ProductName}{6502 SBC Emulator}
-\newcommand{\ManualTitle}{Bedienung und Konfiguration}
+\newcommand{\ManualTitle}{Bedienung, Architektur und~Entwicklung}
 \newcommand{\ManualDate}{21. November 2026}
 \newcommand{\SourceRevision}{f8bffa5}
 \newcommand{\ui}[1]{\textbf{#1}}
@@ -37,7 +37,7 @@
 
 \hypersetup{
   colorlinks=true,linkcolor=Teal,urlcolor=Teal,
-  pdftitle={6502 SBC Emulator - Bedienung und Konfiguration},
+  pdftitle={\ProductName\space- \ManualTitle},
   pdfauthor={Rudolf Stepan},pdfsubject={Deutschsprachiges Emulator-Handbuch},
   pdflang=de-DE,bookmarksdepth=1
 }
@@ -121,7 +121,7 @@
   \noindent\textcolor{Rule}{\rule{\linewidth}{0.5pt}}\par
   \begin{minipage}[t]{.46\linewidth}
     \captionSize\textbf{Rudolf Stepan}\par
-    Deutschsprachiges Bedienhandbuch
+    Deutschsprachiges Handbuch
   \end{minipage}\hfill
   \begin{minipage}[t]{.5\linewidth}
     \raggedleft\captionSize\color{Muted}
@@ -150,6 +150,16 @@ So wurde aus meinem Lernprojekt ein Testwerkzeug und Simulator, den ich
 ergänzend zur FPGA-Version einsetze. Mit diesem Handbuch möchte ich
 zeigen, wie sich dieser Arbeitsablauf auch für eigene Experimente mit
 dem 6502 nutzen lässt.
+
+Heute gehören der FPGA-SBC, der Softwareemulator und die Werkzeuge,
+die ich für beide entwickelt habe, für mich zusammen. Dieselbe ROM-Datei
+verbindet den Test am PC mit dem Versuch auf der Platine. Um beide
+Versuche vorbereiten und vergleichen zu können, habe ich nach und nach
+eigene Werkzeuge geschrieben. Mit ihnen baue ich ROMs, bereite
+Datenträger vor und halte Ergebnisse fest, damit ich einen Versuch
+später unter denselben Bedingungen wiederholen kann.
+Kapitel~\ref{ch:system-concept} erzählt, wie daraus nach und nach eine
+gemeinsame Entwicklungsumgebung wurde.
 
 \medskip
 \textbf{Rudolf Stepan}
@@ -609,6 +619,316 @@ aus. Der Emulator berechnet die beim Registerzugriff sichtbaren Werte im
 gleichen Zahlenformat. Der REIST-Modulo-Kern wird im FPGA-Projekt für
 einen separaten Benchmark verwendet.
 
+\chapter{Entstehung, Systemgedanke und technische Perspektiven}\label{ch:system-concept}
+
+\section{Vom 6502-Experiment zum eigenständigen Rechnersystem}
+
+Rudolf Stepan begann mit dem Wunsch, den 6502 bei der Arbeit zu
+beobachten. Der überschaubare Befehlssatz und der 16-Bit-Adressraum
+machten ihn zu einem geeigneten Ausgangspunkt. Im ersten Emulator
+konnte Stepan nach einem einzelnen Maschinenbefehl anhalten und sehen,
+welche Register oder Speicherstellen sich verändert hatten. Wenn ein
+Programm ein unerwartetes Ergebnis lieferte, konnte er den Ablauf
+bis zu dem Befehl verfolgen, der es verursacht hatte.
+
+Während daneben der eigenständige FPGA-SBC entstand, kamen neue
+Fragen hinzu. Auf der Platine musste der Speicher die Daten im
+richtigen Takt liefern. Beim Bildaufbau brauchten der Prozessor und
+der Video-Controller Zugriff auf denselben Bildspeicher. Der Emulator
+half dabei, den Programmablauf zu verstehen. Auf der Platine ließ
+sich prüfen, wie die Schaltung diesen Ablauf umsetzt.
+
+Mit den ersten eigenen ROMs verschob sich die Frage vom einzelnen
+Befehl hin zum Rechner als Ganzem. Eine höhere Grafikauflösung stellte
+neue Anforderungen an den Bildspeicher. Bei wiederholten
+Festkommaberechnungen bot sich an, einen Teil der Arbeit an einen
+Koprozessor abzugeben. Die Programme konnten beide Erweiterungen über
+vertraute Lese- und Schreibbefehle ansprechen. So blieb der 6502 der
+Ausgangspunkt, während aus den Experimenten nach und nach ein eigener
+Rechner mit eigener Systemsoftware wurde.
+
+\section{Zwei Implementierungen, eine gemeinsame Maschinenarchitektur}
+\label{sec:common-machine}
+
+Das FPGA-kompatible Profil des Emulators entstand aus dem Ziel, dieselben
+Programme am PC und auf der Platine ausführen zu können. Für ein ROM
+gehören die Speicherbelegung und die Geräteregister zur Zielmaschine.
+Schon ein verschobenes Register kann dazu führen, dass eine korrekt
+ausgeführte Schreibinstruktion beim falschen Gerät ankommt. Auch die
+Bedeutung der geschriebenen Bits und der Zeitpunkt sichtbarer
+Geräteereignisse gehören zu dieser Schnittstelle.
+
+Das unveränderte \path{mandelbrot_copro.bin} zeigt, wie weit diese
+gemeinsame Schnittstelle reicht. Das ROM schreibt seine Operanden in die
+Festkommaregister und liest das skalierte Ergebnis zurück. Auf der Platine
+multipliziert die DSP-Logik des FPGA. Am PC berechnet der Emulator die
+Registerwerte im selben Zahlenformat. Der dokumentierte Emulatorlauf
+zeichnete alle 200 Bildzeilen. Abschnitt~\ref{sec:fpga-mandelbrot} zeigt
+auch, wie dasselbe Abbild für den Test auf der Platine geladen wird.
+
+Die Übernahme von C64-SID-Musik ist ein weiteres Beispiel für diese
+gemeinsame Schnittstelle. Der angepasste SID-Player startet zusammen
+mit dem Musikcode als eigenes ROM. Dasselbe Abbild läuft unverändert
+im FPGA-kompatiblen Profil des PC-Emulators und auf dem FPGA-SBC.
+
+\clearpage
+\subsection{Von der C64-SID-Datei zum 6502-ROM}
+
+Eine PSID- oder RSID-Datei enthält den bereits assemblierten 6502-Code
+des Musikstücks samt Daten. \path{tools/build_native_sid_rom.py} liest
+den Kopf der Datei und ermittelt Ladeadresse, Startstück sowie die
+Einsprungadressen für Initialisierung und Wiedergabe. Steht die
+Ladeadresse im Datenblock, liest der Generator sie aus dessen ersten
+beiden Bytes. Er übernimmt den Musikcode byteweise in die
+Assemblerquelle und erzeugt den Start- und Wiedergabecode darum herum.
+
+Mit \texttt{ca65} und \texttt{ld65} entsteht daraus ein eigenständig
+startendes 16-KiB-Split-ROM mit einem eigenen Resetvektor. Der Player
+stellt den Musikcode an seiner ursprünglichen Ladeadresse bereit. Je nach
+Stück kopiert er ihn ins RAM oder der Linker platziert ihn direkt im
+Fenster \texttt{\$A000--\$CFFF}. Beim Beispiel
+\path{World_Record_2.sid} zeigt \path{sw/6502/soundsid.s} den Ablauf:
+Der Player kopiert den Code nach \texttt{\$1000}, ruft dort einmal
+die Initialisierung auf und springt etwa alle 20~ms per \texttt{JSR}
+zur Wiedergaberoutine bei \texttt{\$1006}. Den Takt liefert der
+SBC-Millisekundenzähler. Der Musikcode erzeugt die SID-Registerzugriffe
+bei \texttt{\$D400} weiterhin selbst.
+
+Gibt der SID-Kopf keinen Wiedergabeeinsprung an, kann das Stück seinen
+CIA-Interrupt selbst einrichten. Dafür leitet der Player den IRQ über
+den gewohnten Vektor bei \texttt{\$0314} weiter. Im FPGA-Profil behält
+der CIA-Timer~A seine 1-MHz-Zeitbasis bei höherem CPU-Takt. Hängt ein
+Stück von einem VIC-II-Rasterinterrupt ab, kann eine Anpassung pro Stück
+nötig sein. Für \path{Arkanoid.sid} ruft der Player die per
+Disassemblierung ermittelte Aktualisierungsroutine direkt auf.
+
+\section{Erweiterte Hardware als Teil des Rechnerkonzepts}
+
+Bei einer Festkommamultiplikation muss ein 8-Bit-Prozessor mehrere Bytes
+verarbeiten und das Produkt anschließend wieder auf das gewünschte
+Zahlenformat skalieren. Im Mandelbrot-ROM fällt diese Arbeit in jeder
+Iteration erneut an. Der Koprozessor bündelt sie hinter einer
+Registerschnittstelle. Das Programm schreibt zwei Operanden und liest
+das Ergebnis im vorgesehenen Festkommaformat. Die Iteration selbst
+bleibt Aufgabe des 6502. Die zugehörigen Register beschreibt
+Abschnitt~\ref{sec:math-copro}.
+
+Das Grafiksystem folgt demselben Prinzip. Der Video-Controller erzeugt
+die Darstellung aus den abgelegten Text- oder Bitmapdaten. Für
+wiederkehrende Speicheroperationen kann das Programm den Blitter
+beauftragen. Die CPU legt die Operation fest, während die zugehörige
+Hardware die Speicherzugriffe ausführt. Der 6502-Befehlssatz bleibt dabei
+unverändert. Wie viel Arbeit die CPU abgeben kann, hängt von der
+Aufteilung zwischen Programm und Peripherie ab.
+
+\section{Datenträger, GoDrive und die Integration von Systemsoftware}
+
+GoDrive verwendet D64 als Datenträgerformat für Programme des eigenen
+SBC. Das vorhandene Format legt fest, wie Verzeichniseinträge und
+Programmdateien auf Sektoren verteilt sind. Auf dem FPGA stellt der
+Controller die Sektoren des gewählten Abbilds von der SD-Karte über
+Geräteregister bereit. Die Systemsoftware kann daraus ein Verzeichnis
+anzeigen und ein Programm an die im PRG hinterlegte Ladeadresse laden.
+So lässt sich der vom BASIC vertraute Ladeablauf mit einer einfachen
+Blockschnittstelle umsetzen.
+
+Beim separaten C64-FPGA-Projekt bestimmen vorhandene Commodore-Programme
+die Anforderungen. Der C64-Build für den Tang Nano 20K mit SDRAM
+veranschaulicht die Folgen für den Entwurf. Dort stehen ein direkter
+SD-Fastloader für den vorgesehenen Ladeablauf und ein Pfad über
+KERNAL, IEC und die integrierte 1541-Nachbildung zur Verfügung. Der
+IEC-Pfad ist für Software relevant, die mit dem Laufwerk über den
+seriellen Bus kommuniziert. Eigene Ladeprotokolle und Kopierschutz
+bleiben Fälle, deren Verhalten am jeweiligen Build zu prüfen ist.
+
+Beim SBC konnte die Schnittstelle so entworfen werden, wie es zu seiner
+Systemsoftware passte. Beim C64 ergibt sich der erforderliche Umfang
+der Nachbildung daraus, welche Eigenschaften des ursprünglichen
+Laufwerks ein vorhandenes Programm nutzt. Dass beide Rechner dasselbe
+Abbildformat lesen, sagt deshalb wenig darüber aus, welche Software
+auf ihnen läuft.
+
+\clearpage
+\section{Der Emulator als Entwicklungs- und Experimentierwerkzeug}
+
+Ein ROM lässt sich am PC nach dem Assemblieren unmittelbar starten.
+Wird beispielsweise eine Bildspeicherbank zu früh umgeschaltet, kann
+der Maschinenmonitor den Ablauf an der Schreibinstruktion anhalten.
+Register, Programmadresse und berechneter Wert zeigen dann, ob das
+Programm den beabsichtigten Zugriff ausführt. Ein solcher Test liefert
+einen konkreten Ausgangspunkt für die anschließende Prüfung auf
+der Platine.
+
+Auf dem FPGA lassen sich zusätzlich die Speicheranbindung, der
+Bildaufbau und die zeitliche Abfolge von Gerätesignalen prüfen. Tritt
+ein Fehler nur dort auf, lässt sich mit demselben ROM eingrenzen, ab
+welchem Zugriff oder Geräteereignis sich die Abläufe unterscheiden.
+Die Ursache kann in der Schaltung, im Gerätemodell oder in einer
+Annahme des Programms über die Reihenfolge der Ereignisse liegen.
+Das gemeinsame ROM hält bei diesem Vergleich den Programmstand fest.
+
+\section{Vom eigenen SBC zur erweiterten 6502-Emulationsplattform}
+
+Die Trennung von CPU-Kern, Bus und Gerätemodellen erleichterte es,
+innerhalb derselben Anwendung ein PAL-C64-Profil zu ergänzen. Der
+gemeinsame Kern verarbeitet die Befehle der verwandten Prozessoren.
+Das Maschinenprofil legt fest, welche Hardware einen Zugriff sieht.
+Beim C64 bestimmt etwa der 6510-Port, ob ein Zugriff im Bereich ab
+\texttt{\$D000} RAM, Zeichen-ROM oder ein Geräteregister erreicht.
+
+Für die Wiederverwendung reicht es daher, dass die Befehlsausführung
+ihre Zugriffe über den Bus abwickelt. Für das Verhalten der jeweiligen
+Maschine braucht es zusätzlich passende ROMs, die Speicherkarte und
+die Gerätemodelle mit ihren zeitlichen Eigenschaften. So kann der
+Emulator die SBC-Peripherie und die C64-Geräte VIC-II, CIA und SID
+über denselben CPU-Kern ansprechen, während jedes Profil seine eigene
+Maschine abbildet. Kapitel~\ref{ch:comparison} beschreibt, wie weit
+die C64-Unterstützung im PC-Emulator reicht.
+
+\section{Erkenntnisse und weitere Möglichkeiten}
+
+Für künftige SBC-Erweiterungen ergibt sich aus dieser Arbeit ein
+Entwurfsweg. Zunächst lässt sich festlegen, welche Register ein
+Programm benötigt, was es nach einem Reset vorfindet und wann ein
+Ergebnis zum Lesen bereitsteht. Auf dieser Grundlage kann ein
+Gerätemodell entstehen, an dem sich das erste ROM ausprobieren lässt.
+Der anschließende FPGA-Entwurf kann dasselbe ROM zur Prüfung der
+Schnittstelle verwenden.
+
+Für einen nachvollziehbaren Versuch gehören ROM-Datei, Maschinenprofil,
+Registerbelegung und erwartetes Ergebnis zusammen. Beim Mandelbrot-ROM
+ist das gezeichnete Bild ein sichtbares Ergebnis. Bei einem Timer kann
+ein definierter Interruptabstand der geeignete Prüfwert sein. Solche
+Bezugspunkte helfen auch später, Änderungen an der Systemsoftware oder
+an einem Gerätemodell einzuordnen.
+
+Der Blick auf einzelne 6502-Befehle bleibt dabei der Ausgangspunkt.
+Mit derselben Beobachtung lässt sich im größeren System untersuchen,
+wie ein Speicherzugriff eine Grafikoperation auslöst, ein Rechenergebnis
+liefert oder die Systemsoftware mit einem Datenträger verbindet. In
+der FPGA-Schaltung und im Emulator werden diese Zusammenhänge auf
+unterschiedlichen Ebenen überprüfbar.
+
+\clearpage
+\section{Werkzeuge und Hilfsprojekte hinter dem System}\label{sec:engineering-tools}
+
+Ein erheblicher Teil von Rudolf Stepans Entwicklungsarbeit steckt in
+den Werkzeugen um den Emulator und das FPGA-System. Sie sorgen dafür,
+dass aus Quelltexten, Musikstücken oder Grafiken Programme für eine
+bestimmte Speicherkarte entstehen, dass diese Programme die Platine
+erreichen und dass sich ein Fehler unter vergleichbaren Bedingungen
+erneut auslösen lässt. Die Quellen dazu liegen vor allem in
+\path{tools/}, \path{tests/} und \path{examples/} des Emulators sowie
+in \path{tools/}, \path{sw/}, \path{sim/} und \path{boards/} des
+FPGA-Repositories.
+
+\subsection{Systemsoftware und Testdaten herstellen}
+
+Die Portierung von MS BASIC und EhBASIC erfordert Anpassungen an die
+jeweilige Speicherbelegung und an die Ein- und Ausgabe des SBC. Die
+Build-Skripte und Linkerkonfigurationen halten diese Anpassungen fest.
+\path{build_fpga_ehbasic.py} baut etwa aus BASIC und Kernel ein
+gemeinsames ROM-Abbild und getrennte Segmente für den UART-Upload.
+Ein eigener Kernel stellt unter anderem die Ein- und Ausgaberoutinen
+bereit. Host-Werkzeuge machen tokenisierte BASIC-Programme als Text
+bearbeitbar und erzeugen aus Quelltext wieder ein zur jeweiligen
+BASIC-Variante passendes PRG. ROM-Generatoren für Echo-, Monitor- und
+Starttests liefern kleine Programme mit vorhersehbarem Verhalten.
+FPGA-Werkzeuge erzeugen aus den Binärdaten je nach Ziel ein VHDL-Paket,
+eine Hexdatei für die Simulation oder ein Split-ROM für die Platine.
+
+Auch die Beispieldaten entstehen in eigenen Werkzeugketten. Die
+Bildkonverter bereiten Fotos und Grafiken für die Speicherformate und
+Paletten der Video-Hardware auf. Andere Generatoren erzeugen
+Zeichensätze oder HDMI-InfoFrames. Für SID-Musik entstanden sowohl die
+nativen ROMs aus Abschnitt~\ref{sec:common-machine} als auch PRG- und
+Diskettenpakete für unterschiedliche Zielsysteme. Die frühere
+Konvertierung in \path{tools/sid_convert/} zeichnete SID-Registeränderungen
+auf und übersetzte sie in Ereignisse für den eigenen Vierstimmen-Klangchip.
+Sie dokumentiert den Aufwand, den Klang zweier verschiedener
+Synthesizer aufeinander abzubilden.
+
+\subsection{Programmstände auf die Platine bringen}
+
+Der grafische Starter \emph{PIX16 FPGA Tools} bündelt ROM-Builds,
+serielle Uploads und die Erzeugung von SD-Abbildern. Die UART-Werkzeuge
+verteilen ein SBC-Split-ROM auf seine Speicherfenster oder übertragen
+BASIC-Programme. Für den eigenen C64-FPGA-Build gibt es einen separaten
+PRG-Loader und Hilfen zum Aktivieren und Prüfen seines UART-Monitors.
+So lässt sich der Inhalt eines Speicherbereichs prüfen, bevor der
+Rechner das Programm ausführt.
+
+Die Datenträgerwerkzeuge teilen sich die Arbeit entlang der Formate.
+Sie listen D64-Verzeichnisse, extrahieren PRGs, packen Testdisketten
+und erzeugen FAT32-Abbilder für GoDrive oder FAT16-Abbilder für
+entsprechende C64-Builds. Dazu kommen das SBC-Bootabbild mit Prüfsumme
+und Werkzeuge zum Schreiben und Verifizieren von SD-Abbildern.
+Die virtuelle 1541 für den PC in \path{tools/virtual_1541/} bildet ein
+eigenes Hilfsprojekt. Je nach FPGA-Build bedient sie über UART den
+KERNAL-Ladehook oder liefert D64-Sektoren an das Laufwerksmodell.
+So kann derselbe Datenträger bei der Fehlersuche an verschiedenen
+Stellen des Ladewegs geprüft werden.
+
+\clearpage
+\subsection{Verhalten prüfen und Fehler eingrenzen}
+
+Die Emulator-Tests prüfen CPU-Befehle, den SBC-Start, das Laden auf dem
+PAL-C64 und den Zugriff auf SBC-Datenträger. Der Funktionstest von
+Klaus Dormann liefert dabei eine externe Referenz für den 6502. Der
+Screenshot-Lauf mit \path{software_screenshot_test.py} startet
+ausgewählte Original-ROMs und PRGs im FPGA-Profil und protokolliert
+die erzeugten Bilder. Die Erfassung liefert eine Sichtprobe für spätere
+Vergleiche. Ein erzeugtes Bild
+allein bestätigt weder die Korrektheit jeder Bildzeile noch den
+zeitlichen Ablauf auf der Platine.
+
+Eine ähnliche Abstufung gibt es auf der Hardwareseite. GHDL-Testbenches
+prüfen unter anderem Busdekodierung, UART, Bildspeicher, HDMI-Audio
+und D64-Sektorzugriffe. Ein eigenes 1541-Testdesign für den Tang
+Primer 20K prüft die Schreibkette bis zur SD-Karte, indem es einen
+bekannten Datenblock schreibt und den Sektor byteweise zurückliest.
+Damit lässt sich ein Fehler in der Schreibkette untersuchen, bevor
+C64, KERNAL und IEC gemeinsam beteiligt sind. Testbilder, reine
+HDMI- und USB-Testdesigns sowie kleine Speicherdiagnose-ROMs erfüllen
+denselben Zweck für andere Schnittstellen.
+
+MultiCalc zeigt, wie viel Arbeit im Zusammenspiel der Ebenen liegt.
+Seine Tabellenlogik lässt sich am PC separat testen, und ein
+Host-Werkzeug rendert das Textlayout. Auf der Platine musste die
+Linkerkonfiguration den C-Stack und die Arbeitsdaten unterhalb des
+Bildspeicherfensters halten. Ein früherer Build lief im Emulator mit
+dessen größerem linearem Speicherbereich, stürzte aber auf der
+Hardware ab. Grafikdemos für Blitter und Bildspeicher und das
+Mandelbrot-ROM für den Koprozessor prüfen jeweils andere Teile
+derselben Rechnerarchitektur.
+
+\subsection{Platinenvarianten und gemeinsam genutzte Werkzeuge}
+
+Für PIX16 und Pipistrello liegen ISE-Projekte beziehungsweise Skripte
+zur Projekterzeugung vor. Die Tang-Varianten bringen eigene
+Gowin-Projekte mit Quellen, Pinbelegung und Taktvorgaben mit. Zur
+Integrationsarbeit gehören auch importierte Kerne wie T65 und die
+Anbindung an den platinenabhängigen Speicher. Zwei Pico-Firmwares
+setzen USB-Tastaturen für FPGA-Ziele auf PS/2 oder Low-Speed-USB um.
+Beide lösen das Problem an der Schnittstelle zwischen realer Tastatur
+und FPGA-Eingang.
+
+Weitere Projekte im FPGA-Repository nutzen diese Erfahrung mit der
+Plattform. Beim NanoMig-Port bestimmt ein separates Testdesign die
+geeignete SDRAM-Taktphase. System16 und AE350 bringen eigene Werkzeuge
+für Linux-Boot, Flash- und SD-Abbilder sowie QEMU-Tests mit. Der
+REIST-Benchmark auf dem Tang Primer 20K ergänzt die eigenständige
+CPU-Benchmark-Suite \path{reist-crypto-bench} um eine FPGA-Untersuchung
+der zentrierten Restarithmetik. Der dokumentierte Vergleich stützt sich
+auf Simulation und Timing-Analyse des FPGA-Entwurfs.
+
+Zum Entwicklungsablauf gehört auch die Bereitstellung. Die
+Build-Automatisierung bündelt Emulator, Profile, ROMs und Beispieldaten.
+Die CI prüft den Emulator und die FPGA-Simulation getrennt. Skripte in
+beiden Repositories übernehmen die gepflegten Markdown-Quellen in die
+jeweiligen Wikis. So bleiben Testfälle, Buildschritte und die Herkunft
+der verwendeten Abbilder zusammen mit den Ergebnissen nachvollziehbar.
+
 \chapter{Konfigurationsreferenz}\label{ch:ref}
 
 \section{Welche INI wird gespeichert?}
@@ -757,6 +1077,7 @@ technischen Aufbau finden Sie in \path{docs/ARCHITECTURE.md}. Änderungen stehen
 in \path{CHANGELOG.md}. Diese Dateien beziehen sich auf den jeweiligen
 Quellstand im Projektordner.
 
+\addtocontents{toc}{\protect\Needspace{5\protect\baselineskip}}
 \chapter{Einsatzbereich und Emulatorvergleich}\label{ch:comparison}
 
 \section{Wofür sich der 6502 SBC Emulator eignet}
