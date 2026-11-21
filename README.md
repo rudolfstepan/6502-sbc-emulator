@@ -3,7 +3,10 @@
 [![CI](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an interactive monitor, and bundled ROM workflows (MS BASIC, EhBASIC, standalone chess, and a 4-voice sound demo).
+A C99 6502 emulator with two machine profiles, **6502 SBC** and **Commodore 64 (PAL)**.
+Both use SDL2 video and audio and share an interactive machine monitor. The
+SBC profile includes MS BASIC, EhBASIC, standalone chess, and a 4-voice sound
+demo. The [C64 profile](docs/C64.md) uses locally supplied Commodore ROMs.
 
 ## Highlights
 
@@ -12,6 +15,8 @@ A C99 MOS 6502 single-board-computer emulator with SDL video/audio output, an in
 - Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap/sprite display with blitter and interrupt system
 - **4-voice sound chip** with ADSR envelopes and per-voice waveform selection (sine, square, sawtooth, triangle, noise)
 - SDL2 display and audio backend
+- **C64 mode** with PAL VIC-II raster graphics and sprites, SID audio, read-only
+  D64 loading, and an F12 menu for keyboard and joystick remapping
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
 - Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), chess (`chess.ini`), and the 4-voice sound demo (`soundtest.ini`)
 - ROM build scripts for kernel, MS BASIC, EhBASIC, chess, and the soundtest ROM
@@ -72,6 +77,11 @@ cd bin
 ```
 
 ### Commodore 64 (PAL)
+
+![C64 BASIC V2 at the READY prompt in the emulator](docs/manual/screenshots/c64-start.png)
+
+See the [C64 mode guide](docs/C64.md) for ROM setup, disk loading, and
+keyboard and joystick configuration.
 
 Place the C64 BASIC (8192 bytes), KERNAL (8192 bytes), and character generator
 ROM (4096 bytes) in `roms/c64/` as `basic.rom`, `kernal.rom`, and `chargen.rom`.
@@ -152,6 +162,7 @@ Options:
 
 You can also drag and drop files onto the SDL display window:
 
+- `.d64` (C64 mode): mounts a 35-track disk image read-only on the configured floppy device.
 - `.prg`: loads at the two-byte PRG load address and starts execution there.
 - `.rom` / `.bin`: reloads the configured ROM window(s) and resets the CPU.
 - With `fpga.ini`, a 16 KB FPGA shadow ROM is split into `$A000-$CFFF` and `$F000-$FFFF`.
@@ -362,6 +373,7 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 
 ## Documentation Index
 
+- [Commodore 64 (PAL) mode](docs/C64.md)
 - [German user manual (PDF)](output/pdf/6502-SBC-Emulator-Handbuch.pdf) and [editable LuaLaTeX source](docs/manual/6502-SBC-Emulator-Handbuch.tex)
 - **FPGA** lives in its own repo, [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga) (linked here as the `fpga/` submodule) — full docs in its **[Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki)**
 - [docs/FPGA_COMPATIBILITY_STATUS.md](docs/FPGA_COMPATIBILITY_STATUS.md) — emulator-side FPGA compatibility changes, rationale, timing, and test flow

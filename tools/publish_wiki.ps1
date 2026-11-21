@@ -16,6 +16,7 @@ $wikiRemote = "https://github.com/$Owner/$Repo.wiki.git"
 
 $pages = @(
     @{ Source = "README.md"; Page = "Home"; Title = "Home" }
+    @{ Source = "docs/C64.md"; Page = "Commodore-64-Mode"; Title = "Commodore 64 (PAL) Mode" }
     @{ Source = "docs/FPGA_COMPATIBILITY_STATUS.md"; Page = "FPGA-Compatibility-Status"; Title = "FPGA Compatibility Status" }
     @{ Source = "docs/software-test.md"; Page = "FPGA-Software-Test"; Title = "FPGA Software Test" }
     @{ Source = "docs/ARCHITECTURE.md"; Page = "Architecture-Overview"; Title = "Architecture Overview" }
@@ -64,7 +65,8 @@ foreach ($page in $pages) {
 function Resolve-DocLink {
     param(
         [string]$SourceFile,
-        [string]$Url
+        [string]$Url,
+        [switch]$Image
     )
 
     if ($Url -match '^(https?:|mailto:|#)') {
@@ -94,6 +96,9 @@ function Resolve-DocLink {
     }
 
     $encodedPath = ($repoPath -split "/" | ForEach-Object { [uri]::EscapeDataString($_) }) -join "/"
+    if ($Image) {
+        return "https://raw.githubusercontent.com/$Owner/$Repo/$Branch/$encodedPath$anchor"
+    }
     if (Test-Path (Join-Path $repoRoot $repoPath) -PathType Container) {
         return "$repoUrl/tree/$Branch/$encodedPath$anchor"
     }
@@ -114,6 +119,14 @@ function Convert-MarkdownForWiki {
         return "[$image]($converted)"
     }
 
+    $inlineImageCallback = {
+        param($match)
+        $text = $match.Groups["text"].Value
+        $url = $match.Groups["url"].Value
+        $converted = Resolve-DocLink -SourceFile $SourceFile -Url $url -Image
+        return "![$text]($converted)"
+    }
+
     $callback = {
         param($match)
         $text = $match.Groups["text"].Value
@@ -123,6 +136,7 @@ function Convert-MarkdownForWiki {
     }
 
     $convertedMarkdown = [regex]::Replace($Markdown, '\[(?<image>!\[[^\]]+\]\([^)]+\))\]\((?<url>[^)]+)\)', $imageLinkCallback)
+    $convertedMarkdown = [regex]::Replace($convertedMarkdown, '!\[(?<text>[^\]]*)\]\((?<url>[^)]+)\)', $inlineImageCallback)
     return [regex]::Replace($convertedMarkdown, '\[(?<text>[^\]]+)\]\((?<url>[^)]+)\)', $callback)
 }
 
@@ -151,7 +165,7 @@ foreach ($page in $pages) {
     $markdown = Get-Content -Raw -Encoding UTF8 $sourcePath
     $converted = Convert-MarkdownForWiki -SourceFile $source -Markdown $markdown
     $header = "[Source file]($repoUrl/blob/$Branch/$source)"
-    $body = "$header`n`n$converted"
+    $body = "$header`n`n$($converted.TrimEnd([char[]]"`r`n"))"
     Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "$($page.Page).md") -Value $body
 }
 
@@ -160,6 +174,7 @@ $sidebar = @(
     "",
     "## Main",
     "- [Home]($repoUrl/wiki/Home)",
+    "- [Commodore 64 (PAL) Mode]($repoUrl/wiki/Commodore-64-Mode)",
     "- [Architecture Overview]($repoUrl/wiki/Architecture-Overview)",
     "- [VIC Video Interface Controller]($repoUrl/wiki/VIC-Video-Interface-Controller)",
     "- [Keyboard Integration]($repoUrl/wiki/Keyboard-Integration)",
@@ -192,15 +207,29 @@ Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "_Footer.md") -Value $foot
 Push-Location $wikiPath
 try {
     git add .
-    if (-not (git diff --cached --quiet)) {
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not stage the generated wiki pages."
+    }
+
+    git diff --cached --quiet
+    if ($LASTEXITCODE -eq 1) {
         git commit -m "Publish project documentation wiki" | Out-Host
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not commit the generated wiki pages."
+        }
+    }
+    elseif ($LASTEXITCODE -eq 0) {
+        Write-Host "Wiki content is already up to date."
     }
     else {
-        Write-Host "Wiki content is already up to date."
+        throw "Could not check the staged wiki changes."
     }
 
     if ($Push) {
         git push -u origin master
+        if ($LASTEXITCODE -ne 0) {
+            throw "Could not push the wiki to origin."
+        }
     }
 }
 finally {
