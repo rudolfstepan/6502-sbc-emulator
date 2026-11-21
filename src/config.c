@@ -63,7 +63,7 @@ static void read_c64_input(Config *cfg, const char *section, const char *key, co
 
 void config_defaults(Config *cfg)
 {
-    if (!cfg->c64 && cfg->num_devs == 0) {
+    if (!cfg->c64 && !cfg->nes && cfg->num_devs == 0) {
         /* SBC ROM layout, matching sbc.ini. */
         cfg->devs[0] = (DevConfig){ .type=DEV_SRAM, .base=0x0000, .size=0x8000 };
         cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xC000, .size=0x1000,
@@ -95,7 +95,7 @@ int config_load(Config *cfg, const char *filename)
         return -1;
     }
 
-    char line[1024];
+    char line[CFG_PATH_MAX + 64];
     char section[64] = "";
     DevConfig cur;
     memset(&cur, 0, sizeof(cur));
@@ -130,7 +130,7 @@ int config_load(Config *cfg, const char *filename)
         char *key = trim(p);
         char *val = trim(eq + 1);
         /* strip inline comment */
-        char *cm = strchr(val, '#');
+        char *cm = strcmp(section, "nes") == 0 ? NULL : strchr(val, '#');
         if (cm) { *cm = 0; val = trim(val); }
 
         if (strcmp(section, "cpu") == 0) {
@@ -151,12 +151,26 @@ int config_load(Config *cfg, const char *filename)
         } else if (strcmp(section, "machine") == 0) {
             if (strcmp(key, "type") == 0) {
                 cfg->c64 = strcmp(val, "c64") == 0;
+                cfg->nes = strcmp(val, "nes") == 0;
             } else if (strcmp(key, "basic") == 0) {
                 strncpy(cfg->c64_basic, val, sizeof(cfg->c64_basic) - 1);
             } else if (strcmp(key, "kernal") == 0) {
                 strncpy(cfg->c64_kernal, val, sizeof(cfg->c64_kernal) - 1);
             } else if (strcmp(key, "chargen") == 0) {
                 strncpy(cfg->c64_chargen, val, sizeof(cfg->c64_chargen) - 1);
+            }
+        } else if (strcmp(section, "nes") == 0) {
+            char *target = NULL;
+            if (strcmp(key, "core") == 0) target = cfg->nes_core;
+            else if (strcmp(key, "rom_dir") == 0) target = cfg->nes_rom_dir;
+            else if (strcmp(key, "rom") == 0) target = cfg->nes_rom;
+            else if (strcmp(key, "system_dir") == 0) target = cfg->nes_system_dir;
+            if (target && strlen(val) < CFG_PATH_MAX) {
+                strcpy(target, val);
+            } else if (target) {
+                fprintf(stderr, "config: %s: [nes] %s path is too long\n", filename, key);
+                fclose(f);
+                return -2;
             }
         } else if (strcmp(section, "floppy") == 0) {
             if (strcmp(key, "image") == 0) {

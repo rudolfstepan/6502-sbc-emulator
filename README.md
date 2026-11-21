@@ -141,6 +141,40 @@ Set the C64 joystick to port 1 or 2 to enable it. The default keyboard
 joystick uses the arrow keys and Right Ctrl for fire. The first connected
 SDL joystick or gamepad also works and can be remapped on the Joystick page.
 
+### Nintendo NES / Famicom
+
+Use `nes.ini` to start the NES profile in the SDL window. Install the optional
+[FCEUmm libretro core](https://docs.libretro.com/library/fceumm/) under `bin/cores/`
+beside the executable. On Windows x64, extract `fceumm_libretro.dll` from the
+[official Windows core archive](https://buildbot.libretro.com/nightly/windows/x86_64/latest/fceumm_libretro.dll.zip).
+On Linux, use `fceumm_libretro.so` from your system or the Libretro buildbot.
+Set `[nes] core` to use a library in a different location.
+
+```powershell
+cd bin
+.\sbc6502.exe nes.ini
+.\sbc6502.exe nes.ini --load ..\nes-game.nes
+.\sbc6502.exe nes.ini --load 'USA\Contra (U).zip'
+```
+
+`[nes] rom_dir` in the supplied profile points to `E:/Emulatoren/Nintendo/Roms`.
+`[nes] rom` selects the default file, relative to that directory. `--load`
+also accepts an absolute path or a file relative to the current working
+directory. Drag a cartridge or a ZIP containing one cartridge onto the
+NES window to switch games. The loader also accepts `.unf`, `.unif` and `.fds`.
+Famicom Disk System images require `disksys.rom` in `[nes] system_dir`, which
+defaults to the executable directory.
+
+Use the arrow keys for the D-pad, Z for A, X for B, Enter for Start and right
+Shift for Select. SDL game controllers work for up to two players. F5 resets
+the game, F6 changes the FDS disk side, F7 inserts or ejects an FDS disk,
+F8 inserts a Vs. System coin, and Escape closes the window. Cartridge battery
+saves use the emulator's per-user NES directory (`%APPDATA%` on Windows).
+The ROM collection stays outside the runtime bundle.
+
+Run `make test-nes` with a local FCEUmm core to exercise uncompressed and ZIP
+loading, framebuffer capture, and invalid input using a generated test ROM.
+
 ### Tests
 
 Run tests:

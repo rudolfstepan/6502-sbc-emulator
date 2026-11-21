@@ -83,7 +83,7 @@ KLAUS_BIN = $(OBJDIR)/klaus/6502_functional_test.bin
 KLAUS_URL = https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tests/master/bin_files/6502_functional_test.bin
 
 SRCS = $(wildcard $(SRCDIR)/*.c)
-OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS))
+OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS)) $(OBJDIR)/miniz.o
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
@@ -106,6 +106,14 @@ $(BINDIR):
 $(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
 	$(CC) $(CFLAGS) -I$(SRCDIR) -c $< -o $@
 
+$(OBJDIR)/miniz.o: third_party/miniz/miniz.c third_party/miniz/miniz.h | $(OBJDIR)
+	$(CC) $(CFLAGS) -DMINIZ_NO_ZLIB_APIS -c $< -o $@
+
+$(OBJDIR)/nes.o: $(SRCDIR)/nes.h $(SRCDIR)/nes_content.h third_party/libretro/libretro.h
+$(OBJDIR)/nes_content.o: $(SRCDIR)/nes_content.h third_party/miniz/miniz.h
+$(OBJDIR)/main.o: $(SRCDIR)/nes.h $(SRCDIR)/config.h
+$(addprefix $(OBJDIR)/,config.o config_c64_save.o c64_menu.o c64_input.o vic_sdl.o nes.o): $(SRCDIR)/config.h
+
 $(TARGET): $(OBJS) | $(BINDIR)
 	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
 	$(if $(filter Windows_NT,$(OS)),@$(call COPY_IF_EXISTS,$(SDL2_DLL),$(BINDIR)/SDL2.dll))
@@ -117,12 +125,15 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-.PHONY: test-config test-c64 test-sbc-boot
+.PHONY: test-config test-c64 test-sbc-boot test-nes
 
 check: all test-config test-sbc-boot test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02
 
 test-sbc-boot: $(TARGET)
 	python3 tests/test_sbc_boot.py $(TARGET)
+
+test-nes: $(TARGET)
+	python3 tests/test_nes.py $(TARGET)
 
 test-c64: $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_c64.c src/bus.c src/c64.c src/c64_vic.c src/cia6526.c \

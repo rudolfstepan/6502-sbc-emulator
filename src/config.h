@@ -3,6 +3,7 @@
 #include <stdbool.h>
 
 #define CFG_STR_MAX  256
+#define CFG_PATH_MAX 1024
 #define CFG_MAX_DEVS 8
 #define DEFAULT_CPU_SPEED_HZ 27000000u
 #define CFG_MAX_WINDOW_SCALE 25
@@ -42,6 +43,11 @@ typedef struct {
     bool      profile;
     int       window_scale;
     bool      c64;
+    bool      nes;
+    char      nes_core[CFG_PATH_MAX];
+    char      nes_rom_dir[CFG_PATH_MAX];
+    char      nes_rom[CFG_PATH_MAX];
+    char      nes_system_dir[CFG_PATH_MAX];
     char      c64_basic[CFG_STR_MAX];
     char      c64_kernal[CFG_STR_MAX];
     char      c64_chargen[CFG_STR_MAX];
@@ -53,7 +59,7 @@ typedef struct {
     unsigned int joystick_port;           /* 0 disables the joystick. */
 } Config;
 
-/* Parse INI file. Returns 0 on success, -1 on error. */
+/* Parse INI file. Returns 0 on success, -1 if absent, -2 if invalid. */
 int config_load(Config *cfg, const char *filename);
 /* Fill in defaults for any unspecified fields */
 void config_defaults(Config *cfg);
