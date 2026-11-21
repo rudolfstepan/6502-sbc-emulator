@@ -25,6 +25,7 @@
 \newcommand{\ProductName}{6502 SBC Emulator}
 \newcommand{\ManualTitle}{Bedienung und Konfiguration}
 \newcommand{\ManualDate}{21. November 2026}
+\newcommand{\SourceRevision}{d86f6b0}
 \newcommand{\ui}[1]{\textbf{#1}}
 \newcommand{\metaSize}{\fontsize{8bp}{10bp}\selectfont}
 \newcommand{\tableSize}{\fontsize{9bp}{11bp}\selectfont}
@@ -48,6 +49,7 @@
 \raggedright
 \color{Ink}
 \setkomafont{disposition}{\sffamily\bfseries\color{Ink}}
+\setkomafont{part}{\fontsize{30bp}{36bp}\selectfont\color{Teal}}
 \setkomafont{chapter}{\fontsize{24bp}{29bp}\selectfont}
 \setkomafont{section}{\fontsize{15bp}{18bp}\selectfont\color{Teal}}
 \setkomafont{subsection}{\fontsize{11.5bp}{14bp}\selectfont}
@@ -121,26 +123,58 @@
   \begin{minipage}[t]{.5\linewidth}
     \raggedleft\captionSize\color{Muted}
     Lokaler Windows-Build\par
+    Beschriebener Quellstand \texttt{\SourceRevision}\par
     Dokumentationsstand \ManualDate
   \end{minipage}
 \end{titlepage}
 
 \frontmatter
 \hypersetup{pageanchor=true}
-\tableofcontents
-\vspace{12pt}
+\addchap{Vorwort}
+Ich habe den 6502 SBC Emulator ursprünglich für mich selbst entwickelt.
+Ich wollte den 6502 besser verstehen und eine Umgebung haben, in der ich
+eigene Programme und ROMs ausprobieren und Schritt für Schritt untersuchen
+konnte.
+
+Während ich parallel an der FPGA-Version des 6502 SBC arbeitete, merkte ich
+mit der Zeit, wie hilfreich der Emulator auch für diese Entwicklung war.
+Mit ihm konnte ich Programmabläufe und Speicherzugriffe am PC prüfen,
+bevor ich dieselbe Software auf der FPGA-Version ausprobierte. Besonders
+bei der Fehlersuche war es hilfreich, den Programmablauf im Monitor
+anzuhalten und Register und Speicher gezielt zu untersuchen.
+
+So wurde aus meinem Lernprojekt ein Testwerkzeug und Simulator, den ich
+ergänzend zur FPGA-Version einsetze. Mit diesem Handbuch möchte ich
+zeigen, wie sich dieser Arbeitsablauf auch für eigene Experimente mit
+dem 6502 nutzen lässt.
+
+\medskip
+\textbf{Rudolf Stepan}
+
+\bigskip
 \textbf{Schneller Einstieg.} Starten Sie den C64 wie in Kapitel~\ref{ch:start}
 beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Kapitel~\ref{ch:menu}
 beschreibt das F12-Menü. Mit Kapitel~\ref{ch:disk} legen Sie eine virtuelle Diskette ein.
 
+\tableofcontents
+
 \mainmatter
+\part{Einstieg und Bedienung}
 \chapter{Start und erster Test}\label{ch:start}
 
 \section{Windows-Build und Profil}
 Der Emulator bietet ein SBC-Profil mit eigenen ROMs und ein PAL-C64-Profil mit
 separaten C64-ROMs. Beim Start bestimmt die gewählte INI-Datei die Maschine und
-ihre Einstellungen. Dieser Leitfaden beschreibt den lokalen Build vom
-\ManualDate. Die Abbildungen stammen aus der gerenderten Programmoberfläche.
+ihre Einstellungen. Dieses Handbuch beschreibt den Programmstand
+\texttt{\SourceRevision}. Die Abbildungen stammen aus der Programmoberfläche.
+
+Wählen Sie das SBC-Profil, wenn Sie den Projekt-Kernel, die zugehörigen ROMs
+oder Software für die Speicher- und Gerätebelegung des Projekts ausführen.
+Wählen Sie das C64-Profil für Commodore BASIC und Programme für einen
+PAL-C64. Beide Profile verwenden dasselbe Programm und denselben
+Maschinenmonitor. Programme erwarten jeweils die ROM-Einsprungpunkte und
+Geräteregister ihrer Zielmaschine. Die praktische Einordnung des Projekts
+finden Sie in Kapitel~\ref{ch:comparison}.
 
 \section{C64-ROMs bereitstellen}
 Der C64-Start benötigt drei lokal bereitgestellte ROM-Dateien. Legen Sie sie
@@ -154,6 +188,12 @@ BASIC & \texttt{basic.rom} & 8192 Byte \\
 KERNAL & \texttt{kernal.rom} & 8192 Byte \\
 Zeichengenerator & \texttt{chargen.rom} & 4096 Byte \\
 \end{referenceTable}
+
+Die drei Dateien übernehmen unterschiedliche Aufgaben. BASIC verarbeitet
+die Befehle am Prompt, der KERNAL stellt unter anderem Eingabe, Ausgabe und
+Ladefunktionen bereit, und der Zeichengenerator liefert die Bitmuster der
+Schriftzeichen. Prüfen Sie bei Startproblemen Dateiname und Größe jeder
+Datei einzeln. Die Original-ROMs werden lokal bereitgestellt.
 
 \section{BASIC-Prompt prüfen}
 \begin{enumerate}
@@ -177,6 +217,12 @@ Relative Pfade in der INI werden aus dem Arbeitsverzeichnis aufgelöst.
 \begin{commandblock}
 .\bin\sbc6502.exe c64.ini
 \end{commandblock}
+
+\textbf{Startverzeichnis.} Die Batchdatei wechselt vor dem Start in den
+Projektordner. Beim direkten Aufruf zählt das Arbeitsverzeichnis des
+Terminals. Dadurch kann ein identischer INI-Dateiname aus zwei
+unterschiedlichen Startordnern auf verschiedene Dateien und ROM-Pfade
+verweisen. Einzelheiten stehen in Kapitel~\ref{ch:ref}.
 
 \chapter{Konfigurationsmenü}\label{ch:menu}
 
@@ -203,6 +249,12 @@ Der Zoom und die Eingabebelegungen gelten nach \ui{F2} sofort. Einstellungen
 mit Stern, etwa \ui{CPU SPEED HZ}, \ui{START IMAGE} und die ROM-Pfade, werden
 beim nächsten Emulatorstart übernommen. Bestätigen Sie eine Texteingabe mit
 \ui{Enter}, bevor Sie speichern.
+
+Beim Speichern schreibt der Emulator die Einstellungen in die aktive INI.
+Damit bleibt beispielsweise ein von \ui{F2} übernommener Fensterzoom auch
+nach dem Beenden erhalten. Soll eine Testkonfiguration von der üblichen
+Belegung getrennt bleiben, starten Sie mit einer eigenen Kopie der INI.
+Beide Dateien können denselben ROM-Bestand verwenden.
 
 \chapter{Tastatur und Joystick}\label{ch:input}
 
@@ -235,7 +287,9 @@ den Emulator. \ui{Escape} wird an die emulierte Tastatur weitergegeben.
 \section{Joystick-Port und Eingabegerät}\label{sec:joystick}
 Auf der Seite \ui{JOYSTICK} steuert die erste Zeile den emulierten Port.
 Wählen Sie \ui{PORT 1} oder \ui{PORT 2} passend zum Programm. \ui{OFF}
-deaktiviert die Joystick-Eingaben.
+deaktiviert die Joystick-Eingaben und ist in der mitgelieferten
+\path{c64.ini} voreingestellt. Die Abbildung zeigt einen bereits gewählten
+Port. Die Portnummer bezeichnet den Anschluss des emulierten C64.
 
 \shot{127mm}{c64-joystick}{\ui{JOYSTICK} mit Portwahl und getrennten Belegungen für Tastatur und USB-Controller.}
 
@@ -258,6 +312,12 @@ Die erste Taste liefert Feuer.
 Ist eine PC-Taste dem Joystick zugeordnet, wird sie im laufenden C64-Profil
 als Joystick-Eingabe ausgewertet. Wenn Sie die Pfeiltasten für den BASIC-Cursor
 benötigen, weisen Sie dem Joystick andere PC-Tasten zu oder wählen Sie \ui{OFF}.
+
+Prüfen Sie nach dem Speichern zuerst eine Richtung und danach die Feuertaste
+an einer Stelle, an der das laufende Programm Joystick-Eingaben erwartet.
+Ein funktionierender USB-Controller am PC kann am falschen emulierten Port
+wirkungslos bleiben. Die Portwahl und die Belegung sind zwei getrennte
+Einstellungen.
 
 \chapter{Disketten und Programme}\label{ch:disk}
 
@@ -307,6 +367,21 @@ device = 8
 image = data/sdcard/example.d64
 \end{commandblock}
 
+\section{Einlegen, Laden und Ausführen unterscheiden}
+Ein D64 ist ein Abbild mit Verzeichnis und Diskettensektoren. Ein PRG ist
+ein einzelner Programmeintrag. Der Fenstertitel bestätigt nach dem Einlegen
+das Abbild und das Gerät. Der erfolgreiche Verzeichnisabruf bestätigt
+zusätzlich, dass BASIC das Gerät erreicht. Erst der folgende
+\texttt{LOAD}-Befehl überträgt die Programmdaten. Ein erfolgreiches
+\texttt{RUN} prüft wiederum nur den Einstieg in das gewählte Programm.
+
+Wenn ein Titel erst beim nächsten Level oder nach der Aufforderung zum
+Diskettenwechsel hängen bleibt, prüfen Sie den Ladevorgang bis zu diesem
+Punkt. Ein sichtbarer Titelbildschirm bestätigt bereits das erste Laden.
+Für den späteren Ladevorgang kann das Programm ein eigenes Protokoll
+verwenden. Kapitel~\ref{ch:comparison} erklärt die Grenze des virtuellen
+Laufwerks und Abschnitt~\ref{sec:disk-diagnosis} beschreibt die Prüfung.
+
 \chapter{SBC-Modus}\label{ch:sbc}
 
 \section{Ein Profil starten}
@@ -336,6 +411,44 @@ Sie SBC-Einstellungen in der verwendeten INI. Der C64-Programmlader für D64
 gehört zum C64-Profil. Das FPGA-Profil enthält einen eigenen GoDrive-Ablauf für
 Disks unter \path{data/sdcard/}.
 
+\clearpage
+\section{ROM-Änderungen im SBC prüfen}
+Starten Sie zunächst ein bekanntes Projektprofil, um Bild, Tastatur und
+Konsole zu prüfen. Wählen Sie anschließend die INI für das betreffende
+Zielsystem. Der Emulator dient hier zum Prüfen von Programmablauf,
+Speicherbelegung und Gerätezugriffen vor dem Test auf der Hardware.
+
+\begin{enumerate}
+  \item Für einen Test mit dem FPGA-Profil muss das im Profil referenzierte
+    ROM vorliegen. Die mitgelieferte \path{fpga.ini} erwartet
+    \path{roms/fpga_ehbasic_16kb.rom}. Prüfen Sie Dateipfad und die beiden
+    \texttt{[rom]}-Abschnitte, wenn Sie ein anderes Abbild verwenden.
+  \item Starten Sie mit der zugehörigen INI und prüfen Sie die erste sichtbare
+    Ausgabe. Beim FPGA-Shadow-ROM bildet die INI die ersten 12 KiB auf
+    \texttt{\$A000--\$CFFF} und die letzten 4 KiB auf
+    \texttt{\$F000--\$FFFF} ab. Im oberen Bereich liegen der Kernel
+    und die Vektoren.
+  \item Falls die Ausgabe ausbleibt, starten Sie mit \texttt{-d}.
+    Vergleichen Sie den Programmzähler und die Bytes am erwarteten
+    Einstieg mit dem Assemblerlisting. Abschnitt~\ref{sec:monitor}
+    erklärt Registeranzeige, Speicherauszug und Haltepunkte.
+\end{enumerate}
+
+\textbf{Datenträger im FPGA-Profil.} Die GoDrive-Befehle gehören zur
+dortigen BASIC- und Kernel-Konfiguration. \texttt{LOAD "!"} öffnet das
+Auswahlmenü für D64-Abbilder. Nach dem Einlegen gibt \texttt{LOAD "\$"}
+das Verzeichnis aus. \texttt{LOAD "NAME"} lädt einen Eintrag. Für ein
+Maschinenprogramm verwenden Sie anschließend den vom ROM angegebenen
+\texttt{CALL}-Einstieg. Die C64-Gerätenummer aus Kapitel~\ref{ch:disk}
+ist für diesen Ablauf ohne Bedeutung.
+
+\textbf{Erwartetes Ergebnis.} Das Zielprofil startet mit der erwarteten
+Ausgabe und der Monitor zeigt die Bytes an den Adressen aus dem Listing.
+Damit lässt sich die Softwareprüfung eingrenzen. Eigenschaften der
+physischen Platine, etwa HDMI-Ausgabe und externe Signale, prüfen Sie
+anschließend auf der Hardware.
+
+\part{Konfiguration, Diagnose und Referenz}
 \chapter{Konfigurationsreferenz}\label{ch:ref}
 
 \section{Welche INI wird gespeichert?}
@@ -359,6 +472,21 @@ Build-Bundle ab.
 \texttt{[joystick]} & \texttt{port} sowie zugewiesene PC-Scancodes und Controller-Eingaben. \\
 \end{referenceTable}
 
+\section{Profile für unterschiedliche Aufgaben pflegen}
+Ändern Sie Startwerte bei beendetem Emulator in einem Texteditor. So kann eine
+spätere Speicherung aus einem offenen F12-Menü keine zwischenzeitlich am
+Datenträger bearbeitete Einstellung überschreiben. Verwenden Sie für ein
+zweites Arbeitsprofil einen eigenen Dateinamen. Im Projektordner lässt sich
+dieses Profil mit \texttt{.\textbackslash bin\textbackslash sbc6502.exe c64-test.ini}
+gezielt aufrufen, sofern Sie die Datei dort angelegt haben.
+
+Für einen reproduzierbaren Fehlerbericht gehören der Name der verwendeten
+INI, die Startmethode und die betroffenen Werte zusammen. Beim Zoom ist
+\texttt{window\_scale} maßgeblich. Beim Laden sind zusätzlich der Pfad zum
+D64-Abbild und die Gerätenummer relevant. Die Einstellungen unter
+\texttt{[keyboard]} und \texttt{[joystick]} helfen, Eingabefehler mit einer
+zweiten Belegung nachzustellen.
+
 \section{Build und Diagnose}
 Für einen lokalen Windows-Build benötigt das Projekt GNU Make, GCC/MinGW und
 die SDL2-Entwicklungsdateien. Führen Sie die Befehle im Projektordner aus.
@@ -373,6 +501,49 @@ make test-c64
 Der letzte Befehl verwendet die lokalen C64-ROMs und prüft BASIC-Start,
 Tastatureingaben, D64-Verzeichnis und PRG-Start. \texttt{-h} zeigt die
 Aufrufoptionen. \texttt{-m} zeigt die Speicherbelegung und beendet das Programm.
+
+\clearpage
+\section{Programmausführung im Monitor prüfen}\label{sec:monitor}
+Starten Sie für diese Prüfung aus PowerShell im Projektordner. Die Option
+\texttt{-d} hält vor dem normalen Programmablauf an. Die Monitorbefehle
+gehören in das Terminal. Im laufenden Betrieb wechseln Sie mit
+\ui{Strg+C} im Terminal zum Monitor.
+
+\begin{commandblock}
+.\bin\sbc6502.exe c64.ini -d
+\end{commandblock}
+
+\begin{enumerate}
+  \item Geben Sie \texttt{r} ein. Beim Start mit \texttt{-d} steht
+    \texttt{PC} zunächst auf \texttt{0000}, da die CPU den Resetvektor
+    noch nicht übernommen hat.
+  \item Geben Sie \texttt{s} und danach \texttt{r} ein. Der erste Schritt
+    verarbeitet den anstehenden Reset. Jetzt zeigt \texttt{PC} den
+    ROM-Einstieg.
+  \item Geben Sie \texttt{d} gefolgt vom angezeigten Hexwert ohne
+    Dollarzeichen ein. Der Monitor disassembliert ab dieser Adresse.
+    Ein weiteres \texttt{s} führt den ersten CPU-Befehl aus.
+  \item Geben Sie \texttt{c} ein, um bis zur nächsten Unterbrechung
+    weiterzulaufen. Am C64-Bildschirm sollte anschließend der BASIC-Prompt
+    erscheinen.
+\end{enumerate}
+
+Für ein konkretes Maschinenprogramm setzt \texttt{b addr} einen Haltepunkt.
+Ersetzen Sie \texttt{addr} durch eine hexadezimale Adresse aus Ihrem Listing.
+\texttt{bl} zeigt die Haltepunkte und \texttt{bc n} löscht den Eintrag mit
+Index \texttt{n}. Ein Speicherauszug mit \texttt{m addr n} hilft, geladene
+Bytes mit dem Assemblerlisting zu vergleichen.
+
+Bei der Prüfung eines ROM-Starts können Sie zum Beispiel mit
+\texttt{m fffc 2} die beiden Bytes des Resetvektors lesen. Das erste Byte
+ist der niederwertige Teil der Adresse, das zweite der höherwertige. Lesen
+Sie diese Adresse gegen das Listing und verwenden Sie sie bei Bedarf für
+\texttt{d} oder \texttt{b}. Der Auszug zeigt den aktuell sichtbaren
+Adressraum. Das ist bei umschaltbaren ROM- und I/O-Bereichen zu beachten.
+
+\texttt{?} zeigt die Monitorhilfe. \texttt{q} beendet den Emulator aus dem
+Monitor. Kehren Sie mit \texttt{c} zur Emulation zurück, wenn Sie danach
+am BASIC-Prompt oder im gestarteten Programm weiterarbeiten möchten.
 
 \chapter{Fehlerdiagnose}\label{ch:trouble}
 
@@ -395,20 +566,184 @@ Vergleichen Sie den PRG-Namen mit \texttt{LOAD "\$",8} und \texttt{LIST}.
 Anschließend können Sie das erste PRG mit \texttt{LOAD "*",8,1} testen. \\
 \end{referenceTable}
 
-\section{Emulationsumfang}
-Der PAL-VIC-II zeichnet einzelne Rasterzeilen und unterstützt Text, Bitmap,
-Feinscrolling und acht Sprites. Der Bildausschnitt umfasst 320 × 200 aktive
-Pixel, die intern mit Faktor zwei ausgegeben werden. Taktgenaue Effekte
-innerhalb einer Zeile und die Buszugriffe für Sprite-DMA sind noch offen.
+\section{Ladefehler und Grafikfehler eingrenzen}\label{sec:disk-diagnosis}
+\begin{enumerate}
+  \item Prüfen Sie beim D64 zuerst den Fenstertitel. Fehlt der gewünschte
+    Name, kontrollieren Sie Format, Dateipfad und Gerätenummer. Beim
+    Einlegen über das geöffnete F12-Menü ist das Bild erst als Startdisk
+    vorgemerkt. Speichern Sie die Einstellung und starten Sie neu.
+  \item Prüfen Sie \texttt{LOAD "\$",8} und \texttt{LIST}. Stimmt der
+    Verzeichniseintrag, laden Sie ihn einzeln. Notieren Sie den exakten
+    Befehl, die Gerätenummer und die erste sichtbare Fehlermeldung.
+  \item Bei einem Fehler erst nach dem Start wiederholen Sie denselben
+    Ablauf mit demselben Abbild und derselben PAL-Einstellung in
+    VICE \texttt{x64sc}. Wenn der Ablauf dort erst mit Laufwerksemulation
+    funktioniert, ist eigenes IEC-Ladeverhalten ein naheliegender
+    Prüfpunkt. Ein einzelner Vergleich kann die Ursache eingrenzen.
+\end{enumerate}
 
-Das D64-Laufwerk bedient KERNAL-\texttt{LOAD} und \texttt{VERIFY}. Programme
-mit eigenem 1541-Fastloader, Diskettenschreibzugriff oder Modul- und
-Kassettenbetrieb benötigen zusätzliche Emulationsfunktionen.
+Bei falschen Farben, wiederholten Grafikmustern oder verschobenen Sprites
+halten Sie die betroffene Szene und den letzten erfolgreichen Schritt fest.
+Prüfen Sie zuerst, ob BASIC mit dem lokalen Zeichengenerator korrekt
+erscheint. Tritt der Fehler ausschließlich in einer Szene auf, vergleichen
+Sie denselben PAL-Bildabschnitt mit der Referenz. Fensterzoom verändert nur
+die Darstellung auf dem PC. Unterschiede im Bildinhalt weisen auf einen
+anderen Prüfbereich hin, etwa das Nachladen von Daten oder das VIC-II-Timing.
 
 \section{Weiterführende Projektdokumentation}
 Die Datei \path{README.md} beschreibt Bedienung und Startprofile. Den
 technischen Aufbau finden Sie in \path{docs/ARCHITECTURE.md}. Änderungen stehen
 in \path{CHANGELOG.md}. Diese Dateien beziehen sich auf den jeweiligen
 Quellstand im Projektordner.
+
+\chapter{Einsatzbereich und Emulatorvergleich}\label{ch:comparison}
+
+\section{Wofür sich der 6502 SBC Emulator eignet}
+Der praktische Vorteil liegt im gemeinsamen Arbeitsablauf für das
+projektinterne SBC-System und den PAL-C64. Sie können etwa ein eigenes
+SBC-ROM mit den projektspezifischen VIA-, Tastatur-, Grafik- und
+Klangregistern ausführen, im Monitor schrittweise prüfen und anschließend
+für die C64-Arbeit mit derselben Programmdatei ein anderes Profil starten.
+Die INI macht Startparameter und Eingabebelegung als Text nachvollziehbar.
+Das integrierte F12-Menü unterstützt den Wechsel der Belegung während
+eines C64-Tests.
+
+Der Ansatz ist besonders nützlich, wenn Sie die Auswirkungen einer
+ROM-Änderung sehen, einen Fehler in einem 6502-Programm bis zu einer
+bestimmten Adresse verfolgen oder ein BASIC-Programm auf dem PAL-C64
+ausprobieren möchten. Für die Eignung als Referenz zählt dagegen die
+konkret geprüfte Hardwarefunktion. Ein Programm, das KERNAL-Standardroutinen
+verwendet, stellt andere Anforderungen als eine Demo mit Registeränderungen
+mitten in einer Rasterzeile.
+
+\section{Andere Emulatoren im Vergleich}
+\begin{referenceTable}{P{33mm} Y Y}
+\textbf{Emulator} & \textbf{Relevante Funktionen} & \textbf{Passender Einsatz} \\
+\midrule
+6502 SBC Emulator &
+Projekt-SBC und PAL-C64, gemeinsamer Monitor, INI-Profile, virtueller
+D64-Lader und F12-Belegung. &
+Eigene SBC-ROMs, projektnahe FPGA-Softwaretests und C64-BASIC oder PRGs
+mit Standard-Ladeweg. \\
+VICE \texttt{x64sc} &
+Zyklusbasierter, pixelgenauer VIC-II, Laufwerksemulation auf Hardwareebene
+und detailliertere SID-Emulation. &
+PAL-Rastereffekte und Programme mit eigener Laufwerkskommunikation
+untersuchen. \\
+Denise &
+C64 und frühe Amiga-Modelle, mehrere Commodore-Laufwerksmodelle
+einschließlich 1541C und 1571 sowie dokumentierte Fastloader-Unterstützung. &
+Programme mit spezifischen Laufwerksvarianten oder Speichererweiterungen
+wie REU und GeoRAM prüfen. \\
+VirtualC64 &
+Mac-Anwendung mit PAL und NTSC sowie zusätzlichen Medienformaten wie
+G64, TAP und CRT. &
+C64-Software auf dem Mac starten oder Tests mit Kassetten- und Modulabbildern
+durchführen. \\
+\end{referenceTable}
+
+Die Angaben zu den Vergleichsprogrammen stammen aus deren
+Projektdokumentation. Sie beschreiben den Funktionsumfang, ohne die
+Kompatibilität eines bestimmten Spiels oder einer bestimmten Demo
+vorwegzunehmen. \hyperref[sec:comparison-sources]{Quellen zum Vergleich}
+
+\clearpage
+\section{Warum die Laufwerke sich unterschiedlich verhalten}
+\textbf{Virtueller Ladeweg im Projekt.} Der Emulator erkennt den
+KERNAL-Einsprung bei \texttt{\$FFD5} und verarbeitet die passende
+\texttt{LOAD}- oder \texttt{VERIFY}-Anfrage anhand des eingelegten D64.
+Das reicht für ein BASIC-Verzeichnis und für Standard-PRGs. Das Abbild
+bleibt schreibgeschützt. In diesem Ladeweg laufen die Daten aus den
+D64-Sektoren direkt zur emulierten Maschine.
+
+\textbf{Hardwareebene in VICE.} Die Laufwerksemulation führt die Firmware
+eines separaten Laufwerks aus und synchronisiert dessen CPU mit dem C64.
+Ein Fastloader kann eigenen Code in das Laufwerk übertragen und ein
+eigenes Protokoll auf dem seriellen IEC-Bus verwenden. Solche Zugriffe
+umgehen unter Umständen den abgefangenen KERNAL-Einsprung. Dafür müsste
+das Projekt zusätzlich die Laufwerks-CPU und deren Gerätezustand, das
+Laufwerks-ROM, das IEC-Timing und den Zugriff auf die Diskettendaten
+aufeinander abstimmen. Der vorhandene D64-Lader deckt den Standardweg
+mit wesentlich weniger zu modellierendem Hardwarezustand ab.
+
+\textbf{Schreiben und weitere Medien.} Eine Schreibfunktion benötigt einen
+eigenen Weg, der Dateien und Verzeichniseinträge anlegt und die
+Blockbelegung im Abbild konsistent aktualisiert. Ein Kassettenabbild
+benötigt ein Modell für zeitlich definierte Signalimpulse am
+Datasette-Anschluss. Steckmodule beeinflussen am Expansion-Port den
+Adressraum und können eigene Register oder umschaltbare ROM-Bänke
+mitbringen. Diese Funktionen liegen außerhalb des vorhandenen
+KERNAL-Ladepfads und brauchen jeweils getrennte Implementierungen und
+Tests. Ein zusätzliches Dateisuffix allein würde die Gerätefunktion
+deshalb nicht bereitstellen.
+
+\section{Warum Grafik, Klang und Videostandards abweichen}
+\textbf{Grafik.} Der PAL-VIC-II wertet viele Register zeilenweise aus.
+Text, Bitmap, Feinscrolling und acht Sprites stehen zur Verfügung.
+Bestimmte Rasterzeilen, sogenannte Badlines, holen Bildschirm- und
+Farbdaten. Die CPU gibt dafür Zeit an Befehlsgrenzen ab. Für präzise
+Effekte innerhalb einer Rasterzeile müsste der Emulator die Speicherzugriffe
+der CPU und des VIC-II pro Takt aufeinander abstimmen, einschließlich
+der Sprite-DMA. Hinzu kämen die Pixel außerhalb der aktiven
+\mbox{320 × 200} Bildpunkte. Das vorhandene Modell deckt zeilenbasierte
+Bildaufteilungen ab. Bei Rahmen- und anderen taktgenauen Effekten kann
+das Ergebnis abweichen.
+
+\textbf{Klang.} Drei Stimmen erzeugen Grundwellenformen und Lautstärkehüllkurven.
+Die Implementierung berechnet ihren Zustand im Audiopfad. Filter,
+Oszillatorsynchronisation und Ringmodulation fehlen. Für den Klang und
+das Verhalten verschiedener SID-Revisionen wären unter anderem getrennte
+Filtermodelle und genauere Wechselwirkungen der Oszillatoren erforderlich.
+VICE dokumentiert diese Funktionen und die detailliertere reSID-Engine.
+
+\textbf{PAL und NTSC.} Das Profil setzt PAL-Zeilen- und Bildtiming voraus.
+Eine andere \texttt{speed\_hz} verändert die Zielgeschwindigkeit des
+Emulators. Für NTSC wären zusätzlich passende Zeilenzahl, Rastertakte
+und Unterbrechungszeitpunkte sowie Tests mit NTSC-Software erforderlich.
+
+\clearpage
+\section{Gespeicherte Einstellungen und Maschinenzustand}
+Eine gespeicherte INI enthält Startparameter und Eingabebelegungen.
+Denise bietet zusätzlich Savestates, mit denen sich ein laufender
+Maschinenzustand wiederherstellen lässt. Dafür müsste das Projekt neben
+CPU und RAM auch die laufenden Timer, Interrupts, Zwischenzustände der
+Darstellung und den Zustand der Datenträger erfassen und konsistent
+wiederherstellen. Ein gespeichertes F12-Profil stellt den nächsten Start
+mit derselben Konfiguration bereit.
+
+\section{Was die aktuellen Tests belegen}
+Die technischen Gründe in diesem Kapitel ergeben sich aus dem
+beschriebenen Quellstand. Sie beschreiben den Umfang der vorhandenen
+Modelle und die Arbeit, die für die jeweils fehlende Funktion nötig
+wäre. Das Projekt dokumentiert die Änderungen im \path{CHANGELOG.md}.
+
+Die automatisierten C64-Tests prüfen ausgewählte Eigenschaften von
+Speicherabbildung, Eingaben, Rasterdarstellung und D64-Ladevorgang.
+Der zusätzliche ROM-basierte Starttest prüft einen durchgehenden Ablauf
+vom Start über BASIC bis zum Laden und Ausführen eines Testprogramms.
+Für ein konkretes Spiel oder eine Demo sind darüber hinaus die
+verwendeten Grafik-, Audio- und Ladefunktionen entscheidend. Ein
+Kompatibilitätsbericht ist am aussagekräftigsten, wenn er das Abbild, den
+Ladebefehl, den letzten erfolgreichen Schritt und die Vergleichseinstellung
+des Referenzemulators nennt.
+
+\section{Quellen zum Vergleich}\label{sec:comparison-sources}
+\begin{itemize}
+  \item Projektquellen zu PAL-Timing, Gerätemodell und Diskettenzugriff.
+    \href{https://github.com/rudolfstepan/6502-sbc-emulator/blob/d86f6b0/docs/ARCHITECTURE.md#c64-profile}{Architektur des C64-Profils}
+    und
+    \href{https://github.com/rudolfstepan/6502-sbc-emulator/tree/d86f6b0/src}{Emulatorquellcode}.
+  \item VICE-Dokumentation zu \texttt{x64sc}, reSID und
+    Laufwerksemulation.
+    \href{https://vice-emu.sourceforge.io/vice_1.html}{VICE Manual, About VICE}
+    und
+    \href{https://vice-emu.sourceforge.io/vice_6.html}{VICE Manual, Settings and resources}.
+  \item Denise-Projektbeschreibung und Versionshistorie zu
+    Laufwerken, Fastloadern und Erweiterungen.
+    \href{https://github.com/piciji/denise}{Denise, Projekt-README}.
+  \item VirtualC64-Projektdokumentation zu Videostandards und
+    Medienformaten.
+    \href{https://dirkwhoffmann.github.io/VirtualC64/index.html}{VirtualC64, Produktseite}.
+\end{itemize}
 
 \end{document}
