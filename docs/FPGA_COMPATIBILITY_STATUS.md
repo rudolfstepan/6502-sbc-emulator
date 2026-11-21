@@ -14,8 +14,10 @@ to the FPGA.
 
 ## Memory Map And Devices
 
-- The default map now matches the FPGA-oriented split-ROM layout:
-  `$A000-$CFFF` for BASIC/application ROM and `$F000-$FFFF` for kernel/vectors.
+- `fpga.ini` selects the 65C02 and the FPGA split-ROM layout. `sbc.ini`
+  boots the SBC kernel at `$C000` with MS BASIC at `$D000-$FFFF`.
+- Configured ROM windows take precedence over the FPGA compatibility devices
+  at `$D000`, `$D400`, and `$DC00`.
 - The FPGA D64 GoDrive / SD-card loader is exposed at `$8824-$882F`, matching
   the FPGA kernel and BASIC LOAD routines. `LOAD "!"` invokes the ROM's D64
   mount menu.
@@ -30,15 +32,63 @@ device at the old base address can make otherwise correct software fail.
 
 ## ROM And PRG Loading
 
-- ROM config entries can load a segment from a larger file via `offset`.
-- `fpga.ini` loads one 16 KB FPGA shadow ROM into the two CPU-visible windows.
-- Drag and drop now accepts `.prg`, `.rom`, and `.bin` files.
-- Test/automation options were added:
-  `--load`, `--load-data`, `--screenshot`, and `--screenshot-frames`.
+The **same 16,384-byte split ROM** can be loaded into the emulator or sent to
+the Tang Primer 20K monitor. For both, use the binary built for the FPGA's
+split address map as-is.
 
-Why: the FPGA workflow produces both split ROM images and PRG/data artifacts.
-The emulator needs to load them the same way a developer thinks about using
-VICE-style drop loading or the FPGA monitor upload flow.
+| File bytes | CPU addresses | Usual contents |
+| --- | --- | --- |
+| `$0000-$2FFF` | `$A000-$CFFF` | Application or BASIC |
+| `$3000-$3FFF` | `$F000-$FFFF` | CPU vectors and optional kernel code |
+
+With the two repositories side by side, run from the emulator checkout after
+`make`:
+
+```powershell
+cd bin
+$rom = '..\..\6502-sbc-fpga\roms\6502\mandelbrot_copro.bin'
+.\sbc6502.exe fpga.ini --load $rom
+```
+
+The loader reports two ROM windows and resets the CPU. The reset vector at
+`$FFFC/$FFFD` points to `$A000` in this demo. Dragging the same `.rom` or
+`.bin` into the running FPGA profile also starts it. Relative paths in
+`fpga.ini` resolve from the working directory. When available in the sibling
+checkout, the build stages a copy at `bin/roms/mandelbrot_copro.bin`.
+
+From the FPGA checkout, the matching serial-monitor command is the following.
+Use the port for your adapter in place of `COM15`.
+
+```powershell
+$rom = 'roms\6502\mandelbrot_copro.bin'
+python tools/upload_monitor_hex.py $rom --split-rom --port COM15 --run
+```
+
+The uploader sends both windows and starts at `$A000`. For other images,
+use the appropriate entry address on the hardware. Split ROMs, SD-card
+`.img` files, and PRGs are different formats. The emulator starts a
+`.prg` passed to `--load` at its two-byte header address. Use
+`--load-data` to load PRG bytes without changing the CPU entry point.
+
+## Fixed-Point Math Coprocessor
+
+The SBC math coprocessor multiplies two signed 32-bit operands and exposes
+the 64-bit raw product and the lower 32 bits of the arithmetically shifted
+product. Register bytes are little-endian.
+
+| Address | Write | Read |
+| --- | --- | --- |
+| `$88B0-$88B3` | Operand A | Raw product bytes 0–3 |
+| `$88B4-$88B7` | Operand B | Raw product bytes 4–7 |
+| `$88B8-$88BB` | Ignored | Scaled result bytes 0–3 |
+| `$88BC` | Shift, bits 0–5 | Shift, 0–63 |
+| `$88BD-$88BF` | Ignored | Zero |
+
+After reset, both operands are zero and the shift defaults to 24 for 8.24
+fixed-point arithmetic. The original `mandelbrot_copro.bin` uses the scaled
+result directly. The emulator register tests cover signed products, shift
+changes, and reset. A full run of the unmodified ROM reached row 200 in the
+emulator. The FPGA's REIST modulo benchmark uses its own core.
 
 ## Timing
 
@@ -58,6 +108,9 @@ example, program CIA Timer A for about 50 Hz using a 1 MHz timer period.
 
 - The SDL renderer supports FPGA bitmap modes in addition to legacy text/bitmap
   rendering.
+- In the 320×200 RGB332 mode, bit 4 of `$9000` selects the mode and bits 7–5
+  select one of eight 8 KiB banks. The bank changes preserve the display mode
+  and the next scanlines continue in the next bank.
 - The screenshot test harness runs selected FPGA ROMs/PRGs through `fpga.ini`,
   captures BMP output, and writes `docs/software-test.md`.
 - Mandelbrot cases use a separate long wait value via `--mandelbrot-frames`

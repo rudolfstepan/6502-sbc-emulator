@@ -27,7 +27,7 @@
 \newcommand{\ProductName}{6502 SBC Emulator}
 \newcommand{\ManualTitle}{Bedienung und Konfiguration}
 \newcommand{\ManualDate}{21. November 2026}
-\newcommand{\SourceRevision}{d86f6b0}
+\newcommand{\SourceRevision}{f8bffa5}
 \newcommand{\ui}[1]{\textbf{#1}}
 \newcommand{\metaSize}{\fontsize{8bp}{10bp}\selectfont}
 \newcommand{\tableSize}{\fontsize{9bp}{11bp}\selectfont}
@@ -126,7 +126,7 @@
   \begin{minipage}[t]{.5\linewidth}
     \raggedleft\captionSize\color{Muted}
     Lokaler Windows-Build\par
-    Beschriebener Quellstand \texttt{\SourceRevision}\par
+    \texttt{\SourceRevision} mit lokalen Änderungen\par
     Dokumentationsstand \ManualDate
   \end{minipage}
 \end{titlepage}
@@ -157,9 +157,13 @@ dem 6502 nutzen lässt.
 \bigskip
 \textbf{Schneller Einstieg.} Starten Sie den C64 wie in Kapitel~\ref{ch:start}
 beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Kapitel~\ref{ch:menu}
-beschreibt das F12-Menü. Mit Kapitel~\ref{ch:disk} legen Sie eine virtuelle Diskette ein.
+beschreibt das F12-Menü. Abschnitt~\ref{sec:fpga-roms} zeigt, wie Sie dieselbe
+ROM-Datei im Emulator und auf dem FPGA verwenden.
 
+\begingroup
+\linespread{1.0}\selectfont
 \tableofcontents
+\endgroup
 
 \mainmatter
 \part{Einstieg und Bedienung}
@@ -168,8 +172,8 @@ beschreibt das F12-Menü. Mit Kapitel~\ref{ch:disk} legen Sie eine virtuelle Dis
 \section{Windows-Build und Profil}
 Der Emulator bietet ein SBC-Profil mit eigenen ROMs und ein PAL-C64-Profil mit
 separaten C64-ROMs. Beim Start bestimmt die gewählte INI-Datei die Maschine und
-ihre Einstellungen. Dieses Handbuch beschreibt den Programmstand
-\texttt{\SourceRevision}. Die Abbildungen stammen aus der Programmoberfläche.
+ihre Einstellungen. Dieses Handbuch beschreibt den lokalen Programmstand auf
+Basis von \texttt{\SourceRevision}. Die Abbildungen stammen aus dem Emulator.
 
 Wählen Sie das SBC-Profil, wenn Sie den Projekt-Kernel, die zugehörigen ROMs
 oder Software für die Speicher- und Gerätebelegung des Projekts ausführen.
@@ -415,41 +419,91 @@ gehört zum C64-Profil. Das FPGA-Profil enthält einen eigenen GoDrive-Ablauf f�
 Disks unter \path{data/sdcard/}.
 
 \clearpage
-\section{ROM-Änderungen im SBC prüfen}
-Starten Sie zunächst ein bekanntes Projektprofil, um Bild, Tastatur und
-Konsole zu prüfen. Wählen Sie anschließend die INI für das betreffende
-Zielsystem. Der Emulator dient hier zum Prüfen von Programmablauf,
-Speicherbelegung und Gerätezugriffen vor dem Test auf der Hardware.
+\section{Original-FPGA-ROMs direkt starten}\label{sec:fpga-roms}
+Für den 6502 SBC auf dem Tang Primer 20K verwenden Sie im Emulator dieselbe
+16-KiB-Datei wie auf der Platine. Das Profil \path{fpga.ini} bildet die
+beiden ROM-Fenster des FPGA nach. Sie können das vorhandene, für dieses
+Layout gebaute Abbild bytegleich laden und auf beiden Systemen prüfen.
 
 \begin{enumerate}
-  \item Für einen Test mit dem FPGA-Profil muss das im Profil referenzierte
-    ROM vorliegen. Die mitgelieferte \path{fpga.ini} erwartet
-    \path{roms/fpga_ehbasic_16kb.rom}. Prüfen Sie Dateipfad und die beiden
-    \texttt{[rom]}-Abschnitte, wenn Sie ein anderes Abbild verwenden.
-  \item Starten Sie mit der zugehörigen INI und prüfen Sie die erste sichtbare
-    Ausgabe. Beim FPGA-Shadow-ROM bildet die INI die ersten 12 KiB auf
-    \texttt{\$A000--\$CFFF} und die letzten 4 KiB auf
-    \texttt{\$F000--\$FFFF} ab. Im oberen Bereich liegen der Kernel
-    und die Vektoren.
-  \item Falls die Ausgabe ausbleibt, starten Sie mit \texttt{-d}.
-    Vergleichen Sie den Programmzähler und die Bytes am erwarteten
-    Einstieg mit dem Assemblerlisting. Abschnitt~\ref{sec:monitor}
-    erklärt Registeranzeige, Speicherauszug und Haltepunkte.
+  \item Legen Sie die Projektordner \path{6502-sbc-emulator} und
+    \path{6502-sbc-fpga} nebeneinander ab. Führen Sie im Emulator-Projekt
+    \texttt{make} aus. Der Build legt unter \path{bin/} das Programm,
+    \path{fpga.ini} und vorhandene FPGA-Startdateien ab.
+  \item Wechseln Sie in \path{bin/} und übergeben Sie das Original-ROM mit
+    \texttt{--load}. Das Beispiel liest die Datei direkt aus dem FPGA-Projekt.
 \end{enumerate}
 
-\textbf{Datenträger im FPGA-Profil.} Die GoDrive-Befehle gehören zur
-dortigen BASIC- und Kernel-Konfiguration. \texttt{LOAD "!"} öffnet das
-Auswahlmenü für D64-Abbilder. Nach dem Einlegen gibt \texttt{LOAD "\$"}
-das Verzeichnis aus. \texttt{LOAD "NAME"} lädt einen Eintrag. Für ein
-Maschinenprogramm verwenden Sie anschließend den vom ROM angegebenen
-\texttt{CALL}-Einstieg. Die C64-Gerätenummer aus Kapitel~\ref{ch:disk}
-ist für diesen Ablauf ohne Bedeutung.
+\begin{commandblock}
+cd bin
+$rom = '..\..\6502-sbc-fpga\roms\6502\mandelbrot_copro.bin'
+.\sbc6502.exe fpga.ini --load $rom
+\end{commandblock}
 
-\textbf{Erwartetes Ergebnis.} Das Zielprofil startet mit der erwarteten
-Ausgabe und der Monitor zeigt die Bytes an den Adressen aus dem Listing.
-Damit lässt sich die Softwareprüfung eingrenzen. Eigenschaften der
-physischen Platine, etwa HDMI-Ausgabe und externe Signale, prüfen Sie
-anschließend auf der Hardware.
+\textbf{Erwartetes Ergebnis.} Die Konsole meldet
+\texttt{loaded ROM} und \texttt{into 2 window(s)}. Die CPU übernimmt den
+Resetvektor bei \texttt{\$FFFC/\$FFFD}. Mandelbrot startet bei
+\texttt{\$A000} und zeichnet das Bild zeilenweise.
+
+\begin{referenceTable}{P{35mm} P{35mm} Y}
+\textbf{Dateioffset} & \textbf{CPU-Adressbereich} & \textbf{Inhalt} \\
+\midrule
+\texttt{\$0000--\$2FFF} & \texttt{\$A000--\$CFFF} & Anwendung oder BASIC \\
+\texttt{\$3000--\$3FFF} & \texttt{\$F000--\$FFFF} & Oberes Fenster mit den CPU-Vektoren und gegebenenfalls Kernelcode \\
+\end{referenceTable}
+
+Alternativ ziehen Sie das originale \path{.rom}- oder \path{.bin}-Abbild in
+ein mit \path{fpga.ini} gestartetes SBC-Fenster. Das Profil bestimmt die
+Abbildung. Ein Split-ROM hat 16\,384 Byte und führt die beiden Bereiche
+direkt hintereinander. Ein SD-Kartenabbild \path{.img} oder ein PRG mit
+zweibyteiger Ladeadresse verwendet ein anderes Dateiformat.
+Für die Mandelbrot-Version mit Software-Multiplikation verwenden Sie die
+Datei \path{mandelbrot_bitmap.rom} aus demselben FPGA-Verzeichnis.
+
+\textbf{Bei fehlender Ausgabe.} Prüfen Sie das Arbeitsverzeichnis, den
+Dateipfad und die beiden \texttt{[rom]}-Einträge. Mit \texttt{-d} und dem
+Monitorbefehl \texttt{m fffc 2} lesen Sie den Resetvektor aus. Für die Demo
+lautet er \texttt{00 A0}. Abschnitt~\ref{sec:monitor} erklärt die nächsten
+Prüfschritte mit dem Assemblerlisting.
+
+\subsection{Datenträger im FPGA-Profil}
+Die GoDrive-Befehle gehören zur dortigen BASIC- und Kernel-Konfiguration.
+\texttt{LOAD "!"} öffnet das Auswahlmenü für D64-Abbilder.
+\texttt{LOAD "\$"} gibt das Verzeichnis aus und \texttt{LOAD "NAME"} lädt
+einen Eintrag. Für ein Maschinenprogramm verwenden Sie anschließend den
+vom ROM angegebenen \texttt{CALL}-Einstieg.
+
+\clearpage
+\section{Mandelbrot auf PC und FPGA}\label{sec:fpga-mandelbrot}
+\path{mandelbrot_copro.bin} verwendet auf beiden Systemen dieselben
+Festkommaregister bei \texttt{\$88B0--\$88BF}
+(Abschnitt~\ref{sec:math-copro}). Der SBC-VIC zeigt 320\,×\,200 Pixel im
+RGB332-Modus. Die Demo wechselt beim Zeichnen zwischen acht Bildspeicherbänken.
+
+\shot{100mm}{sbc-mandelbrot-copro}{Vollständig gezeichnetes Mandelbrot-Bild
+  im Emulator mit dem FPGA-Original-ROM \texttt{mandelbrot\_copro.bin}.}
+
+Wenn \texttt{make} die ROM-Datei aus dem benachbarten FPGA-Projekt
+bereitgestellt hat, können Sie sie aus \path{bin/} auch so laden.
+
+\begin{commandblock}
+.\sbc6502.exe fpga.ini --load roms\mandelbrot_copro.bin
+\end{commandblock}
+
+Für den Test auf der Platine wechseln Sie in das FPGA-Projekt. Verbinden Sie
+den seriellen Monitor des Tang Primer 20K, verwenden Sie den COM-Port Ihres
+Adapters und laden Sie dieselbe Datei. \texttt{--split-rom} verteilt die
+Bytes auf beide FPGA-Fenster. \texttt{--run} startet diese Demo bei
+\texttt{\$A000}. \texttt{COM15} ist hier ein Beispiel.
+
+\begin{commandblock}
+$rom = 'roms\6502\mandelbrot_copro.bin'
+python tools/upload_monitor_hex.py $rom --split-rom --port COM15 --run
+\end{commandblock}
+
+Der Emulator-Test hat alle 200 Zeilen mit dem unveränderten ROM gezeichnet.
+Auf der Platine prüfen Sie anschließend das HDMI-Bild und bei Bedarf die
+Ansteuerung des seriellen Monitors.
 
 \part{Konfiguration, Diagnose und Referenz}
 \chapter{Softwarearchitektur}\label{ch:architecture}
@@ -522,6 +576,38 @@ Die Hauptschleife gibt die verstrichenen CPU-Takte an die Geräte weiter
 und wertet deren Interruptsignale aus. SDL2 übernimmt am PC die
 Fenster- und Audioausgabe und liefert Eingabeereignisse. Die Zuordnung
 zu SBC- oder C64-Eingaben geschieht im jeweiligen Profil.
+
+\clearpage
+\section{Festkomma-Koprozessor des SBC}\label{sec:math-copro}
+Der Koprozessor ist im SBC-Adressraum bei \texttt{\$88B0--\$88BF} verfügbar.
+Er multipliziert zwei vorzeichenbehaftete 32-Bit-Operanden zu einem
+64-Bit-Produkt. Zusätzlich liefert er die unteren 32 Bit des arithmetisch
+nach rechts geschobenen Produkts. Damit kann das 6502-Programm direkt im
+gewünschten Festkommaformat weiterrechnen.
+
+\begin{referenceTable}{P{34mm} Y Y}
+\textbf{Adresse} & \textbf{Schreiben} & \textbf{Lesen} \\
+\midrule
+\texttt{\$88B0--\$88B3} & Operand A & Rohprodukt, Bytes 0 bis 3 \\
+\texttt{\$88B4--\$88B7} & Operand B & Rohprodukt, Bytes 4 bis 7 \\
+\texttt{\$88B8--\$88BB} & Ohne Wirkung & Skaliertes Ergebnis, Bytes 0 bis 3 \\
+\texttt{\$88BC} & Schiebewert, Bits 0 bis 5 & Schiebewert (0 bis 63) \\
+\texttt{\$88BD--\$88BF} & Ohne Wirkung & \texttt{00} \\
+\end{referenceTable}
+
+Schreiben Sie Operanden und lesen Sie Ergebnisse jeweils mit dem
+niederwertigsten Byte zuerst. Nach Reset sind die Operanden null und der
+Schiebewert ist 24. Für das Format 8.24 ergeben beispielsweise
+\texttt{\$02000000} und \texttt{\$03000000} das skalierte Ergebnis
+\texttt{\$06000000}, also 2,0 × 3,0 = 6,0.
+Für 4.12 schreiben Sie einen Schiebewert von 12.
+
+Das Mandelbrot-ROM aus Abschnitt~\ref{sec:fpga-mandelbrot} verwendet diesen
+Multiplikator für die Quadrate und das gemischte Produkt seiner
+8.24-Iteration. Auf der Platine führt die FPGA-DSP-Logik die Multiplikation
+aus. Der Emulator berechnet die beim Registerzugriff sichtbaren Werte im
+gleichen Zahlenformat. Der REIST-Modulo-Kern wird im FPGA-Projekt für
+einen separaten Benchmark verwendet.
 
 \chapter{Konfigurationsreferenz}\label{ch:ref}
 
@@ -674,11 +760,11 @@ Quellstand im Projektordner.
 \chapter{Einsatzbereich und Emulatorvergleich}\label{ch:comparison}
 
 \section{Wofür sich der 6502 SBC Emulator eignet}
-Der praktische Vorteil liegt im gemeinsamen Arbeitsablauf für das
-projektinterne SBC-System und den PAL-C64. Sie können etwa ein eigenes
-SBC-ROM mit den projektspezifischen VIA-, Tastatur-, Grafik- und
-Klangregistern ausführen, im Monitor schrittweise prüfen und anschließend
-für die C64-Arbeit mit derselben Programmdatei ein anderes Profil starten.
+Ein für das FPGA-Split-Layout gebautes SBC-ROM lässt sich mit denselben
+Bytes am PC und auf der Platine ausführen. Sie können zuerst
+Gerätezugriffe auf VIA, Tastatur, Grafik, Klang oder Festkomma-Koprozessor
+im Monitor prüfen und anschließend dasselbe Abbild auf den FPGA laden.
+Für Commodore-Software steht zusätzlich das PAL-C64-Profil zur Verfügung.
 Die INI macht Startparameter und Eingabebelegung als Text nachvollziehbar.
 Das integrierte F12-Menü unterstützt den Wechsel der Belegung während
 eines C64-Tests.

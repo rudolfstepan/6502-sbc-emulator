@@ -424,8 +424,8 @@ void vic_sdl_render(void) {
         }
         }
     } else {
-        uint8_t mode = vic_get_mode_raw();
-        if (mode & 0x40) {
+        VicFramebufferMode mode = vic_get_framebuffer_mode();
+        if (mode == VIC_FRAMEBUFFER_320_RGB565) {
             /* Tang FPGA: 320x200 RGB565, centred vertically in the 640x400 window. */
             uint32_t display_base = vic_get_display_bitmap_base();
             for (int y = 0; y < 200; y++) {
@@ -441,7 +441,7 @@ void vic_sdl_render(void) {
                     framebuffer[(fy0 + 1) * WINDOW_WIDTH + fx0 + 1] = c;
                 }
             }
-        } else if (mode & 0x20) {
+        } else if (mode == VIC_FRAMEBUFFER_640_RGB332) {
             /* Tang FPGA: 640x400 RGB332, 1 byte per pixel. */
             uint32_t display_base = vic_get_display_bitmap_base();
             for (int y = 0; y < 400; y++) {
@@ -450,7 +450,7 @@ void vic_sdl_render(void) {
                         rgb332_to_argb(vic_read_bitmap_ram(display_base + (uint32_t)y * 640u + (uint32_t)x));
                 }
             }
-        } else if (mode & 0x10) {
+        } else if (mode == VIC_FRAMEBUFFER_320_RGB332) {
             /* Tang FPGA: 320x200 RGB332, scaled 2x to the emulator window. */
             uint32_t display_base = vic_get_display_bitmap_base();
             for (int y = 0; y < 200; y++) {

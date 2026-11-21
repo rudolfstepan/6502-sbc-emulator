@@ -35,6 +35,17 @@ RUN
 
 Press any key to return to text mode when finished.
 
+### mandelbrot_copro.bin — FPGA Math Coprocessor Demo
+
+This 320×200 RGB332 demo uses the FPGA-compatible signed 32-bit fixed-point
+multiplier at `$88B0–$88BF`. The build stages the split ROM under `bin/roms/`
+when the sibling `6502-sbc-fpga` checkout contains it.
+
+```powershell
+cd bin
+.\sbc6502.exe fpga.ini --load roms\mandelbrot_copro.bin
+```
+
 ### colortest.bas — Color Palette Test
 
 Demonstrates all 16 C64 colors in text mode:

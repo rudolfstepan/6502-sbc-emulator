@@ -117,9 +117,12 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-.PHONY: test-config test-c64
+.PHONY: test-config test-c64 test-sbc-boot
 
-check: all test-config test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02
+check: all test-config test-sbc-boot test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02
+
+test-sbc-boot: $(TARGET)
+	python3 tests/test_sbc_boot.py $(TARGET)
 
 test-c64: $(OBJDIR)
 	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_c64.c src/bus.c src/c64.c src/c64_vic.c src/cia6526.c \

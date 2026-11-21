@@ -34,6 +34,23 @@ static void assert_peek_poke(Bus *bus, uint16_t addr, uint8_t value)
     assert(got == value);
 }
 
+static void assert_product(Bus *bus, uint32_t a, uint32_t b, uint8_t shift,
+                           uint64_t raw, uint32_t scaled)
+{
+    poke(bus, 0x88BC, shift);
+    for (int i = 0; i < 4; i++) {
+        poke(bus, 0x88B0 + i, (uint8_t)(a >> (i * 8)));
+        poke(bus, 0x88B4 + i, (uint8_t)(b >> (i * 8)));
+    }
+    for (int i = 0; i < 8; i++) {
+        assert(peek(bus, 0x88B0 + i) == (uint8_t)(raw >> (i * 8)));
+    }
+    for (int i = 0; i < 4; i++) {
+        assert(peek(bus, 0x88B8 + i) == (uint8_t)(scaled >> (i * 8)));
+    }
+    assert(peek(bus, 0x88BC) == (shift & 0x3F));
+}
+
 int main(void)
 {
     Bus bus;
@@ -144,33 +161,52 @@ int main(void)
     assert(((peek(&bus, 0x8400 + 456) >> 4) & 0x0F) == 0x07);
 
     /* VIC bitmap RAM: $6000-$7FFF is a banked window and wins over SRAM. */
-    poke(&bus, 0x9000, 0x10);
-    poke(&bus, 0x6000, 0xAA);
-    assert(peek(&bus, 0x6000) == 0xAA);
-    poke(&bus, 0x9000, 0x30);
-    poke(&bus, 0x6000, 0x55);
-    assert(peek(&bus, 0x6000) == 0x55);
-    poke(&bus, 0x9000, 0x10);
-    assert(peek(&bus, 0x6000) == 0xAA);
+    for (uint8_t bank = 0; bank < 8; bank++) {
+        poke(&bus, 0x9000, (uint8_t)(0x10 | (bank << 5)));
+        assert(vic_get_framebuffer_mode() == VIC_FRAMEBUFFER_320_RGB332);
+        poke(&bus, 0x6000, (uint8_t)(0xA0 + bank));
+    }
+    for (uint8_t bank = 0; bank < 8; bank++) {
+        poke(&bus, 0x9000, (uint8_t)(0x10 | (bank << 5)));
+        assert(peek(&bus, 0x6000) == 0xA0 + bank);
+        assert(vic_read_bitmap_ram((uint32_t)bank * 0x2000) == 0xA0 + bank);
+    }
+
+    /* Extended modes use $9006, including the high bit for the second page. */
     poke(&bus, 0x9000, 0x20);
+    assert(vic_get_framebuffer_mode() == VIC_FRAMEBUFFER_640_RGB332);
     poke(&bus, 0x9006, 0x23);
     assert(peek(&bus, 0x9006) == 0x23);
     poke(&bus, 0x6000, 0x99);
     poke(&bus, 0x9006, 0x03);
-    assert(peek(&bus, 0x6000) == 0x55);
+    assert(peek(&bus, 0x6000) == 0xA3);
+    poke(&bus, 0x9000, 0x60);
+    assert(vic_get_framebuffer_mode() == VIC_FRAMEBUFFER_640_RGB332);
+    assert(peek(&bus, 0x6000) == 0xA3);
+    poke(&bus, 0x9000, 0x40);
+    assert(vic_get_framebuffer_mode() == VIC_FRAMEBUFFER_320_RGB565);
+    assert(peek(&bus, 0x6000) == 0xA3);
     poke(&bus, 0x9006, 0x23);
     assert(peek(&bus, 0x6000) == 0x99);
 
-    /* Math coprocessor: 2.0 * 3.0 in 8.24 -> 6.0 */
-    poke(&bus, 0x88BC, 24);
-    poke(&bus, 0x88B0, 0x00); poke(&bus, 0x88B1, 0x00);
-    poke(&bus, 0x88B2, 0x00); poke(&bus, 0x88B3, 0x02);
-    poke(&bus, 0x88B4, 0x00); poke(&bus, 0x88B5, 0x00);
-    poke(&bus, 0x88B6, 0x00); poke(&bus, 0x88B7, 0x03);
-    assert(peek(&bus, 0x88B8) == 0x00);
-    assert(peek(&bus, 0x88B9) == 0x00);
-    assert(peek(&bus, 0x88BA) == 0x00);
-    assert(peek(&bus, 0x88BB) == 0x06);
+    /* FPGA math coprocessor: raw product and arithmetic result scaling. */
+    assert(peek(&bus, 0x88BC) == 24);
+    assert_product(&bus, 0x02000000, 0x03000000, 24,
+                   UINT64_C(0x0006000000000000), 0x06000000);
+    assert_product(&bus, 0xFF800000, 0x01800000, 24,
+                   UINT64_C(0xFFFF400000000000), 0xFF400000);
+    assert_product(&bus, 0x00001000, 0x00001000, 12,
+                   UINT64_C(0x0000000001000000), 0x00001000);
+    assert_product(&bus, 0x80000000, 0x80000000, 0,
+                   UINT64_C(0x4000000000000000), 0);
+    assert_product(&bus, 0xFFFFFFFD, 1, 1, UINT64_C(0xFFFFFFFFFFFFFFFD), 0xFFFFFFFE);
+    poke(&bus, 0x88BC, 0xFF);
+    assert(peek(&bus, 0x88BC) == 63);
+    assert(peek(&bus, 0x88B8) == 0xFF);
+    assert(peek(&bus, 0x88BB) == 0xFF);
+    math_copro_init(&math);
+    assert(peek(&bus, 0x88B8) == 0);
+    assert(peek(&bus, 0x88BC) == 24);
 
     assert_peek_poke(&bus, 0xD020, 0x05);
     assert_peek_poke(&bus, 0xD021, 0x06);

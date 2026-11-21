@@ -64,12 +64,12 @@ static void read_c64_input(Config *cfg, const char *section, const char *key, co
 void config_defaults(Config *cfg)
 {
     if (!cfg->c64 && cfg->num_devs == 0) {
-        /* Tang Primer 20K FPGA-compatible split-ROM map. */
+        /* SBC ROM layout, matching sbc.ini. */
         cfg->devs[0] = (DevConfig){ .type=DEV_SRAM, .base=0x0000, .size=0x8000 };
-        cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xA000, .size=0x3000,
-                                    .rom_file="roms/ehbasic.rom" };
-        cfg->devs[2] = (DevConfig){ .type=DEV_ROM,  .base=0xF000, .size=0x1000,
+        cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xC000, .size=0x1000,
                                     .rom_file="roms/kernel.rom" };
+        cfg->devs[2] = (DevConfig){ .type=DEV_ROM,  .base=0xD000, .size=0x3000,
+                                    .rom_file="roms/msbasic.rom" };
         cfg->devs[3] = (DevConfig){ .type=DEV_VIA,  .base=0x8800 };
         cfg->devs[4] = (DevConfig){ .type=DEV_UART, .base=0x8810,
                                     .uart_mode="stdio" };

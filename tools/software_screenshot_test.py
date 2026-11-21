@@ -18,6 +18,7 @@ DEFAULT_CASES = [
     {"name": "fb16-test", "files": ["fb16_test.rom"]},
     {"name": "ich-image", "files": ["ich_image.rom"]},
     {"name": "mandelbrot-bitmap", "files": ["mandelbrot_bitmap.rom"], "long": True},
+    {"name": "mandelbrot-copro", "files": ["mandelbrot_copro.bin"], "long": True},
     {"name": "mandelbrot-hires", "files": ["mandelbrot_hires.bin"], "long": True},
     {"name": "mandelbrot-true", "files": ["mandelbrot_true.bin"], "long": True},
     {"name": "cia-test", "files": ["cia_test.rom"]},

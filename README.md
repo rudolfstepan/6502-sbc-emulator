@@ -13,6 +13,8 @@ demo. The [C64 profile](docs/C64.md) uses locally supplied Commodore ROMs.
 - MOS 6502 CPU core (all 151 official opcodes)
 - Integrated Klaus Dormann 6502 functional CPU test in the default test pipeline
 - Memory-mapped VIA 6522, UART 6551, DISK MVP, VIC text/bitmap/sprite display with blitter and interrupt system
+- **FPGA ROM compatibility** for the SBC split-ROM layout, including the
+  fixed-point math coprocessor and the accelerated Mandelbrot demo
 - **4-voice sound chip** with ADSR envelopes and per-voice waveform selection (sine, square, sawtooth, triangle, noise)
 - SDL2 display and audio backend
 - **C64 mode** with PAL VIC-II raster graphics and sprites, SID audio, read-only
@@ -24,21 +26,16 @@ demo. The [C64 profile](docs/C64.md) uses locally supplied Commodore ROMs.
 
 ## Quick Start
 
-Clone with the FPGA submodule (the `fpga/` tree lives in its own repository,
-[rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga)):
+Clone the emulator. For FPGA ROM development, check out the FPGA project next
+to it so the build can find the original ROMs:
 
 ```sh
-git clone --recurse-submodules https://github.com/rudolfstepan/6502-sbc-emulator.git
+git clone https://github.com/rudolfstepan/6502-sbc-emulator.git
+git clone https://github.com/rudolfstepan/6502-sbc-fpga.git
+cd 6502-sbc-emulator
 ```
 
-If you already cloned without `--recurse-submodules`, fetch it afterwards:
-
-```sh
-git submodule update --init
-```
-
-The emulator itself builds without the submodule; you only need it for the FPGA
-RTL, simulation, and board flows.
+The FPGA checkout is optional for the standard SBC and C64 emulator build.
 
 Build:
 
@@ -75,6 +72,26 @@ Run the 4-voice sound demo (~60 second looping ambient/arp song):
 cd bin
 ./sbc6502 soundtest.ini
 ```
+
+### Run the same ROM on the emulator and FPGA
+
+Use `fpga.ini` to run an original Tang Primer 20K SBC ROM built for the
+16 KiB split layout. The emulator reads the FPGA binary directly, maps both
+ROM windows, and starts from its reset vector.
+
+For example, with `6502-sbc-fpga` and `6502-sbc-emulator` checked out next
+to each other, run the accelerated Mandelbrot demo from the emulator folder:
+
+```powershell
+cd bin
+$rom = '..\..\6502-sbc-fpga\roms\6502\mandelbrot_copro.bin'
+.\sbc6502.exe fpga.ini --load $rom
+```
+
+The demo uses the SBC's signed fixed-point coprocessor at `$88B0-$88BF`
+and draws a 320×200 RGB332 image. Use the same `mandelbrot_copro.bin` with
+the FPGA monitor uploader. The split layout, upload command, and register
+map are documented in [FPGA compatibility](docs/FPGA_COMPATIBILITY_STATUS.md#rom-and-prg-loading).
 
 ### Commodore 64 (PAL)
 
@@ -184,6 +201,7 @@ $8850-$888F   VIC sprite registers (fixed)
 $8890-$8899   SOUND Voice 1 (fixed)
 $889A-$88A3   SOUND Voice 2 (fixed)
 $88A4-$88AD   SOUND Voice 3 (fixed)
+$88B0-$88BF   FPGA signed fixed-point math coprocessor (fixed)
 $8900-$89FF   VIC sprite pixel data (fixed)
 $9000-$900F   VIC control registers + interrupt system (fixed)
 $9010-$AF4F   VIC bitmap RAM (fixed)
@@ -194,6 +212,7 @@ Notes:
 
 - `sbc.ini` uses two ROM windows (`kernel.rom` + `msbasic.rom`).
 - `ehbasic.ini` uses two ROM windows (`kernel.rom` + `ehbasic.rom`) for the same SBC kernel shell with EhBASIC at `$D000`.
+- The FPGA compatibility registers at `$D000`, `$D400`, and `$DC00` are mapped only where they do not overlap a configured ROM window.
 - `chess.ini` uses one 16 KB ROM at `$C000-$FFFF`.
 - `soundtest.ini` uses one 16 KB ROM at `$C000-$FFFF` that drives all four sound voices directly.
 
@@ -375,11 +394,9 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 
 - [Commodore 64 (PAL) mode](docs/C64.md)
 - [German user manual (PDF)](output/pdf/6502-SBC-Emulator-Handbuch.pdf) and [editable LuaLaTeX source](docs/manual/6502-SBC-Emulator-Handbuch.tex)
-- **FPGA** lives in its own repo, [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga) (linked here as the `fpga/` submodule) — full docs in its **[Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki)**
+- [FPGA repository](https://github.com/rudolfstepan/6502-sbc-fpga) and [FPGA Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki) — board builds, simulation, and hardware documentation
 - [docs/FPGA_COMPATIBILITY_STATUS.md](docs/FPGA_COMPATIBILITY_STATUS.md) — emulator-side FPGA compatibility changes, rationale, timing, and test flow
 - [docs/software-test.md](docs/software-test.md) — generated FPGA software screenshot report
-- [fpga/docs/INDEX.md](fpga/docs/INDEX.md) — FPGA documentation index for architecture, builds, board support, and real hardware HDMI captures
-- [fpga/docs/images/README.md](fpga/docs/images/README.md) — Tang Primer 20K HDMI screenshots captured from FPGA hardware through a video grabber
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) — system design, device map, audio model
 - [docs/VIC.md](docs/VIC.md) — video chip registers and rendering modes (incl. the 80-column underline text attribute)
 - [docs/KEYBOARD.md](docs/KEYBOARD.md) — keyboard mapping
@@ -400,7 +417,7 @@ docs/       documentation
 examples/   sample code
 data/disk/  host-backed fallback BASIC disk files
 data/sdcard/ virtual SD-card folder for mountable D64 images
-fpga/       FPGA implementation (git submodule → 6502-sbc-fpga)
+../6502-sbc-fpga/  sibling FPGA checkout (optional)
 ```
 
 With `fpga.ini`, the FPGA ROM uses its own D64 GoDrive commands:
@@ -414,18 +431,6 @@ LOAD "NAME"  : REM load a PRG
 For machine-code PRGs, use the `CALL` address printed by the ROM. Sheet64 is a
 hybrid PRG: the ROM-printed `CALL 766`, `RUN`, and direct PRG execution all
 enter its loader.
-
-The `fpga/` directory is a **git submodule** pointing at
-[rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga). Its
-build reuses ROMs and kernel sources from this repository (via `../roms/` and
-`../../tools/kernel/`), so run the FPGA flows with the submodule checked out
-inside this repo. To update the pinned submodule revision after pulling FPGA
-changes:
-
-```sh
-git -C fpga pull origin main
-git add fpga && git commit -m "fpga: bump submodule"
-```
 
 ## License
 

@@ -10,6 +10,7 @@
   workflows such as monitor/upload rather than the default VIC/keyboard console
 - `DiskDev`: host-backed minimal disk interface for BASIC LOAD/SAVE
 - `VIC`: text/bitmap display memory and control registers
+- `MathCopro`: FPGA-compatible signed fixed-point multiplier at `$88B0-$88BF`
 - `Soundchip`: 4-voice synthesizer — ADSR envelopes, selectable waveforms (sine/square/sawtooth/triangle/noise), SDL audio mix
 - `Monitor`: debugger shell (`CTRL+C`)
 

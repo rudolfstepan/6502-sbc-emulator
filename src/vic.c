@@ -370,8 +370,9 @@ void vic_reg_write(void *dev, uint16_t offset, uint8_t val) {
 static uint32_t bitmap_window_to_addr(uint16_t offset)
 {
     uint8_t bank;
+    VicFramebufferMode mode = vic_get_framebuffer_mode();
 
-    if (vic_state.graphics_mode & 0x60) {
+    if (mode == VIC_FRAMEBUFFER_640_RGB332 || mode == VIC_FRAMEBUFFER_320_RGB565) {
         bank = vic_state.bitmap_bank_ext & 0x3F;
     } else {
         bank = (uint8_t)((vic_state.graphics_mode >> 5) & 0x07);
@@ -573,6 +574,23 @@ uint8_t vic_get_mode_raw(void) {
     return vic_state.graphics_mode;
 }
 
+VicFramebufferMode vic_get_framebuffer_mode(void)
+{
+    uint8_t mode = vic_get_mode_raw();
+
+    /* With bit 4 set, bits 7:5 select an 8 KiB bank. */
+    if (mode & 0x10) {
+        return VIC_FRAMEBUFFER_320_RGB332;
+    }
+    if (mode & 0x20) {
+        return VIC_FRAMEBUFFER_640_RGB332;
+    }
+    if (mode & 0x40) {
+        return VIC_FRAMEBUFFER_320_RGB565;
+    }
+    return VIC_FRAMEBUFFER_LEGACY;
+}
+
 uint8_t vic_get_text_attr_mode(void) {
     return vic_state.text_attr_mode;
 }
@@ -712,7 +730,7 @@ static void hires_blit_execute(void)
 
 static void blit_execute(void)
 {
-    if (vic_state.graphics_mode & 0x20) {   /* hi-res 640x400 8bpp */
+    if (vic_get_framebuffer_mode() == VIC_FRAMEBUFFER_640_RGB332) {
         hires_blit_execute();
         return;
     }

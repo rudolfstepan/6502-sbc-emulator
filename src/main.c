@@ -40,6 +40,7 @@ static VIA6522 *g_keyboard_via = NULL;  /* Global VIA for keyboard input */
 static KeyboardRegs *g_keyboard_regs = NULL;
 
 #define AUTO_LOAD_MAX 16
+#define DEFAULT_ROM_SIZE 0x4000u
 
 typedef struct {
     ROM     *rom;
@@ -53,6 +54,7 @@ typedef struct {
     Bus      *bus;
     CPU6502  *cpu;
     C64Floppy *floppy;
+    MathCopro *math_copro;
     RomSlot  *rom_slots;
     int       rom_count;
 } DropLoadContext;
@@ -185,6 +187,18 @@ static bool ranges_overlap(uint16_t base_a, uint32_t size_a,
     uint32_t end_a = (uint32_t)base_a + size_a;
     uint32_t end_b = (uint32_t)base_b + size_b;
     return (uint32_t)base_a < end_b && (uint32_t)base_b < end_a;
+}
+
+static bool rom_overlaps(const Config *cfg, uint16_t base, uint32_t size)
+{
+    for (int i = 0; i < cfg->num_devs; i++) {
+        const DevConfig *dc = &cfg->devs[i];
+        if (dc->type == DEV_ROM &&
+            ranges_overlap(dc->base, dc->size ? dc->size : DEFAULT_ROM_SIZE, base, size)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 static const char *path_basename(const char *path)
@@ -334,6 +348,9 @@ static int load_rom_file(DropLoadContext *ctx, const char *path)
         return -1;
     }
 
+    if (ctx->math_copro) {
+        math_copro_init(ctx->math_copro);
+    }
     ctx->cpu->stopped = false;
     cpu6502_reset(ctx->cpu);
     printf("\ndrop: loaded ROM '%s' into %d window(s), CPU reset requested\n",
@@ -595,17 +612,19 @@ int main(int argc, char *argv[])
                      0x88B0, 16,
                      math_copro_read, math_copro_write, NULL);
 
-        bus_register(&bus, "VIC-II", NULL,
-                     0xD000, 0x40,
-                     vicii_read, vicii_write, NULL);
-
-        bus_register(&bus, "SID-6581", &sid,
-                     0xD400, 0x1D,
-                     sid_read, sid_write, sid_tick);
-
-        bus_register(&bus, "CIA1-6526", &cia1,
-                     0xDC00, 16,
-                     cia_read, cia_write, cia_tick);
+        /* FPGA compatibility registers are available outside the configured ROM windows. */
+        if (!rom_overlaps(&cfg, 0xD000, 0x40)) {
+            bus_register(&bus, "VIC-II", NULL, 0xD000, 0x40,
+                         vicii_read, vicii_write, NULL);
+        }
+        if (!rom_overlaps(&cfg, 0xD400, 0x1D)) {
+            bus_register(&bus, "SID-6581", &sid, 0xD400, 0x1D,
+                         sid_read, sid_write, sid_tick);
+        }
+        if (!rom_overlaps(&cfg, 0xDC00, 16)) {
+            bus_register(&bus, "CIA1-6526", &cia1, 0xDC00, 16,
+                         cia_read, cia_write, cia_tick);
+        }
 
         for (int i = 0; i < cfg.num_devs; i++) {
             DevConfig *dc = &cfg.devs[i];
@@ -621,7 +640,7 @@ int main(int argc, char *argv[])
 
             case DEV_ROM: {
                 if (nr >= CFG_MAX_DEVS) { fprintf(stderr,"Too many ROMs\n"); break; }
-                uint32_t rsize = dc->size ? dc->size : 0x4000;
+                uint32_t rsize = dc->size ? dc->size : DEFAULT_ROM_SIZE;
                 if (dc->rom_file[0]) {
                     int rom_rc = dc->has_rom_file_offset
                         ? rom_load_segment(&roms[nr], dc->rom_file, rsize, dc->rom_file_offset)
@@ -738,6 +757,7 @@ int main(int argc, char *argv[])
         .bus = &bus,
         .cpu = &cpu,
         .floppy = cfg.c64 ? &floppy : NULL,
+        .math_copro = cfg.c64 ? NULL : &math_copro,
         .rom_slots = rom_slots,
         .rom_count = rom_slot_count,
     };

@@ -10,7 +10,8 @@ The default setup in [sbc.ini](../sbc.ini) boots a kernel ROM plus an MS BASIC R
 ./sbc6502 sbc.ini
 ```
 
-You should see the BASIC banner and `READY.` prompt in the SDL window.
+The SBC kernel initializes the display and starts MS BASIC. The SDL window
+shows the BASIC banner and the `OK` prompt.
 
 ## Common Commands
 

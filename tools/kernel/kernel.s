@@ -16,9 +16,9 @@
 ;
 ; EhBASIC owns almost all of zero page up to $FF. It marks $EB-$EE as unused.
 ;   $EB  STRPTR_LO  STROUT temporary pointer, low byte  (saved/restored)
-;   $EC  CURSOR_X at rest; temporary screen pointer low byte inside CHROUT
-;   $ED  CURSOR_Y at rest; temporary screen pointer high byte inside CHROUT
-;   $EE  STRPTR_HI  STROUT temporary pointer, high byte (saved/restored)
+;   $EC  STRPTR_HI  STROUT temporary pointer, high byte (saved/restored)
+;   $ED  CURSOR_X at rest; temporary screen pointer low byte inside CHROUT
+;   $EE  CURSOR_Y at rest; temporary screen pointer high byte inside CHROUT
 ;   $EF+ EhBASIC Decss (number-to-decimal buffer) — DO NOT USE in kernel
 ;
 ; Hardware:
@@ -56,14 +56,12 @@ DISK_ST_OK   = $02
 
 ; Cursor position is tracked in ZP BRAM and mirrored to the VIC cursor
 ; registers ($9001/$9002), where the text VIC draws a blinking cursor cell.
-CURSOR_X    = $EC
-CURSOR_Y    = $ED
-SCRPTR_LO   = $EC
-SCRPTR_HI   = $ED
-; $EE is free (EhBASIC marks unused); $EF = EhBASIC Decss (number-to-string
-; buffer) — DO NOT USE $EF or above for kernel vars: PRINT I writes $EF..$F4.
 STRPTR_LO   = $EB
-STRPTR_HI   = $EE
+STRPTR_HI   = STRPTR_LO + 1
+CURSOR_X    = $ED
+CURSOR_Y    = $EE
+SCRPTR_LO   = CURSOR_X
+SCRPTR_HI   = CURSOR_Y
 
 CMD_BUF     = $0200     ; command line buffer in page 2 (64 bytes)
 CMD_MAX     = 38        ; max usable chars per command line
@@ -96,7 +94,7 @@ KEY_CLEAR      = $93
 KEY_CRSR_LEFT  = $9D
 KEY_BACKSPACE  = $08
 
-BASIC_ENTRY = $A000     ; BASIC ROM entry point (EhBASIC relocated to $A000-$CFFF)
+BASIC_ENTRY = $D000     ; Entry point of the emulator's BASIC ROM
 
 ; ============================================================
 ; JUMP TABLE  -- placed first so it lands exactly at $C000
@@ -1078,12 +1076,3 @@ help_str:
 unknown_str:
     .byte " ?UNKNOWN COMMAND", $0D
     .byte 0
-
-; ============================================================
-; 6502 hardware vectors at $FFFA-$FFFF.  The kernel ROM owns them and
-; points reset/IRQ/NMI at EhBASIC's fixed entry table ($A000/$A003/$A006).
-; ============================================================
-.segment "VECTORS"
-    .word $A006             ; $FFFA NMI   -> EhBASIC ENTRY_TABLE+6
-    .word $A000             ; $FFFC RESET -> EhBASIC ENTRY_TABLE+0
-    .word $A003             ; $FFFE IRQ   -> EhBASIC ENTRY_TABLE+3

@@ -31,10 +31,12 @@ if [[ -d roms/c64 ]]; then
 fi
 shopt -u nullglob
 
-FPGA_ROM="../6502-sbc-fpga/roms/6502/fpga_ehbasic_16kb.rom"
-if [[ -f "$FPGA_ROM" ]]; then
-    cp -f "$FPGA_ROM" "$OUT_DIR/roms/"
-fi
+FPGA_ROM_DIR="../6502-sbc-fpga/roms/6502"
+for rom in fpga_ehbasic_16kb.rom mandelbrot_copro.bin; do
+    if [[ -f "$FPGA_ROM_DIR/$rom" ]]; then
+        cp -f "$FPGA_ROM_DIR/$rom" "$OUT_DIR/roms/"
+    fi
+done
 
 # Mirror default disk folder content if present.
 if [[ -d data/disk ]]; then

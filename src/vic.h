@@ -11,6 +11,13 @@ typedef struct {
     uint8_t pad[2];
 } VicSprite;
 
+typedef enum {
+    VIC_FRAMEBUFFER_LEGACY,
+    VIC_FRAMEBUFFER_320_RGB332,
+    VIC_FRAMEBUFFER_640_RGB332,
+    VIC_FRAMEBUFFER_320_RGB565
+} VicFramebufferMode;
+
 #define SP_FLAG_ENABLE     0x01   /* bit 0: sprite visible */
 #define SP_FLAG_SIZE16     0x02   /* bit 1: 16×16 instead of 8×8 */
 #define SP_FLAG_FLIPH      0x08   /* bit 3: flip horizontally */
@@ -57,6 +64,7 @@ void vic_scroll_up();
 uint8_t vic_get_graphics_mode(void);  // Returns 0=text, 1=bitmap
 void vic_set_graphics_mode(uint8_t mode);
 uint8_t vic_get_mode_raw(void);
+VicFramebufferMode vic_get_framebuffer_mode(void);
 uint8_t vic_get_text_attr_mode(void);
 
 // Cursor control

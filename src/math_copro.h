@@ -1,12 +1,15 @@
 #ifndef MATH_COPRO_H
 #define MATH_COPRO_H
 
+#include <stdbool.h>
 #include <stdint.h>
 
 typedef struct {
-    int32_t a;
-    int32_t b;
+    uint32_t a;
+    uint32_t b;
+    uint64_t product;
     uint8_t shift;
+    bool product_dirty;
 } MathCopro;
 
 void math_copro_init(MathCopro *m);

@@ -4,6 +4,15 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Matched signed fixed-point scaling to the FPGA math coprocessor and staged
+  its accelerated Mandelbrot demo when available in the sibling FPGA checkout.
+
+- Fixed framebuffer bank switching in 320×200 RGB332 mode, including the
+  Mandelbrot bitmap demo.
+
+- Fixed SBC boot with `sbc.ini` by restoring the kernel at `$C000` and
+  keeping the BASIC ROM at `$D000-$FFFF` visible to the CPU.
+
 - Added an F12 configuration menu for C64 settings, keyboard mapping, and
   keyboard or USB joystick mapping. Settings are saved to the active INI.
 
