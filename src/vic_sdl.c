@@ -1,4 +1,6 @@
 #include "vic_sdl.h"
+#include "c64_vic.h"
+#include "c64_menu.h"
 #include "vic.h"
 #include "keyboard.h"
 #include "simd.h"
@@ -11,7 +13,6 @@
 #if SCREEN_SCALE != 2
 #  error "SIMD render path requires SCREEN_SCALE == 2"
 #endif
-#define WINDOW_SCALE 2          // QEMU-style integer scaling of the SBC image
 #define CHAR_WIDTH 8
 #define CHAR_HEIGHT 8
 #define SCREEN_COLS 40
@@ -19,8 +20,6 @@
 #define COLOR_RAM_OFFSET 1024
 #define WINDOW_WIDTH  (SCREEN_COLS * CHAR_WIDTH * SCREEN_SCALE)
 #define WINDOW_HEIGHT (SCREEN_ROWS * CHAR_HEIGHT * SCREEN_SCALE)
-#define SDL_WINDOW_WIDTH  (WINDOW_WIDTH * WINDOW_SCALE)
-#define SDL_WINDOW_HEIGHT (WINDOW_HEIGHT * WINDOW_SCALE)
 
 /* Sprite mask for collision detection: which sprites cover each pixel */
 static uint8_t sprite_mask[320 * 200];
@@ -73,7 +72,38 @@ static vic_sdl_drop_file_fn drop_file_handler = NULL;
 static void *drop_file_user = NULL;
 static bool key_repeat_pending[256];
 
+static C64 *c64_machine;
+static char c64_window_title[256] = "Commodore 64 (PAL)";
+
+static C64Input c64_input;
+static C64Menu c64_menu;
+
+void vic_sdl_set_disk_title(unsigned int device, const char *name)
+{
+    snprintf(c64_window_title, sizeof(c64_window_title), "Commodore 64 (PAL) - %u: %s", device, name);
+    if (window) {
+        SDL_SetWindowTitle(window, c64_window_title);
+    }
+}
+
+void vic_sdl_set_c64(C64 *machine)
+{
+    c64_machine = machine;
+    memset(c64_input.keys, 0, sizeof(c64_input.keys));
+}
+
 #define CURSOR_BLINK_MS 500
+
+
+void vic_sdl_set_c64_config(Config *config, const char *filename)
+{
+    c64_menu = (C64Menu){.config = config, .filename = filename};
+}
+
+bool vic_sdl_menu_open(void)
+{
+    return c64_menu.open;
+}
 
 static uint8_t sdl_special_key_ascii(SDL_Keycode key, SDL_Keymod mod)
 {
@@ -98,7 +128,7 @@ void vic_sdl_set_drop_file_handler(vic_sdl_drop_file_fn fn, void *user)
 }
 
 // Initialize SDL2 rendering
-int vic_sdl_init(void) {
+int vic_sdl_init(int window_scale) {
     if (sdl_initialized) {
         return 0;  // Already initialized
     }
@@ -109,13 +139,16 @@ int vic_sdl_init(void) {
         return -1;
     }
 
+    const int window_width = WINDOW_WIDTH * window_scale;
+    const int window_height = WINDOW_HEIGHT * window_scale;
+
     // Create window
     window = SDL_CreateWindow(
-        "6502 SBC - VIC Display",
+        c64_machine ? c64_window_title : "6502 SBC - VIC Display",
         SDL_WINDOWPOS_CENTERED,
         SDL_WINDOWPOS_CENTERED,
-        SDL_WINDOW_WIDTH,
-        SDL_WINDOW_HEIGHT,
+        window_width,
+        window_height,
         SDL_WINDOW_SHOWN
     );
 
@@ -167,14 +200,17 @@ int vic_sdl_init(void) {
 
     sdl_initialized = true;
 
+    if (c64_machine && SDL_InitSubSystem(SDL_INIT_JOYSTICK) == 0) {
+        c64_input_refresh_device(&c64_input);
+    }
+
     // Enable text input for international keyboard support
     SDL_StartTextInput();
     SDL_EventState(SDL_DROPFILE, SDL_ENABLE);
 
     printf("SDL2 VIC display initialized: %dx%d framebuffer, %dx%d window (%dx)\n",
            WINDOW_WIDTH, WINDOW_HEIGHT,
-           SDL_WINDOW_WIDTH, SDL_WINDOW_HEIGHT,
-           WINDOW_SCALE);
+           window_width, window_height, window_scale);
 
     return 0;
 }
@@ -205,8 +241,10 @@ void vic_sdl_shutdown(void) {
         window = NULL;
     }
 
+    c64_input_close(&c64_input);
     SDL_StopTextInput();
     SDL_Quit();
+
     sdl_initialized = false;
 
     printf("SDL2 VIC display shutdown\n");
@@ -275,8 +313,42 @@ static void render_char_80_at(uint8_t char_code, int px, int py,
 
 
 // Render the VIC screen to SDL window
+static void render_c64(void)
+{
+    const uint8_t (*frame)[C64_VIDEO_WIDTH] = c64_vic_frame(c64_machine);
+    for (unsigned int y = 0; y < C64_VIDEO_HEIGHT; y++) {
+        uint32_t *out = framebuffer + y * SCREEN_SCALE * WINDOW_WIDTH;
+        for (unsigned int x = 0; x < C64_VIDEO_WIDTH; x++) {
+            uint32_t pixel = vic_palette[frame[y][x]];
+            unsigned int pos = x * SCREEN_SCALE;
+            out[pos] = out[pos + 1] = pixel;
+            out[pos + WINDOW_WIDTH] = out[pos + WINDOW_WIDTH + 1] = pixel;
+        }
+    }
+}
+
+static void present_framebuffer(void)
+{
+    SDL_UpdateTexture(texture, NULL, framebuffer, WINDOW_WIDTH * sizeof(uint32_t));
+    SDL_RenderClear(renderer);
+    SDL_RenderCopy(renderer, texture, NULL, NULL);
+    SDL_RenderPresent(renderer);
+}
+
 void vic_sdl_render(void) {
     if (!sdl_initialized) {
+        return;
+    }
+
+    if (c64_menu.open) {
+        c64_menu_render(&c64_menu, &c64_input, framebuffer, WINDOW_WIDTH, WINDOW_HEIGHT);
+        present_framebuffer();
+        return;
+    }
+
+    if (c64_machine) {
+        render_c64();
+        present_framebuffer();
         return;
     }
 
@@ -520,12 +592,7 @@ void vic_sdl_render(void) {
     }
 
     // Update texture
-    SDL_UpdateTexture(texture, NULL, framebuffer, WINDOW_WIDTH * sizeof(uint32_t));
-
-    // Render to screen
-    SDL_RenderClear(renderer);
-    SDL_RenderCopy(renderer, texture, NULL, NULL);
-    SDL_RenderPresent(renderer);
+    present_framebuffer();
 }
 
 int vic_sdl_save_screenshot(const char *path)
@@ -567,9 +634,34 @@ bool vic_sdl_handle_events(void) {
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        if (c64_menu_event(&c64_menu, &c64_input, c64_machine, window, &event)) {
+            continue;
+        }
         switch (event.type) {
             case SDL_QUIT:
                 return false;  // User wants to quit
+
+            case SDL_WINDOWEVENT:
+                if (c64_machine && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    c64_input_clear(&c64_input, c64_machine);
+                }
+                break;
+
+            case SDL_JOYDEVICEADDED:
+            case SDL_JOYDEVICEREMOVED:
+            case SDL_JOYAXISMOTION:
+            case SDL_JOYHATMOTION:
+            case SDL_JOYBUTTONDOWN:
+            case SDL_JOYBUTTONUP:
+                if (c64_machine) {
+                    if (event.type == SDL_JOYDEVICEADDED || event.type == SDL_JOYDEVICEREMOVED) {
+                        c64_input_refresh_device(&c64_input);
+                    }
+                    if (!c64_menu.open) {
+                        c64_input_joystick(&c64_input, c64_machine, c64_menu.config);
+                    }
+                }
+                break;
 
             case SDL_DROPFILE:
                 if (drop_file_handler && event.drop.file) {
@@ -604,9 +696,12 @@ bool vic_sdl_handle_events(void) {
             }
 
             case SDL_KEYDOWN: {
-                // Handle special keys (non-printable)
+                if (c64_machine) {
+                    c64_input_key(&c64_input, c64_machine, c64_menu.config, &event.key);
+                    break;
+                }
                 if (event.key.keysym.sym == SDLK_ESCAPE) {
-                    return false;  // ESC to quit
+                    return false;
                 }
 
                 VIA6522 *via = get_keyboard_via();
@@ -642,6 +737,10 @@ bool vic_sdl_handle_events(void) {
             }
 
             case SDL_KEYUP: {
+                if (c64_machine) {
+                    c64_input_key(&c64_input, c64_machine, c64_menu.config, &event.key);
+                    break;
+                }
                 VIA6522 *via = get_keyboard_via();
                 KeyboardRegs *kbd = get_keyboard_regs();
                 SDL_Keycode key = event.key.keysym.sym;

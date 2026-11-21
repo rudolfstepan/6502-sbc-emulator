@@ -5,6 +5,9 @@
 #define CFG_STR_MAX  256
 #define CFG_MAX_DEVS 8
 #define DEFAULT_CPU_SPEED_HZ 27000000u
+#define CFG_MAX_WINDOW_SCALE 25
+#define C64_KEY_COUNT 65     /* 64 matrix keys plus RESTORE. */
+#define C64_JOYSTICK_ACTIONS 5
 
 typedef enum {
     DEV_SRAM,
@@ -37,6 +40,17 @@ typedef struct {
     bool      trace;
     char      trace_file[CFG_STR_MAX];
     bool      profile;
+    int       window_scale;
+    bool      c64;
+    char      c64_basic[CFG_STR_MAX];
+    char      c64_kernal[CFG_STR_MAX];
+    char      c64_chargen[CFG_STR_MAX];
+    char      c64_floppy_image[CFG_STR_MAX];
+    unsigned int c64_floppy_device;
+    uint16_t c64_keys[C64_KEY_COUNT];       /* SDL scancodes, 0 uses the default. */
+    uint16_t joystick_keys[C64_JOYSTICK_ACTIONS];
+    uint16_t joystick_controls[C64_JOYSTICK_ACTIONS];
+    unsigned int joystick_port;           /* 0 disables the joystick. */
 } Config;
 
 /* Parse INI file. Returns 0 on success, -1 on error. */
@@ -44,3 +58,5 @@ int config_load(Config *cfg, const char *filename);
 /* Fill in defaults for any unspecified fields */
 void config_defaults(Config *cfg);
 void config_dump(const Config *cfg);
+/* Replace C64 settings in the active INI while preserving unrelated entries. */
+int config_save_c64(const Config *cfg, const char *filename);

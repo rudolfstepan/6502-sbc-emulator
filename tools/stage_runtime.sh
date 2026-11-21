@@ -12,7 +12,7 @@ case "$OUT_DIR_REAL" in
 esac
 
 # Copy default runtime configs if present.
-for cfg in sbc.ini ehbasic.ini fpga.ini chess.ini soundtest.ini avdemo.ini; do
+for cfg in sbc.ini ehbasic.ini fpga.ini chess.ini soundtest.ini avdemo.ini c64.ini; do
     if [[ -f "$cfg" ]]; then
         cp -f "$cfg" "$OUT_DIR/"
     fi
@@ -23,6 +23,12 @@ shopt -s nullglob
 for rom in roms/*.rom; do
     cp -f "$rom" "$OUT_DIR/roms/"
 done
+if [[ -d roms/c64 ]]; then
+    mkdir -p "$OUT_DIR/roms/c64"
+    for rom in roms/c64/*.rom; do
+        cp -f "$rom" "$OUT_DIR/roms/c64/"
+    done
+fi
 shopt -u nullglob
 
 FPGA_ROM="../6502-sbc-fpga/roms/6502/fpga_ehbasic_16kb.rom"

@@ -1,6 +1,7 @@
 #define _POSIX_C_SOURCE 200809L
 
 #include "diskdev.h"
+#include "d64.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -19,8 +20,6 @@
 
 #define BASIC_REM_TOKEN 0x8E
 #define D64_TRACKS 35
-#define D64_SECTOR_SIZE 256
-#define D64_IMAGE_SIZE 174848
 
 #define FPGA_ST_BUSY          0x01
 #define FPGA_ST_DONE          0x02
@@ -90,7 +89,7 @@ static long d64_sector_offset(uint8_t track, uint8_t sector)
     return offset + (long)sector * D64_SECTOR_SIZE;
 }
 
-static int read_d64_sector(FILE *f, uint8_t track, uint8_t sector, uint8_t out[D64_SECTOR_SIZE])
+int read_d64_sector(FILE *f, uint8_t track, uint8_t sector, uint8_t out[D64_SECTOR_SIZE])
 {
     long offset = d64_sector_offset(track, sector);
     if (offset < 0 || fseek(f, offset, SEEK_SET) != 0) {
@@ -167,8 +166,7 @@ static int d64_find_prg(FILE *f, const char *name, uint8_t *track, uint8_t *sect
     return -1;
 }
 
-static int d64_load_prg(FILE *f, uint8_t track, uint8_t sector,
-                        uint8_t **out, size_t *out_len)
+int d64_load_prg(FILE *f, uint8_t track, uint8_t sector, uint8_t **out, size_t *out_len)
 {
     size_t cap = 4096;
     size_t len = 0;
@@ -178,7 +176,7 @@ static int d64_load_prg(FILE *f, uint8_t track, uint8_t sector,
 
     if (!data) return -1;
 
-    while (track != 0 && guard++ < 1024) {
+    while (track != 0 && guard++ < D64_SECTOR_COUNT) {
         if (read_d64_sector(f, track, sector, buf) != 0) {
             free(data);
             return -1;
@@ -200,6 +198,11 @@ static int d64_load_prg(FILE *f, uint8_t track, uint8_t sector,
         len += chunk_len;
         track = next_track;
         sector = next_sector;
+    }
+
+    if (track != 0) {
+        free(data);
+        return -1;
     }
 
     *out = data;

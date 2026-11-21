@@ -43,12 +43,12 @@ void bus_init(Bus *bus)
 }
 
 void bus_register(Bus *bus, const char *name, void *device,
-                  uint16_t base, uint16_t size,
+                  uint16_t base, uint32_t size,
                   bus_read_fn read, bus_write_fn write,
                   bus_tick_fn tick)
 {
-    if (size == 0) {
-        fprintf(stderr, "bus: refusing zero-sized device '%s'\n", name ? name : "?");
+    if (size == 0 || size > 0x10000u - base) {
+        fprintf(stderr, "bus: invalid size for device '%s'\n", name ? name : "?");
         return;
     }
 

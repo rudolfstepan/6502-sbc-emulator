@@ -71,6 +71,51 @@ cd bin
 ./sbc6502 soundtest.ini
 ```
 
+### Commodore 64 (PAL)
+
+Place the C64 BASIC (8192 bytes), KERNAL (8192 bytes), and character generator
+ROM (4096 bytes) in `roms/c64/` as `basic.rom`, `kernal.rom`, and `chargen.rom`.
+Run `make` to stage the ROMs and `c64.ini` under `bin/`.
+On Windows, double-click `Start-C64.bat` in the project directory. It reads
+the project directory's `c64.ini` at each launch.
+From a terminal, run `sbc6502 c64.ini` while in `bin/`.
+
+The C64 profile supports BASIC, keyboard input, raster-split text and bitmap
+modes, hardware sprites, and basic SID audio. See [C64 architecture and current coverage](docs/ARCHITECTURE.md#c64-profile).
+
+Drop a 35-track `.d64` onto the C64 window to mount it read-only. In BASIC,
+enter `LOAD "$",8` and `LIST` to see its directory, or `LOAD "*",8,1` to
+load the first PRG at its saved address. Use `RUN` for a BASIC program.
+Named PRGs can be loaded with `LOAD "NAME",8`.
+
+The `[floppy]` section in `c64.ini` sets the device number (8–11) and an
+optional startup image. Paths are relative to the working directory.
+
+```ini
+[floppy]
+device = 8
+image = data/sdcard/example.d64
+```
+
+In C64 mode, Escape and Tab send `RUN/STOP`, and Page Up sends `RESTORE`.
+Close the window to exit.
+
+Press **F12** for the C64 configuration menu. Use Tab to switch pages, the
+arrow keys to navigate or change a value, and Enter to edit a value or
+capture a key or controller input. Delete restores a selected binding's
+default. **F2** saves to the active INI file. F12 closes the menu and
+discards unsaved edits.
+
+Window scale and input settings apply on save. The settings marked `*`,
+including the CPU, ROMs and floppy, apply on the next start. You can drop
+a `.d64` onto the open menu to choose a startup image.
+
+Set the C64 joystick to port 1 or 2 to enable it. The default keyboard
+joystick uses the arrow keys and Right Ctrl for fire. The first connected
+SDL joystick or gamepad also works and can be remapped on the Joystick page.
+
+### Tests
+
 Run tests:
 
 ```sh
@@ -237,12 +282,18 @@ q          quit emulator
 
 ## Configuration
 
+Set `[video]` → `window_scale` in the active INI file to choose the startup
+window size. Use `1` for 640×400 or `2` for 1280×800. The default is `2`.
+
 Example (`sbc.ini` style):
 
 ```ini
 [cpu]
 speed_hz = 27000000
 debug = 0
+
+[video]
+window_scale = 2
 
 [sram]
 base = 0x0000
@@ -311,6 +362,7 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 
 ## Documentation Index
 
+- [German user manual (PDF)](output/pdf/6502-SBC-Emulator-Handbuch.pdf) and [editable LuaLaTeX source](docs/manual/6502-SBC-Emulator-Handbuch.tex)
 - **FPGA** lives in its own repo, [rudolfstepan/6502-sbc-fpga](https://github.com/rudolfstepan/6502-sbc-fpga) (linked here as the `fpga/` submodule) — full docs in its **[Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki)**
 - [docs/FPGA_COMPATIBILITY_STATUS.md](docs/FPGA_COMPATIBILITY_STATUS.md) — emulator-side FPGA compatibility changes, rationale, timing, and test flow
 - [docs/software-test.md](docs/software-test.md) — generated FPGA software screenshot report

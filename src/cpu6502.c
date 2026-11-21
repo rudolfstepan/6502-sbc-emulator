@@ -218,6 +218,15 @@ static int do_branch(CPU6502 *cpu, bool taken)
     return 3 + ((old_pc & 0xFF00) != (cpu->PC & 0xFF00) ? 1 : 0);
 }
 
+static uint8_t rmw_read(CPU6502 *cpu, uint16_t address)
+{
+    uint8_t value = RD(address);
+    if (cpu->nmos_rmw_writes && cpu->mode == 0) {
+        WR(address, value);
+    }
+    return value;
+}
+
 /* ═══════════════════════════════════════════════════════════
  * cpu6502_step  –  execute one instruction, return cycle count
  * ═══════════════════════════════════════════════════════════ */
@@ -397,16 +406,16 @@ int cpu6502_step(CPU6502 *cpu)
     case 0xCC: do_cmp(cpu,cpu->Y, RD(addr_abs(cpu))); cycles=4; break;
 
     /* ── INC ─────────────────────────────────────────── */
-    case 0xE6: ea=addr_zp(cpu);      m=RD(ea)+1; WR(ea,m); set_nz(cpu,m); cycles=5; break;
-    case 0xF6: ea=addr_zpx(cpu);     m=RD(ea)+1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
-    case 0xEE: ea=addr_abs(cpu);     m=RD(ea)+1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
-    case 0xFE: ea=addr_abx(cpu,NULL);m=RD(ea)+1; WR(ea,m); set_nz(cpu,m); cycles=7; break;
+    case 0xE6: ea=addr_zp(cpu);      m=rmw_read(cpu, ea)+1; WR(ea,m); set_nz(cpu,m); cycles=5; break;
+    case 0xF6: ea=addr_zpx(cpu);     m=rmw_read(cpu, ea)+1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
+    case 0xEE: ea=addr_abs(cpu);     m=rmw_read(cpu, ea)+1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
+    case 0xFE: ea=addr_abx(cpu,NULL);m=rmw_read(cpu, ea)+1; WR(ea,m); set_nz(cpu,m); cycles=7; break;
 
     /* ── DEC ─────────────────────────────────────────── */
-    case 0xC6: ea=addr_zp(cpu);      m=RD(ea)-1; WR(ea,m); set_nz(cpu,m); cycles=5; break;
-    case 0xD6: ea=addr_zpx(cpu);     m=RD(ea)-1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
-    case 0xCE: ea=addr_abs(cpu);     m=RD(ea)-1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
-    case 0xDE: ea=addr_abx(cpu,NULL);m=RD(ea)-1; WR(ea,m); set_nz(cpu,m); cycles=7; break;
+    case 0xC6: ea=addr_zp(cpu);      m=rmw_read(cpu, ea)-1; WR(ea,m); set_nz(cpu,m); cycles=5; break;
+    case 0xD6: ea=addr_zpx(cpu);     m=rmw_read(cpu, ea)-1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
+    case 0xCE: ea=addr_abs(cpu);     m=rmw_read(cpu, ea)-1; WR(ea,m); set_nz(cpu,m); cycles=6; break;
+    case 0xDE: ea=addr_abx(cpu,NULL);m=rmw_read(cpu, ea)-1; WR(ea,m); set_nz(cpu,m); cycles=7; break;
 
     /* ── INX / INY / DEX / DEY ───────────────────────── */
     case 0xE8: cpu->X++; set_nz(cpu,cpu->X); cycles=2; break;
@@ -416,31 +425,31 @@ int cpu6502_step(CPU6502 *cpu)
 
     /* ── ASL ─────────────────────────────────────────── */
     case 0x0A: cpu->A = do_asl(cpu,cpu->A); cycles=2; break;
-    case 0x06: ea=addr_zp(cpu);      WR(ea,do_asl(cpu,RD(ea))); cycles=5; break;
-    case 0x16: ea=addr_zpx(cpu);     WR(ea,do_asl(cpu,RD(ea))); cycles=6; break;
-    case 0x0E: ea=addr_abs(cpu);     WR(ea,do_asl(cpu,RD(ea))); cycles=6; break;
-    case 0x1E: ea=addr_abx(cpu,NULL);WR(ea,do_asl(cpu,RD(ea))); cycles=7; break;
+    case 0x06: ea=addr_zp(cpu);      WR(ea,do_asl(cpu,rmw_read(cpu, ea))); cycles=5; break;
+    case 0x16: ea=addr_zpx(cpu);     WR(ea,do_asl(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x0E: ea=addr_abs(cpu);     WR(ea,do_asl(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x1E: ea=addr_abx(cpu,NULL);WR(ea,do_asl(cpu,rmw_read(cpu, ea))); cycles=7; break;
 
     /* ── LSR ─────────────────────────────────────────── */
     case 0x4A: cpu->A = do_lsr(cpu,cpu->A); cycles=2; break;
-    case 0x46: ea=addr_zp(cpu);      WR(ea,do_lsr(cpu,RD(ea))); cycles=5; break;
-    case 0x56: ea=addr_zpx(cpu);     WR(ea,do_lsr(cpu,RD(ea))); cycles=6; break;
-    case 0x4E: ea=addr_abs(cpu);     WR(ea,do_lsr(cpu,RD(ea))); cycles=6; break;
-    case 0x5E: ea=addr_abx(cpu,NULL);WR(ea,do_lsr(cpu,RD(ea))); cycles=7; break;
+    case 0x46: ea=addr_zp(cpu);      WR(ea,do_lsr(cpu,rmw_read(cpu, ea))); cycles=5; break;
+    case 0x56: ea=addr_zpx(cpu);     WR(ea,do_lsr(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x4E: ea=addr_abs(cpu);     WR(ea,do_lsr(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x5E: ea=addr_abx(cpu,NULL);WR(ea,do_lsr(cpu,rmw_read(cpu, ea))); cycles=7; break;
 
     /* ── ROL ─────────────────────────────────────────── */
     case 0x2A: cpu->A = do_rol(cpu,cpu->A); cycles=2; break;
-    case 0x26: ea=addr_zp(cpu);      WR(ea,do_rol(cpu,RD(ea))); cycles=5; break;
-    case 0x36: ea=addr_zpx(cpu);     WR(ea,do_rol(cpu,RD(ea))); cycles=6; break;
-    case 0x2E: ea=addr_abs(cpu);     WR(ea,do_rol(cpu,RD(ea))); cycles=6; break;
-    case 0x3E: ea=addr_abx(cpu,NULL);WR(ea,do_rol(cpu,RD(ea))); cycles=7; break;
+    case 0x26: ea=addr_zp(cpu);      WR(ea,do_rol(cpu,rmw_read(cpu, ea))); cycles=5; break;
+    case 0x36: ea=addr_zpx(cpu);     WR(ea,do_rol(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x2E: ea=addr_abs(cpu);     WR(ea,do_rol(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x3E: ea=addr_abx(cpu,NULL);WR(ea,do_rol(cpu,rmw_read(cpu, ea))); cycles=7; break;
 
     /* ── ROR ─────────────────────────────────────────── */
     case 0x6A: cpu->A = do_ror(cpu,cpu->A); cycles=2; break;
-    case 0x66: ea=addr_zp(cpu);      WR(ea,do_ror(cpu,RD(ea))); cycles=5; break;
-    case 0x76: ea=addr_zpx(cpu);     WR(ea,do_ror(cpu,RD(ea))); cycles=6; break;
-    case 0x6E: ea=addr_abs(cpu);     WR(ea,do_ror(cpu,RD(ea))); cycles=6; break;
-    case 0x7E: ea=addr_abx(cpu,NULL);WR(ea,do_ror(cpu,RD(ea))); cycles=7; break;
+    case 0x66: ea=addr_zp(cpu);      WR(ea,do_ror(cpu,rmw_read(cpu, ea))); cycles=5; break;
+    case 0x76: ea=addr_zpx(cpu);     WR(ea,do_ror(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x6E: ea=addr_abs(cpu);     WR(ea,do_ror(cpu,rmw_read(cpu, ea))); cycles=6; break;
+    case 0x7E: ea=addr_abx(cpu,NULL);WR(ea,do_ror(cpu,rmw_read(cpu, ea))); cycles=7; break;
 
     /* ── JMP ─────────────────────────────────────────── */
     case 0x4C: cpu->PC = addr_abs(cpu); cycles=3; break;

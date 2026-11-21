@@ -23,6 +23,43 @@
 6. IRQ lines from VIA, UART, and VIC are OR-ed and folded back into the CPU IRQ state.
 7. Optional monitor takes over on breakpoint, step-mode, or `SIGINT`.
 
+## C64 Profile
+
+The `[machine]` section in `c64.ini` selects the PAL C64 memory map and
+specifies the BASIC, KERNAL, and character generator ROMs. The default CPU
+clock is 985248 Hz. The 6510 port at `$0000/$0001` controls the overlay of
+BASIC ROM at `$A000-$BFFF`, KERNAL ROM at `$E000-$FFFF`, and character
+ROM or I/O at `$D000-$DFFF` over 64 KiB of RAM.
+
+CIA1 scans the keyboard matrix and drives IRQ. CIA2 selects the VIC-II
+video bank and drives NMI. The VIC-II renders the 320×200 active picture
+with standard, multicolor, and extended-background text, as well as
+standard and multicolor bitmap modes. The existing SID synthesizer provides
+basic sound. The VIC-II samples the graphics registers per raster line,
+latches screen codes and colors on bad lines, and hands the completed frame
+to SDL. This supports raster splits, fine scrolling, the 24/25-row and
+38/40-column windows, and eight sprites with multicolor, expansion, priority,
+and collision IRQs. The CPU yields at instruction boundaries for bad-line
+matrix fetches. Timing within a scanline, sprite DMA bus steals, and pixels
+outside the 320-by-200 crop are approximations or outside current coverage.
+
+A read-only virtual floppy handles KERNAL `LOAD` and `VERIFY` for mounted
+35-track D64 images, including BASIC directory listings. The 1541 CPU/IEC
+timing, tape, and cartridges are outside the current coverage.
+
+The PC keyboard is mapped to C64 keys. Backspace is `INST/DEL`, Escape and
+Tab are `RUN/STOP`, and Alt is the Commodore key. Keypad `+` and `*` reach the
+corresponding dedicated C64 keys.
+
+F12 pauses the machine and opens the configuration menu. It can remap the
+keyboard matrix and the RESTORE line. A USB controller or assigned PC keys
+drive the selected C64 joystick port through the CIA1 input lines. The menu
+saves joystick defaults and overrides in `[joystick]`, and custom keyboard
+scancodes in `[keyboard]` in the active INI.
+
+See [Commodore 64 Programmer's Reference Guide, memory management](https://www.commodore.ca/manuals/c64_programmers_reference/c64-programmers_reference_guide-05-basic_to_machine_language.pdf)
+and [graphics programming](https://www.commodore.ca/wp-content/uploads/2018/11/c64-programmers_reference_guide-03-programming_graphics.pdf), and [Christian Bauer's VIC-II analysis](https://www.cebix.net/VIC-Article.txt).
+
 ## Device Map Strategy
 
 The emulator uses both fixed and configurable regions.

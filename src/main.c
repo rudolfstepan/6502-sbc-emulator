@@ -30,6 +30,9 @@
 #include "math_copro.h"
 #include "cia6526.h"
 #include "sid_stub.h"
+#include "c64.h"
+#include "c64_floppy.h"
+#include "c64_vic.h"
 
 /* ── Global emulator state ────────────────────────────────── */
 static volatile int g_sigint = 0;
@@ -49,6 +52,7 @@ typedef struct {
 typedef struct {
     Bus      *bus;
     CPU6502  *cpu;
+    C64Floppy *floppy;
     RomSlot  *rom_slots;
     int       rom_count;
 } DropLoadContext;
@@ -126,7 +130,7 @@ static void usage(const char *prog)
         "Options:\n"
         "  -r <rom>      load ROM file (overrides config)\n"
         "  -s <speed>    CPU speed in Hz (0=unlimited, default 27MHz FPGA)\n"
-        "  --load <file> load .prg/.rom/.bin like drag and drop after startup\n"
+        "  --load <file> load .prg/.rom/.bin or mount a C64 .d64\n"
         "  --load-data <prg> load PRG bytes without changing CPU state\n"
         "  --screenshot <bmp> save a framebuffer screenshot and exit\n"
         "  --screenshot-frames <n> rendered frames before screenshot (default 120)\n"
@@ -344,14 +348,18 @@ static void handle_load_file(const char *path, void *user, bool start_prg)
         return;
     }
 
-    if (ends_with_ignore_case(path, ".prg")) {
+    if (ctx->floppy && ends_with_ignore_case(path, ".d64")) {
+        if (c64_floppy_mount(ctx->floppy, path)) {
+            vic_sdl_set_disk_title(ctx->floppy->device, path_basename(path));
+        }
+    } else if (ends_with_ignore_case(path, ".prg")) {
         load_prg_file(ctx->bus, ctx->cpu, path, start_prg);
     } else if (ends_with_ignore_case(path, ".rom") ||
                ends_with_ignore_case(path, ".bin")) {
         load_rom_file(ctx, path);
     } else {
-        fprintf(stderr, "\ndrop: unsupported file '%s' (use .prg, .rom, or .bin)\n",
-                path_basename(path));
+        fprintf(stderr, "\ndrop: unsupported file '%s' (use %s)\n", path_basename(path),
+                ctx->floppy ? ".d64, .prg, .rom, or .bin" : ".prg, .rom, or .bin");
     }
 }
 
@@ -482,9 +490,12 @@ int main(int argc, char *argv[])
     if (debug_flag)
         cfg.debug = true;
 
-    /* Apply ROM override to first ROM device */
+    /* Override the KERNAL in C64 mode or the first ROM in SBC mode. */
     if (rom_override[0]) {
-        for (int i = 0; i < cfg.num_devs; i++) {
+        if (cfg.c64) {
+            snprintf(cfg.c64_kernal, sizeof(cfg.c64_kernal), "%s", rom_override);
+        }
+        for (int i = 0; !cfg.c64 && i < cfg.num_devs; i++) {
             if (cfg.devs[i].type == DEV_ROM) {
                 snprintf(cfg.devs[i].rom_file, CFG_STR_MAX, "%s",
                          rom_override);
@@ -507,169 +518,177 @@ int main(int argc, char *argv[])
     MathCopro math_copro;
     CIA6526 cia1;
     SIDStub sid;
+    C64     c64;
     int ns = 0, nr = 0, nv = 0, nu = 0, nd = 0;
     int rom_slot_count = 0;
 
     Bus bus;
     bus_init(&bus);
-    bool keyboard_regs_mapped = true;
-    for (int i = 0; i < cfg.num_devs; i++) {
-        DevConfig *dc = &cfg.devs[i];
-        if (dc->type == DEV_DISK && ranges_overlap(dc->base, 12, 0x8820, 4)) {
-            keyboard_regs_mapped = false;
-            break;
+    bool keyboard_regs_mapped = !cfg.c64;
+    if (cfg.c64) {
+        if (!c64_init(&c64, cfg.c64_basic, cfg.c64_kernal, cfg.c64_chargen)) {
+            return 1;
         }
-    }
+        bus_register(&bus, "C64", &c64, 0, C64_RAM_SIZE, c64_read, c64_write, c64_tick);
+    } else {
+        for (int i = 0; i < cfg.num_devs; i++) {
+            DevConfig *dc = &cfg.devs[i];
+            if (dc->type == DEV_DISK && ranges_overlap(dc->base, 12, 0x8820, 4)) {
+                keyboard_regs_mapped = false;
+                break;
+            }
+        }
 
-    /* ── Initialize VIC (Video Interface Controller) ────── */
-    vic_init();
-    keyboard_regs_init(&keyboard_regs);
-    g_keyboard_regs = NULL;
-    math_copro_init(&math_copro);
-    cia_init(&cia1);
-    sid_init(&sid);
+        /* ── Initialize VIC (Video Interface Controller) ────── */
+        vic_init();
+        keyboard_regs_init(&keyboard_regs);
+        g_keyboard_regs = NULL;
+        math_copro_init(&math_copro);
+        cia_init(&cia1);
+        sid_init(&sid);
 
-    bus_register(&bus, "VIC-BITMAP", NULL,
-                 0x6000, 0x2000,  /* Tang FPGA: 8KB banked framebuffer window */
-                 vic_bitmap_read, vic_bitmap_write, NULL);
+        bus_register(&bus, "VIC-BITMAP", NULL,
+                     0x6000, 0x2000,  /* Tang FPGA: 8KB banked framebuffer window */
+                     vic_bitmap_read, vic_bitmap_write, NULL);
 
-    bus_register(&bus, "VIC-VIDEO", NULL,
-                 0x8000, 2048,  /* 2KB: text video RAM at $8000-$87FF */
-                 vic_bus_read, vic_bus_write, vic_bus_tick);
+        bus_register(&bus, "VIC-VIDEO", NULL,
+                     0x8000, 2048,  /* 2KB: text video RAM at $8000-$87FF */
+                     vic_bus_read, vic_bus_write, vic_bus_tick);
 
-    bus_register(&bus, "VIC-REGS", NULL,
-                 0x9000, 16,    /* VIC control registers at $9000-$900F */
-                 vic_reg_read, vic_reg_write, NULL);
+        bus_register(&bus, "VIC-REGS", NULL,
+                     0x9000, 16,    /* VIC control registers at $9000-$900F */
+                     vic_reg_read, vic_reg_write, NULL);
 
-    bus_register(&bus, "VIC-BLITTER", NULL,
-                 0x8840, 16,    /* Blitter registers: $8840-$884F */
-                 vic_blitter_read, vic_blitter_write, NULL);
+        bus_register(&bus, "VIC-BLITTER", NULL,
+                     0x8840, 16,    /* Blitter registers: $8840-$884F */
+                     vic_blitter_read, vic_blitter_write, NULL);
 
-    bus_register(&bus, "VIC-SPRREGS", NULL,
-                 0x8850, 64,    /* Sprite regs: $8850-$888F (8 sprites × 8 bytes) */
-                 vic_sprite_reg_read, vic_sprite_reg_write, NULL);
+        bus_register(&bus, "VIC-SPRREGS", NULL,
+                     0x8850, 64,    /* Sprite regs: $8850-$888F (8 sprites × 8 bytes) */
+                     vic_sprite_reg_read, vic_sprite_reg_write, NULL);
 
-    bus_register(&bus, "VIC-SPRDATA", NULL,
-                 0x8900, 256,   /* Sprite pixel data: $8900-$89FF (8 × 32 bytes) */
-                 vic_sprite_data_read, vic_sprite_data_write, NULL);
+        bus_register(&bus, "VIC-SPRDATA", NULL,
+                     0x8900, 256,   /* Sprite pixel data: $8900-$89FF (8 × 32 bytes) */
+                     vic_sprite_data_read, vic_sprite_data_write, NULL);
 
-    bus_register(&bus, "SOUND0", (void*)(uintptr_t)0,
-                 SOUND_VOICE0_BASE, SOUND0_REG_COUNT,
-                 soundchip_voice_read, soundchip_voice_write, NULL);
-    bus_register(&bus, "SOUND1", (void*)(uintptr_t)1,
-                 SOUND_VOICE1_BASE, SOUND_REG_COUNT,
-                 soundchip_voice_read, soundchip_voice_write, NULL);
-    bus_register(&bus, "SOUND2", (void*)(uintptr_t)2,
-                 SOUND_VOICE2_BASE, SOUND_REG_COUNT,
-                 soundchip_voice_read, soundchip_voice_write, NULL);
-    bus_register(&bus, "SOUND3", (void*)(uintptr_t)3,
-                 SOUND_VOICE3_BASE, SOUND_REG_COUNT,
-                 soundchip_voice_read, soundchip_voice_write, NULL);
+        bus_register(&bus, "SOUND0", (void*)(uintptr_t)0,
+                     SOUND_VOICE0_BASE, SOUND0_REG_COUNT,
+                     soundchip_voice_read, soundchip_voice_write, NULL);
+        bus_register(&bus, "SOUND1", (void*)(uintptr_t)1,
+                     SOUND_VOICE1_BASE, SOUND_REG_COUNT,
+                     soundchip_voice_read, soundchip_voice_write, NULL);
+        bus_register(&bus, "SOUND2", (void*)(uintptr_t)2,
+                     SOUND_VOICE2_BASE, SOUND_REG_COUNT,
+                     soundchip_voice_read, soundchip_voice_write, NULL);
+        bus_register(&bus, "SOUND3", (void*)(uintptr_t)3,
+                     SOUND_VOICE3_BASE, SOUND_REG_COUNT,
+                     soundchip_voice_read, soundchip_voice_write, NULL);
 
-    if (keyboard_regs_mapped) {
-        g_keyboard_regs = &keyboard_regs;
-        bus_register(&bus, "KEYBOARD", &keyboard_regs,
-                     0x8820, 4,
-                     keyboard_regs_read, keyboard_regs_write, NULL);
-    }
+        if (keyboard_regs_mapped) {
+            g_keyboard_regs = &keyboard_regs;
+            bus_register(&bus, "KEYBOARD", &keyboard_regs,
+                         0x8820, 4,
+                         keyboard_regs_read, keyboard_regs_write, NULL);
+        }
 
-    bus_register(&bus, "MATH-COPRO", &math_copro,
-                 0x88B0, 16,
-                 math_copro_read, math_copro_write, NULL);
+        bus_register(&bus, "MATH-COPRO", &math_copro,
+                     0x88B0, 16,
+                     math_copro_read, math_copro_write, NULL);
 
-    bus_register(&bus, "VIC-II", NULL,
-                 0xD000, 0x40,
-                 vicii_read, vicii_write, NULL);
+        bus_register(&bus, "VIC-II", NULL,
+                     0xD000, 0x40,
+                     vicii_read, vicii_write, NULL);
 
-    bus_register(&bus, "SID-6581", &sid,
-                 0xD400, 0x1D,
-                 sid_read, sid_write, sid_tick);
+        bus_register(&bus, "SID-6581", &sid,
+                     0xD400, 0x1D,
+                     sid_read, sid_write, sid_tick);
 
-    bus_register(&bus, "CIA1-6526", &cia1,
-                 0xDC00, 16,
-                 cia_read, cia_write, cia_tick);
+        bus_register(&bus, "CIA1-6526", &cia1,
+                     0xDC00, 16,
+                     cia_read, cia_write, cia_tick);
 
-    for (int i = 0; i < cfg.num_devs; i++) {
-        DevConfig *dc = &cfg.devs[i];
-        switch (dc->type) {
-        case DEV_SRAM:
-            if (ns >= CFG_MAX_DEVS) { fprintf(stderr,"Too many SRAMs\n"); break; }
-            if (sram_init(&srams[ns], dc->size) != 0) return 1;
-            bus_register(&bus, "SRAM", &srams[ns],
-                         dc->base, dc->size,
-                         sram_read, sram_write, NULL);
-            ns++;
-            break;
+        for (int i = 0; i < cfg.num_devs; i++) {
+            DevConfig *dc = &cfg.devs[i];
+            switch (dc->type) {
+            case DEV_SRAM:
+                if (ns >= CFG_MAX_DEVS) { fprintf(stderr,"Too many SRAMs\n"); break; }
+                if (sram_init(&srams[ns], dc->size) != 0) return 1;
+                bus_register(&bus, "SRAM", &srams[ns],
+                             dc->base, dc->size,
+                             sram_read, sram_write, NULL);
+                ns++;
+                break;
 
-        case DEV_ROM: {
-            if (nr >= CFG_MAX_DEVS) { fprintf(stderr,"Too many ROMs\n"); break; }
-            uint32_t rsize = dc->size ? dc->size : 0x4000;
-            if (dc->rom_file[0]) {
-                int rom_rc = dc->has_rom_file_offset
-                    ? rom_load_segment(&roms[nr], dc->rom_file, rsize, dc->rom_file_offset)
-                    : rom_load(&roms[nr], dc->rom_file, rsize);
-                if (rom_rc != 0) {
-                    fprintf(stderr, "Warning: ROM load failed, using blank ROM\n");
+            case DEV_ROM: {
+                if (nr >= CFG_MAX_DEVS) { fprintf(stderr,"Too many ROMs\n"); break; }
+                uint32_t rsize = dc->size ? dc->size : 0x4000;
+                if (dc->rom_file[0]) {
+                    int rom_rc = dc->has_rom_file_offset
+                        ? rom_load_segment(&roms[nr], dc->rom_file, rsize, dc->rom_file_offset)
+                        : rom_load(&roms[nr], dc->rom_file, rsize);
+                    if (rom_rc != 0) {
+                        fprintf(stderr, "Warning: ROM load failed, using blank ROM\n");
+                        rom_init(&roms[nr], rsize);
+                    }
+                } else {
                     rom_init(&roms[nr], rsize);
+                    fprintf(stderr, "Warning: no ROM file specified\n");
                 }
-            } else {
-                rom_init(&roms[nr], rsize);
-                fprintf(stderr, "Warning: no ROM file specified\n");
+                bus_register(&bus, "ROM", &roms[nr],
+                             dc->base, rsize,
+                             rom_read, rom_write, NULL);
+                if (rom_slot_count < CFG_MAX_DEVS) {
+                    rom_slots[rom_slot_count++] = (RomSlot){
+                        .rom = &roms[nr],
+                        .base = dc->base,
+                        .size = rsize,
+                        .file_offset = dc->rom_file_offset,
+                        .has_file_offset = dc->has_rom_file_offset,
+                    };
+                }
+                nr++;
+                break;
             }
-            bus_register(&bus, "ROM", &roms[nr],
-                         dc->base, rsize,
-                         rom_read, rom_write, NULL);
-            if (rom_slot_count < CFG_MAX_DEVS) {
-                rom_slots[rom_slot_count++] = (RomSlot){
-                    .rom = &roms[nr],
-                    .base = dc->base,
-                    .size = rsize,
-                    .file_offset = dc->rom_file_offset,
-                    .has_file_offset = dc->has_rom_file_offset,
-                };
-            }
-            nr++;
-            break;
-        }
 
-        case DEV_VIA:
-            if (nv >= CFG_MAX_DEVS) { fprintf(stderr,"Too many VIAs\n"); break; }
-            via_init(&vias[nv]);
-            bus_register(&bus, "VIA-6522", &vias[nv],
-                         dc->base, 16,
-                         via_read, via_write, via_tick);
-            /* Set the first VIA as keyboard VIA */
-            if (nv == 0) {
-                g_keyboard_via = &vias[nv];
-                printf("VIA #0 configured for keyboard input\n");
-            }
-            nv++;
-            break;
+            case DEV_VIA:
+                if (nv >= CFG_MAX_DEVS) { fprintf(stderr,"Too many VIAs\n"); break; }
+                via_init(&vias[nv]);
+                bus_register(&bus, "VIA-6522", &vias[nv],
+                             dc->base, 16,
+                             via_read, via_write, via_tick);
+                /* Set the first VIA as keyboard VIA */
+                if (nv == 0) {
+                    g_keyboard_via = &vias[nv];
+                    printf("VIA #0 configured for keyboard input\n");
+                }
+                nv++;
+                break;
 
-        case DEV_UART: {
-            if (nu >= CFG_MAX_DEVS) { fprintf(stderr,"Too many UARTs\n"); break; }
-            UartMode umode = UART_MODE_STDIO;
-            int uport = 0;
-            if (strncmp(dc->uart_mode, "tcp", 3) == 0) {
-                umode = UART_MODE_TCP;
-                uport = dc->uart_port ? dc->uart_port : 2551;
+            case DEV_UART: {
+                if (nu >= CFG_MAX_DEVS) { fprintf(stderr,"Too many UARTs\n"); break; }
+                UartMode umode = UART_MODE_STDIO;
+                int uport = 0;
+                if (strncmp(dc->uart_mode, "tcp", 3) == 0) {
+                    umode = UART_MODE_TCP;
+                    uport = dc->uart_port ? dc->uart_port : 2551;
+                }
+                if (uart_init(&uarts[nu], umode, uport) != 0) return 1;
+                bus_register(&bus, "UART-6551", &uarts[nu],
+                             dc->base, 4,
+                             uart_read, uart_write, uart_tick);
+                nu++;
+                break;
             }
-            if (uart_init(&uarts[nu], umode, uport) != 0) return 1;
-            bus_register(&bus, "UART-6551", &uarts[nu],
-                         dc->base, 4,
-                         uart_read, uart_write, uart_tick);
-            nu++;
-            break;
-        }
 
-        case DEV_DISK:
-            if (nd >= CFG_MAX_DEVS) { fprintf(stderr,"Too many DISKs\n"); break; }
-            if (diskdev_init(&disks[nd], &bus, dc->disk_path) != 0) return 1;
-            bus_register(&bus, "DISK-MVP", &disks[nd],
-                         dc->base, 12,
-                         diskdev_read, diskdev_write, NULL);
-            nd++;
-            break;
+            case DEV_DISK:
+                if (nd >= CFG_MAX_DEVS) { fprintf(stderr,"Too many DISKs\n"); break; }
+                if (diskdev_init(&disks[nd], &bus, dc->disk_path) != 0) return 1;
+                bus_register(&bus, "DISK-MVP", &disks[nd],
+                             dc->base, 12,
+                             diskdev_read, diskdev_write, NULL);
+                nd++;
+                break;
+            }
         }
     }
 
@@ -683,9 +702,11 @@ int main(int argc, char *argv[])
     /* ── Init CPU ─────────────────────────────────────────── */
     CPU6502 cpu;
     cpu6502_init(&cpu, cpu_bus_read, cpu_bus_write, &bus);
+    cpu.nmos_rmw_writes = cfg.c64;
 
     /* Set CPU model (6502 or 65C02) */
-    if (strcmp(cfg.cpu_model, "65c02") == 0 || strcmp(cfg.cpu_model, "65C02") == 0)
+    if (!cfg.c64 &&
+        (strcmp(cfg.cpu_model, "65c02") == 0 || strcmp(cfg.cpu_model, "65C02") == 0))
         cpu.mode = 1;
     else
         cpu.mode = 0;  /* Default to NMOS 6502 */
@@ -712,14 +733,21 @@ int main(int argc, char *argv[])
 
     cpu6502_reset(&cpu);
 
+    C64Floppy floppy = {.device = cfg.c64_floppy_device};
     DropLoadContext drop_ctx = {
         .bus = &bus,
         .cpu = &cpu,
+        .floppy = cfg.c64 ? &floppy : NULL,
         .rom_slots = rom_slots,
         .rom_count = rom_slot_count,
     };
     vic_sdl_set_drop_file_handler(handle_drop_file, &drop_ctx);
+    vic_sdl_set_c64(cfg.c64 ? &c64 : NULL);
+    vic_sdl_set_c64_config(cfg.c64 ? &cfg : NULL, cfg_file);
 
+    if (cfg.c64 && cfg.c64_floppy_image[0] && c64_floppy_mount(&floppy, cfg.c64_floppy_image)) {
+        vic_sdl_set_disk_title(floppy.device, path_basename(cfg.c64_floppy_image));
+    }
     for (int i = 0; i < auto_load_count; i++) {
         handle_load_file(auto_load_files[i], &drop_ctx, auto_load_starts[i]);
     }
@@ -735,11 +763,15 @@ int main(int argc, char *argv[])
     */
 
     /* ── Initialize SDL2 for VIC display ──────────────────── */
-    bool use_sdl = (vic_sdl_init() == 0);
+    bool use_sdl = (vic_sdl_init(cfg.window_scale) == 0);
     int screenshot_frames_seen = 0;
     bool screenshot_saved = false;
     if (use_sdl) {
-        printf("SDL2 display enabled. Press ESC to quit.\n");
+        if (cfg.c64) {
+            printf("SDL2 display enabled. ESC is RUN/STOP. F12 opens the configuration menu.\n");
+        } else {
+            printf("SDL2 display enabled. Press ESC to quit.\n");
+        }
         vic_sdl_render();   /* Initial blank render so window appears */
     } else {
         printf("SDL2 display not available, using text output.\n");
@@ -749,7 +781,9 @@ int main(int argc, char *argv[])
     soundchip_init();
 
     /* Startup chirp so audio path can be verified quickly. */
-    soundchip_beep(880.0f, 100);
+    if (!cfg.c64) {
+        soundchip_beep(880.0f, 100);
+    }
 
     /* ── Init monitor ─────────────────────────────────────── */
     Monitor mon;
@@ -769,16 +803,26 @@ int main(int argc, char *argv[])
     struct timespec batch_ts_start;
 
     signal(SIGINT, handle_sigint);
-    printf("\n6502 SBC Emulator running. Press CTRL+C for monitor.\n\n");
+    printf("\n%s emulator running. Press CTRL+C for monitor.\n\n",
+           cfg.c64 ? "Commodore 64 (PAL)" : "6502 SBC");
 
     /* ── Main loop ────────────────────────────────────────── */
     monotonic_now(&batch_ts_start);
 
+    bool nmi_active = false;
     while (!cpu.stopped) {
         /* Handle SDL events */
         if (use_sdl && !vic_sdl_handle_events()) {
             printf("\nSDL window closed, exiting...\n");
             break;
+        }
+
+        if (use_sdl && vic_sdl_menu_open()) {
+            vic_sdl_render();
+            ns_sleep(16000000L);
+            monotonic_now(&batch_ts_start);
+            batch_start_cycle = cpu.cycles;
+            continue;
         }
 
         /* Check SIGINT frequently (after every ~1000 instructions) */
@@ -807,19 +851,36 @@ int main(int argc, char *argv[])
             batch_start_cycle = cpu.cycles;
         }
 
-        /* Execute one instruction */
-        int c = cpu6502_step(&cpu);
+        /* PAL VIC memory fetches can take the bus from the 6510. */
+        int c = cfg.c64 ? c64_vic_cpu_stall(&c64) : 0;
+        if (c != 0) {
+            cpu.cycles += (uint32_t)c;
+        } else if (cfg.c64) {
+            c = c64_floppy_step(&floppy, &c64, &cpu);
+        }
+        if (c == 0) {
+            c = cpu6502_step(&cpu);
+        }
 
         /* Tick peripherals */
         bus_tick(&bus, (uint32_t)c);
 
-        /* Feed IRQ from VIA/UART/VIC back to CPU */
+        /* Feed the selected machine's interrupt lines back to the CPU. */
         bool irq = false;
-        for (int i = 0; i < nv; i++) irq |= via_irq(&vias[i]);
-        for (int i = 0; i < nu; i++) irq |= uart_irq(&uarts[i]);
-        if (keyboard_regs_mapped) irq |= keyboard_regs_irq(&keyboard_regs);
-        irq |= cia_irq(&cia1);
-        irq |= vic_irq();
+        if (cfg.c64) {
+            irq = c64_irq(&c64);
+            bool nmi = c64_nmi(&c64);
+            if (nmi && !nmi_active) {
+                cpu6502_nmi(&cpu);
+            }
+            nmi_active = nmi;
+        } else {
+            for (int i = 0; i < nv; i++) irq |= via_irq(&vias[i]);
+            for (int i = 0; i < nu; i++) irq |= uart_irq(&uarts[i]);
+            if (keyboard_regs_mapped) irq |= keyboard_regs_irq(&keyboard_regs);
+            irq |= cia_irq(&cia1);
+            irq |= vic_irq();
+        }
         if (irq) cpu6502_irq(&cpu);
         else     cpu6502_irq_clear(&cpu);
 
@@ -889,6 +950,7 @@ done:
     soundchip_shutdown();
     bus_shutdown();
     vic_sdl_shutdown();
+    c64_floppy_close(&floppy);
     for (int i = 0; i < ns; i++) sram_free(&srams[i]);
     for (int i = 0; i < nr; i++) rom_free(&roms[i]);
     for (int i = 0; i < nu; i++) uart_free(&uarts[i]);

@@ -13,7 +13,7 @@ typedef struct {
     void        *device;
     const char  *name;
     uint16_t     base;
-    uint16_t     size;
+    uint32_t     size;
     bus_read_fn  read;
     bus_write_fn write;
     bus_tick_fn  tick;   /* optional, may be NULL */
@@ -31,7 +31,7 @@ typedef struct {
 
 void    bus_init(Bus *bus);
 void    bus_register(Bus *bus, const char *name, void *device,
-                     uint16_t base, uint16_t size,
+                     uint16_t base, uint32_t size,
                      bus_read_fn read, bus_write_fn write,
                      bus_tick_fn tick);
 uint8_t bus_read(Bus *bus, uint16_t addr);

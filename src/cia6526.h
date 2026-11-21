@@ -8,12 +8,14 @@ typedef struct {
     uint8_t regs[16];
     uint16_t timer_a;
     uint16_t latch_a;
-    uint64_t timer_accum;
-    bool timer_a_running;
-    bool irq_active;
+    uint32_t timer_accum;
+    uint8_t cycles_per_tick;
+    uint8_t irq_mask;
+    uint8_t irq_pending;
 } CIA6526;
 
 void cia_init(CIA6526 *cia);
+void cia_init_native(CIA6526 *cia);
 uint8_t cia_read(void *dev, uint16_t offset);
 void cia_write(void *dev, uint16_t offset, uint8_t val);
 void cia_tick(void *dev, uint32_t cycles);

@@ -68,7 +68,7 @@ static inline uint8_t kb_getc_blocking(void) {
 - Pause/Break or Ctrl+C in the SDL window sends BASIC STOP (`0x03`).
 - Home moves the cursor to the top-left cell; Shift+Home or Ctrl+L clears the
   screen and homes the cursor.
-- ESC closes emulator window
+- Escape closes the emulator window in SBC mode and sends `RUN/STOP` in C64 mode.
 
 ## Related Files
 

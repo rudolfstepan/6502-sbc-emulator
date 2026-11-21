@@ -320,11 +320,14 @@ STA $9000
 
 ## SDL Rendering
 
-The SDL backend renders to a 640×400 framebuffer and opens a 1280×800 window
-with integer 2× window scaling, similar to QEMU display scaling. It renders VIC
-state at the end of each emulation batch (~10 ms at the configured CPU speed).
+The SDL backend renders to a 640×400 framebuffer. The `[video]` section of the
+active INI file sets the integer `window_scale` for the SDL window. A value of
+`1` opens a 640×400 window, and the default `2` opens a 1280×800 window. Values
+from `1` to `25` fit SDL2's initial window size limit. An invalid value emits
+a warning and uses the default. VIC state is rendered at the end of each
+emulation batch (~10 ms at the configured CPU speed).
 
-- ESC or window close exits emulation
+- Closing the window exits emulation. In SBC mode, Escape also exits.
 - Keyboard input is injected into the VIA 6522 keyboard queue
 
 ---

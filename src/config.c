@@ -1,8 +1,12 @@
 #include "config.h"
+#include "c64.h"
+#include "c64_floppy.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
 #include <ctype.h>
+
+#define DEFAULT_WINDOW_SCALE 2
 
 static char *trim(char *s)
 {
@@ -13,9 +17,53 @@ static char *trim(char *s)
     return s;
 }
 
+static const char *const joystick_actions[C64_JOYSTICK_ACTIONS] = {
+    "up", "down", "left", "right", "fire"
+};
+
+static bool parse_decimal(const char *value, unsigned int max, unsigned int *result)
+{
+    char *end;
+    unsigned long number = strtoul(value, &end, 10);
+    if (end == value || *end || number > max || value[0] == '-') {
+        return false;
+    }
+    *result = (unsigned int)number;
+    return true;
+}
+
+static void read_c64_input(Config *cfg, const char *section, const char *key, const char *val)
+{
+    unsigned int value;
+    if (strcmp(section, "keyboard") == 0) {
+        unsigned int index;
+        if (strncmp(key, "key_", 4) == 0 &&
+            parse_decimal(key + 4, C64_KEY_COUNT - 1, &index) &&
+            parse_decimal(val, 511, &value)) {
+            cfg->c64_keys[index] = (uint16_t)value;
+        }
+        return;
+    }
+
+    if (strcmp(key, "port") == 0 && parse_decimal(val, 2, &value)) {
+        cfg->joystick_port = value;
+        return;
+    }
+    for (unsigned int action = 0; action < C64_JOYSTICK_ACTIONS; action++) {
+        if (strncmp(key, "key_", 4) == 0 && strcmp(key + 4, joystick_actions[action]) == 0 &&
+            parse_decimal(val, 511, &value)) {
+            cfg->joystick_keys[action] = (uint16_t)value;
+        } else if (strncmp(key, "control_", 8) == 0 &&
+                   strcmp(key + 8, joystick_actions[action]) == 0 &&
+                   parse_decimal(val, 1023, &value)) {
+            cfg->joystick_controls[action] = (uint16_t)value;
+        }
+    }
+}
+
 void config_defaults(Config *cfg)
 {
-    if (cfg->num_devs == 0) {
+    if (!cfg->c64 && cfg->num_devs == 0) {
         /* Tang Primer 20K FPGA-compatible split-ROM map. */
         cfg->devs[0] = (DevConfig){ .type=DEV_SRAM, .base=0x0000, .size=0x8000 };
         cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xA000, .size=0x3000,
@@ -30,7 +78,11 @@ void config_defaults(Config *cfg)
         cfg->num_devs = 6;
     }
     if (!cfg->cpu_speed_set)
-        cfg->cpu_speed_hz = DEFAULT_CPU_SPEED_HZ;
+        cfg->cpu_speed_hz = cfg->c64 ? C64_PAL_CPU_HZ : DEFAULT_CPU_SPEED_HZ;
+    if (cfg->window_scale == 0)
+        cfg->window_scale = DEFAULT_WINDOW_SCALE;
+    if (cfg->c64_floppy_device == 0)
+        cfg->c64_floppy_device = C64_FLOPPY_DEFAULT_DEVICE;
 }
 
 int config_load(Config *cfg, const char *filename)
@@ -43,7 +95,7 @@ int config_load(Config *cfg, const char *filename)
         return -1;
     }
 
-    char line[256];
+    char line[1024];
     char section[64] = "";
     DevConfig cur;
     memset(&cur, 0, sizeof(cur));
@@ -96,6 +148,45 @@ int config_load(Config *cfg, const char *filename)
                 strncpy(cfg->trace_file, val, CFG_STR_MAX - 1);
             else if (strcmp(key, "profile") == 0)
                 cfg->profile = atoi(val) != 0;
+        } else if (strcmp(section, "machine") == 0) {
+            if (strcmp(key, "type") == 0) {
+                cfg->c64 = strcmp(val, "c64") == 0;
+            } else if (strcmp(key, "basic") == 0) {
+                strncpy(cfg->c64_basic, val, sizeof(cfg->c64_basic) - 1);
+            } else if (strcmp(key, "kernal") == 0) {
+                strncpy(cfg->c64_kernal, val, sizeof(cfg->c64_kernal) - 1);
+            } else if (strcmp(key, "chargen") == 0) {
+                strncpy(cfg->c64_chargen, val, sizeof(cfg->c64_chargen) - 1);
+            }
+        } else if (strcmp(section, "floppy") == 0) {
+            if (strcmp(key, "image") == 0) {
+                strncpy(cfg->c64_floppy_image, val, sizeof(cfg->c64_floppy_image) - 1);
+            } else if (strcmp(key, "device") == 0) {
+                char *end;
+                long device = strtol(val, &end, 10);
+                if (end == val || *end != '\0' || device < 8 || device > 11) {
+                    fprintf(stderr, "config: %s: [floppy] device must be 8 to 11. Using 8.\n",
+                            filename);
+                    cfg->c64_floppy_device = C64_FLOPPY_DEFAULT_DEVICE;
+                } else {
+                    cfg->c64_floppy_device = (unsigned int)device;
+                }
+            }
+        } else if (strcmp(section, "keyboard") == 0 || strcmp(section, "joystick") == 0) {
+            read_c64_input(cfg, section, key, val);
+        } else if (strcmp(section, "video") == 0 &&
+                   strcmp(key, "window_scale") == 0) {
+            char *end;
+            long scale = strtol(val, &end, 10);
+            if (end == val || *end != '\0' || scale < 1 || scale > CFG_MAX_WINDOW_SCALE) {
+                fprintf(stderr,
+                        "config: %s: [video] window_scale must be an integer from 1 to %d."
+                        " Using %d.\n",
+                        filename, CFG_MAX_WINDOW_SCALE, DEFAULT_WINDOW_SCALE);
+                cfg->window_scale = DEFAULT_WINDOW_SCALE;
+            } else {
+                cfg->window_scale = (int)scale;
+            }
         } else if (in_dev) {
             if (strcmp(key, "base") == 0)
                 cur.base = (uint16_t)strtoul(val, NULL, 16);

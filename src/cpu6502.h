@@ -33,6 +33,7 @@ typedef struct CPU6502 {
     bool     stopped;     /* STP / halt */
 
     uint8_t  mode;        /* 0=NMOS 6502, 1=CMOS 65C02 */
+    bool     nmos_rmw_writes; /* Drive the original value on NMOS read/modify/write. */
 
     /* Profiling */
     uint64_t opcode_count[256];

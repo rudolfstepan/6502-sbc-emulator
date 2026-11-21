@@ -12,6 +12,7 @@ sbc6502
 __pycache__/
 *.pyc
 !roms/.gitkeep
+/roms/c64/
 tools/roms/
 data/disk/*.prg
 !data/disk/.gitkeep

@@ -4,6 +4,24 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added an F12 configuration menu for C64 settings, keyboard mapping, and
+  keyboard or USB joystick mapping. Settings are saved to the active INI.
+
+- Escape sends `RUN/STOP` in C64 mode. Close the window to exit.
+
+- The PAL C64 VIC-II renders by raster line and supports fine scrolling,
+  24/25 rows, 38/40 columns, and eight sprites with color, expansion, priority,
+  and collision IRQs. The CPU yields bus time to bad-line matrix fetches.
+- The C64 profile mounts read-only D64 images through drag and drop or `[floppy]`
+  in `c64.ini`. BASIC can list directories and load PRG files.
+- C64 directory listings put filename padding outside the closing quote. `LOAD`
+  also accepts trailing spaces copied from an earlier listing.
+
+- Added a PAL C64 profile with BASIC boot, the CIA1 keyboard matrix, and VIC-II
+  text and bitmap display using locally supplied ROMs.
+- The emulator reads its startup window scale from `[video]` → `window_scale`
+  in the active INI file.
+
 ### FPGA extracted into a standalone repository (git submodule)
 
 - The `fpga/` tree (RTL, simulation, board flows, 6502 firmware) now lives in its
