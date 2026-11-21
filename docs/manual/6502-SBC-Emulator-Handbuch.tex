@@ -59,7 +59,8 @@
 \setcounter{secnumdepth}{1}
 \DeclareTOCStyleEntries[entryformat=\tableSize,pagenumberformat=\tableSize,
   pagenumberwidth=2.2em]{tocline}{section,figure}
-\DeclareTOCStyleEntry[pagenumberformat=\tableSize,pagenumberwidth=2.2em]{tocline}{chapter}
+\DeclareTOCStyleEntry[beforeskip=.72em,pagenumberformat=\tableSize,
+  pagenumberwidth=2.2em]{tocline}{chapter}
 
 \clearpairofpagestyles
 \automark[chapter]{chapter}
@@ -84,6 +85,15 @@
       \caption{#3}
     \end{minipage}
   \end{figure}%
+}
+\newcommand{\architectureBox}[3]{%
+  \fcolorbox{Rule}{Teal!5}{%
+    \begin{minipage}[t]{#1}
+      \raggedright\tableSize
+      \textbf{\textcolor{Teal}{#2}}\par
+      #3
+    \end{minipage}%
+  }%
 }
 \renewcommand{\arraystretch}{1.16}
 \setlength{\tabcolsep}{5pt}
@@ -449,6 +459,61 @@ physischen Platine, etwa HDMI-Ausgabe und externe Signale, prüfen Sie
 anschließend auf der Hardware.
 
 \part{Konfiguration, Diagnose und Referenz}
+\chapter{Softwarearchitektur}\label{ch:architecture}
+
+Beim Start wählt die INI ein Maschinenprofil und damit die Speicher- und
+Gerätebelegung. Beide Maschinen führen ihre Programme mit demselben
+CPU-Kern aus. Der Kern verarbeitet Befehle und Interrupts und zählt Takte.
+Für Lese- und Schreibzugriffe übergibt er die Adresse an den Speicherbus.
+Der Monitor verwendet denselben Bus und sieht die jeweils eingeblendeten
+ROMs, RAM-Bereiche und Register.
+
+\begin{figure}[H]
+  \setlength{\fboxsep}{6pt}
+  \centering
+  \architectureBox{.92\linewidth}{Gemeinsam}{%
+    \texttt{CPU6502} führt Befehle aus. Der Monitor zeigt CPU-Zustand und
+    Speicher. Beide greifen über \texttt{Bus} auf die aktive Maschine zu.
+  }\par
+  \vspace{2pt}
+  \makebox[.46\linewidth]{\textcolor{Teal}{↓}}\hfill
+  \makebox[.46\linewidth]{\textcolor{Teal}{↓}}\par
+  \vspace{2pt}
+  \noindent
+  \architectureBox{.45\linewidth}{SBC-Profil}{%
+    Der Bus verteilt Adressen an RAM, ROM und einzelne Geräte.
+    Dazu gehören VIA~6522, UART~6551, der SBC-VIC,
+    der Vierstimmen-Klangchip und die SBC-Disk-Schnittstelle.
+  }\hfill
+  \architectureBox{.45\linewidth}{PAL-C64-Profil}{%
+    Der Bus leitet Zugriffe an die C64-Maschine. Der 6510-Port steuert
+    die ROM- und I/O-Einblendung über dem RAM. VIC-II, zwei CIAs und SID
+    gehören zur C64-Maschine. Der virtuelle D64-Lader bedient KERNAL-Aufrufe.
+  }
+  \caption{CPU und Monitor greifen über den gemeinsamen Bus auf die
+    Speicherabbildung und Peripherie des gewählten Profils zu.}
+  \label{fig:architecture}
+\end{figure}
+
+\textbf{SBC-Speicherkarte.} RAM und ROM werden als Adressfenster
+eingetragen. Im FPGA-Profil können zwei Teile desselben ROM-Abbilds an
+unterschiedlichen Adressen liegen. Der SBC-VIC hat eigene Register für
+Text, Bitmap, Sprites und Blitter. Kapitel~\ref{ch:sbc} zeigt, wie
+Sie die ROM-Abbildung prüfen.
+
+\textbf{C64-Speicherkarte.} Die 6510-Portregister bei
+\texttt{\$0000} und \texttt{\$0001} beeinflussen, ob ein Zugriff etwa auf
+\texttt{\$D000} den I/O-Bereich, das Zeichen-ROM oder RAM erreicht.
+CIA1 verbindet die Tastaturmatrix und Joystick-Ports mit dem C64.
+CIA2 wählt unter anderem die Speicherbank für den VIC-II. Beim
+virtuellen D64-Laden erkennt die Hauptschleife den passenden
+KERNAL-Einsprung, wie in Kapitel~\ref{ch:comparison} beschrieben.
+
+Die Hauptschleife gibt die verstrichenen CPU-Takte an die Geräte weiter
+und wertet deren Interruptsignale aus. SDL2 übernimmt am PC die
+Fenster- und Audioausgabe und liefert Eingabeereignisse. Die Zuordnung
+zu SBC- oder C64-Eingaben geschieht im jeweiligen Profil.
+
 \chapter{Konfigurationsreferenz}\label{ch:ref}
 
 \section{Welche INI wird gespeichert?}
@@ -589,6 +654,7 @@ erscheint. Tritt der Fehler ausschließlich in einer Szene auf, vergleichen
 Sie denselben PAL-Bildabschnitt mit der Referenz. Fensterzoom verändert nur
 die Darstellung auf dem PC. Unterschiede im Bildinhalt weisen auf einen
 anderen Prüfbereich hin, etwa das Nachladen von Daten oder das VIC-II-Timing.
+Abschnitt~\ref{sec:game-checks} nennt konkrete Beobachtungen aus Spieltests.
 
 \section{Weiterführende Projektdokumentation}
 Die Datei \path{README.md} beschreibt Bedienung und Startprofile. Den
@@ -726,6 +792,35 @@ verwendeten Grafik-, Audio- und Ladefunktionen entscheidend. Ein
 Kompatibilitätsbericht ist am aussagekräftigsten, wenn er das Abbild, den
 Ladebefehl, den letzten erfolgreichen Schritt und die Vergleichseinstellung
 des Referenzemulators nennt.
+
+\section{Spieltests mit lokalen D64-Abbildern}\label{sec:game-checks}
+Die folgenden Stichproben liefen im PAL-Profil mit Gerät~8. Nach
+\texttt{LOAD "*",8,1} und \texttt{RUN} wurden der Bildaufbau und die jeweils
+erreichte Phase geprüft. Die Angaben beziehen sich auf das genannte Abbild
+und die beobachteten Szenen. Ton, vollständige Spielverläufe und ein
+pixelgenauer Vergleich mit Originalhardware waren außerhalb der Stichprobe.
+
+\begin{referenceTable}{P{43mm} Y Y}
+\textbf{Spiel und Abbild} & \textbf{Erreichte Phase} &
+\textbf{Bildbeobachtung} \\
+\midrule
+Commando 86\newline\path{Comm86.d64} &
+Titelbild, Namenseingabe nach \ui{F1} und Einstieg in die Kampfzone. &
+Gelände, Spielfigur und Statusanzeige sichtbar. Ein früheres Bild aus
+der Kampfzone zeigte auffällige Wiederholmuster im oberen Spielfeld. \\
+\addlinespace
+Boulder Dash IX\newline\path{Boulderdash_9.d64} &
+Titelbild und Einstieg in Höhle A/1. &
+Höhlenfeld, Objekte und Statuszeile sichtbar. \\
+\addlinespace
+3D Pacman\newline\path{3dpacman.d64} &
+Spielfeld mit Labyrinthansicht erreicht. Die Steuerung wurde nicht bestätigt. &
+Radar, Zähler und Labyrinth erkennbar. \\
+\addlinespace
+The Great Giana Sisters\newline\path{Great_Giana_Sisters.d64} &
+Intro, Anleitung und Optionsmenü der Diskettenfassung erreicht. &
+Anleitung und Menüpunkte lesbar. Für das Spielfeld liegt kein Prüfbild vor. \\
+\end{referenceTable}
 
 \section{Quellen zum Vergleich}\label{sec:comparison-sources}
 \begin{itemize}
