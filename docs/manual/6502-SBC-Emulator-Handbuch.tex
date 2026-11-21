@@ -16,6 +16,8 @@
 \usepackage{microtype,graphicx,float,caption}
 \usepackage{scrlayer-scrpage}
 \usepackage{booktabs,tabularx,array,needspace,fvextra,xurl}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta}
 \usepackage{hyperref,bookmark}
 
 \definecolor{Ink}{HTML}{142E46}
@@ -85,15 +87,6 @@
       \caption{#3}
     \end{minipage}
   \end{figure}%
-}
-\newcommand{\architectureBox}[3]{%
-  \fcolorbox{Rule}{Teal!5}{%
-    \begin{minipage}[t]{#1}
-      \raggedright\tableSize
-      \textbf{\textcolor{Teal}{#2}}\par
-      #3
-    \end{minipage}%
-  }%
 }
 \renewcommand{\arraystretch}{1.16}
 \setlength{\tabcolsep}{5pt}
@@ -469,29 +462,45 @@ Der Monitor verwendet denselben Bus und sieht die jeweils eingeblendeten
 ROMs, RAM-Bereiche und Register.
 
 \begin{figure}[H]
-  \setlength{\fboxsep}{6pt}
   \centering
-  \architectureBox{.92\linewidth}{Gemeinsam}{%
-    \texttt{CPU6502} führt Befehle aus. Der Monitor zeigt CPU-Zustand und
-    Speicher. Beide greifen über \texttt{Bus} auf die aktive Maschine zu.
-  }\par
-  \vspace{2pt}
-  \makebox[.46\linewidth]{\textcolor{Teal}{↓}}\hfill
-  \makebox[.46\linewidth]{\textcolor{Teal}{↓}}\par
-  \vspace{2pt}
-  \noindent
-  \architectureBox{.45\linewidth}{SBC-Profil}{%
-    Der Bus verteilt Adressen an RAM, ROM und einzelne Geräte.
-    Dazu gehören VIA~6522, UART~6551, der SBC-VIC,
-    der Vierstimmen-Klangchip und die SBC-Disk-Schnittstelle.
-  }\hfill
-  \architectureBox{.45\linewidth}{PAL-C64-Profil}{%
-    Der Bus leitet Zugriffe an die C64-Maschine. Der 6510-Port steuert
-    die ROM- und I/O-Einblendung über dem RAM. VIC-II, zwei CIAs und SID
-    gehören zur C64-Maschine. Der virtuelle D64-Lader bedient KERNAL-Aufrufe.
-  }
-  \caption{CPU und Monitor greifen über den gemeinsamen Bus auf die
-    Speicherabbildung und Peripherie des gewählten Profils zu.}
+  \begin{tikzpicture}[
+    x=1mm,y=1mm,
+    block/.style={draw=Teal!55!Ink, fill=Teal!5, rounded corners=1.5pt,
+      line width=.55pt, inner sep=4pt, align=center, font=\tableSize},
+    core/.style={block, minimum width=49mm, minimum height=12mm},
+    profile/.style={block, minimum width=70mm, minimum height=17mm},
+    devices/.style={block, fill=white, minimum width=70mm, minimum height=15mm},
+    bus/.style={block, draw=Ink, fill=Ink, text=white, minimum width=150mm,
+      minimum height=9mm},
+    access/.style={<->, >=Latex, draw=Teal!75!Ink, line width=.7pt}
+  ]
+    \node[core] (cpu) at (-39,0)
+      {\textbf{Gemeinsamer CPU-Kern}\\\texttt{CPU6502}};
+    \node[core] (monitor) at (39,0)
+      {\textbf{Maschinenmonitor}\\Register und Speicher};
+    \node[bus] (bus) at (0,-20)
+      {\textbf{Speicherbus}\quad Adressdekodierung und Lese-/Schreibzugriffe};
+
+    \node[profile] (sbc) at (-39,-44)
+      {\textbf{SBC-Profil}\\Konfigurierte RAM-, ROM- und Gerätefenster};
+    \node[profile] (c64) at (39,-44)
+      {\textbf{PAL-C64-Profil}\\64 KiB RAM mit ROM- und I/O-Einblendung\\
+        6510-Port bei \texttt{\$0000/\$0001}};
+    \node[devices] (sbcDevices) at (-39,-66)
+      {VIA 6522, UART 6551, SBC-Disk\\SBC-VIC und Vierstimmen-Klangchip};
+    \node[devices] (c64Devices) at (39,-66)
+      {VIC-II, CIA1, CIA2 und SID\\Tastatur und Joystick über CIA1};
+
+    \draw[access] (cpu.south) -- (cpu.south |- bus.north);
+    \draw[access] (monitor.south) -- (monitor.south |- bus.north);
+    \draw[access] (sbc.north |- bus.south) -- (sbc.north);
+    \draw[access] (c64.north |- bus.south) -- (c64.north);
+    \draw[access] (sbc.south) -- (sbcDevices.north);
+    \draw[access] (c64.south) -- (c64Devices.north);
+    \node[text=Muted,font=\captionSize] at (0,-31) {Auswahl beim Start per INI};
+  \end{tikzpicture}
+  \caption{Gemeinsame CPU, Monitor und Speicherbus mit den beiden
+    alternativen Speicher- und Peripheriepfaden.}
   \label{fig:architecture}
 \end{figure}
 
@@ -778,49 +787,50 @@ wiederherstellen. Ein gespeichertes F12-Profil stellt den nächsten Start
 mit derselben Konfiguration bereit.
 
 \section{Was die aktuellen Tests belegen}
-Die technischen Gründe in diesem Kapitel ergeben sich aus dem
-beschriebenen Quellstand. Sie beschreiben den Umfang der vorhandenen
-Modelle und die Arbeit, die für die jeweils fehlende Funktion nötig
-wäre. Das Projekt dokumentiert die Änderungen im \path{CHANGELOG.md}.
-
-Die automatisierten C64-Tests prüfen ausgewählte Eigenschaften von
-Speicherabbildung, Eingaben, Rasterdarstellung und D64-Ladevorgang.
-Der zusätzliche ROM-basierte Starttest prüft einen durchgehenden Ablauf
-vom Start über BASIC bis zum Laden und Ausführen eines Testprogramms.
-Für ein konkretes Spiel oder eine Demo sind darüber hinaus die
-verwendeten Grafik-, Audio- und Ladefunktionen entscheidend. Ein
-Kompatibilitätsbericht ist am aussagekräftigsten, wenn er das Abbild, den
-Ladebefehl, den letzten erfolgreichen Schritt und die Vergleichseinstellung
-des Referenzemulators nennt.
+Die automatisierten Tests prüfen Speicherabbildung, Eingaben,
+Rasterdarstellung und D64-Laden. Der ROM-basierte Starttest führt vom
+BASIC-Start bis zur Ausführung eines geladenen Testprogramms. Änderungen
+am beschriebenen Quellstand stehen in \path{CHANGELOG.md}.
 
 \section{Spieltests mit lokalen D64-Abbildern}\label{sec:game-checks}
 Die folgenden Stichproben liefen im PAL-Profil mit Gerät~8. Nach
-\texttt{LOAD "*",8,1} und \texttt{RUN} wurden der Bildaufbau und die jeweils
-erreichte Phase geprüft. Die Angaben beziehen sich auf das genannte Abbild
-und die beobachteten Szenen. Ton, vollständige Spielverläufe und ein
-pixelgenauer Vergleich mit Originalhardware waren außerhalb der Stichprobe.
+\texttt{LOAD "*",8,1} und \texttt{RUN} zählt ein erkennbares Intro,
+Titelbild oder Spielfeld als erfolgreicher Start. Spielbarkeit ist für
+die Stichprobe bestätigt, wenn eine Eingabe im laufenden Spiel die
+erwartete Aktion auslöst. Die Grafikspalte hält Auffälligkeiten in der
+beobachteten Szene fest. Ton, vollständige Spielverläufe und ein
+pixelgenauer Hardwarevergleich bleiben offen.
 
-\begin{referenceTable}{P{43mm} Y Y}
-\textbf{Spiel und Abbild} & \textbf{Erreichte Phase} &
-\textbf{Bildbeobachtung} \\
+\begin{referenceTable}{P{41mm} Y Y Y}
+\textbf{Spiel und Abbild} & \textbf{Start erfolgreich} &
+\textbf{Spielbarkeit} & \textbf{Grafikabweichungen} \\
 \midrule
 Commando 86\newline\path{Comm86.d64} &
-Titelbild, Namenseingabe nach \ui{F1} und Einstieg in die Kampfzone. &
-Gelände, Spielfigur und Statusanzeige sichtbar. Ein früheres Bild aus
-der Kampfzone zeigte auffällige Wiederholmuster im oberen Spielfeld. \\
+Ja. Mit \ui{F1} zur Namenseingabe, danach Kampfzone erreicht. &
+Bestätigt. Rechts an Port~1 bewegt die Figur nach rechts. &
+Früher Wiederholmuster im oberen Spielfeld. Im aktuellen Prüfbild
+sind Gelände, Figur und Statusanzeige erkennbar. \\
 \addlinespace
 Boulder Dash IX\newline\path{Boulderdash_9.d64} &
-Titelbild und Einstieg in Höhle A/1. &
-Höhlenfeld, Objekte und Statuszeile sichtbar. \\
+Ja. Titelbild und Höhle A/1 erreicht. &
+Bestätigt. Rechts an Port~1 sammelt einen Diamanten ein. Die
+Punktzahl steigt von 0 auf 10. &
+Höhlenfeld und Statuszeile im Prüfbild ohne sichtbare Auffälligkeit. \\
 \addlinespace
 3D Pacman\newline\path{3dpacman.d64} &
-Spielfeld mit Labyrinthansicht erreicht. Die Steuerung wurde nicht bestätigt. &
-Radar, Zähler und Labyrinth erkennbar. \\
+Ja. Labyrinthansicht erreicht. &
+Offen. Eine Reaktion der Spielfigur auf Eingaben wurde nicht bestätigt. &
+Radar, Zähler und Labyrinth im Prüfbild ohne sichtbare Auffälligkeit. \\
 \addlinespace
 The Great Giana Sisters\newline\path{Great_Giana_Sisters.d64} &
-Intro, Anleitung und Optionsmenü der Diskettenfassung erreicht. &
-Anleitung und Menüpunkte lesbar. Für das Spielfeld liegt kein Prüfbild vor. \\
+Ja. Intro, Anleitung und Optionsmenü erreicht. &
+Offen. Die Stichprobe endete im Optionsmenü. &
+Menü und Anleitung lesbar. Spielfeld nicht beurteilt. \\
 \end{referenceTable}
+
+Für einen Regressionstest halten Sie Abbild, Ladebefehl, Eingabefolge,
+Joystick-Port und erwartete Aktion fest. Vergleichen Sie das Prüfbild
+an derselben Stelle im Ablauf und notieren Sie die Referenzeinstellung.
 
 \section{Quellen zum Vergleich}\label{sec:comparison-sources}
 \begin{itemize}
