@@ -61,6 +61,26 @@ scancodes in `[keyboard]` in the active INI.
 See [Commodore 64 Programmer's Reference Guide, memory management](https://www.commodore.ca/manuals/c64_programmers_reference/c64-programmers_reference_guide-05-basic_to_machine_language.pdf)
 and [graphics programming](https://www.commodore.ca/wp-content/uploads/2018/11/c64-programmers_reference_guide-03-programming_graphics.pdf), and [Christian Bauer's VIC-II analysis](https://www.cebix.net/VIC-Article.txt).
 
+## NES / Famicom Profiles
+
+The SDL2 frontend loads FCEUmm through Libretro and handles video output,
+audio playback, and controller input. The reference profile (`nes.ini`)
+uses FCEUmm's CPU. The adapted profile (`nes-sbc.ini`) connects the project's
+`CPU6502` and bus to FCEUmm:
+
+```text
+SDL2 frontend <-- Libretro --> FCEUmm (PPU, APU, DMA, interrupts, mappers)
+                                   ^
+                                   |
+CPU6502 (2A03) <--> SBC bus <--> NES address handlers
+```
+
+FCEUmm schedules instruction execution and the NES peripherals. For documented
+opcodes, the adapter executes instructions on the project's 6502 core in 2A03
+mode and routes memory access through the SBC bus to FCEUmm's address handlers.
+FCEUmm handles undocumented and mapper-encrypted opcodes and generates NES
+audio through its APU.
+
 ## Device Map Strategy
 
 The emulator uses both fixed and configurable regions.

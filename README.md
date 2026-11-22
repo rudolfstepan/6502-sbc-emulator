@@ -157,8 +157,9 @@ cd bin
 .\sbc6502.exe nes.ini --load 'USA\Contra (U).zip'
 ```
 
-`[nes] rom_dir` in the supplied profile points to `E:/Emulatoren/Nintendo/Roms`.
-`[nes] rom` selects the default file, relative to that directory. `--load`
+In the `[nes]` section of either profile, set `rom_dir = ../roms/nes` to use
+the `roms/nes/` folder under the project root when launching from `bin/`.
+Set `rom` to your default cartridge's filename or path within that folder. `--load`
 also accepts an absolute path or a file relative to the current working
 directory. Drag a cartridge or a ZIP containing one cartridge onto the
 NES window to switch games. The loader also accepts `.unf`, `.unif` and `.fds`.
@@ -198,6 +199,7 @@ cartridge mappers, and executes undocumented or mapper-encrypted opcodes.
 The adapter is instruction-based and is still being checked for CPU/PPU
 timing compatibility. It uses a separate per-user battery-save directory
 called `NES SBC CPU` so comparisons leave the reference profile's saves intact.
+See the [NES architecture diagram](docs/ARCHITECTURE.md#nes--famicom-profiles).
 
 `make test-2a03` verifies CPU arithmetic and bus access order. With the adapted
 core built, `make test-nes-sbc` verifies cartridge loading and an indexed
