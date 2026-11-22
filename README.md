@@ -1,12 +1,16 @@
-# 6502 SBC Emulator
+# 6502 Systems Emulator
 
 [![CI](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml/badge.svg)](https://github.com/rudolfstepan/6502-sbc-emulator/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
-A C99 6502 emulator with two machine profiles, **6502 SBC** and **Commodore 64 (PAL)**.
-Both use SDL2 video and audio and share an interactive machine monitor. The
-SBC profile includes MS BASIC, EhBASIC, standalone chess, and a 4-voice sound
-demo. The [C64 profile](docs/C64.md) uses locally supplied Commodore ROMs.
+A C99 emulator for 6502-based systems with SDL2 video and audio. It runs the
+project's **6502 SBC**, the **Commodore 64 (PAL)**, and the
+**Nintendo NES / Famicom**.
+
+The SBC and [C64](docs/C64.md) share the project's 6502 core and interactive
+machine monitor. The [NES / Famicom profiles](#nintendo-nes--famicom) use
+FCEUmm and support either its CPU or the project's 6502 core in 2A03 mode.
+Users supply their own original C64 and NES / Famicom ROMs.
 
 ## Highlights
 
@@ -19,6 +23,8 @@ demo. The [C64 profile](docs/C64.md) uses locally supplied Commodore ROMs.
 - SDL2 display and audio backend
 - **C64 mode** with PAL VIC-II raster graphics and sprites, SID audio, read-only
   D64 loading, and an F12 menu for keyboard and joystick remapping
+- **NES / Famicom mode** with the FCEUmm reference profile (`nes.ini`)
+  and the profile using the project's CPU (`nes-sbc.ini`)
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
 - Ready-to-run configs for MS BASIC (`sbc.ini`), EhBASIC (`ehbasic.ini`), chess (`chess.ini`), and the 4-voice sound demo (`soundtest.ini`)
 - ROM build scripts for kernel, MS BASIC, EhBASIC, chess, and the soundtest ROM
@@ -35,7 +41,8 @@ git clone https://github.com/rudolfstepan/6502-sbc-fpga.git
 cd 6502-sbc-emulator
 ```
 
-The FPGA checkout is optional for the standard SBC and C64 emulator build.
+The FPGA checkout is optional for the emulator build. The
+[NES / Famicom setup](#nintendo-nes--famicom) requires a FCEUmm core.
 
 Build:
 
