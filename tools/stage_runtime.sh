@@ -12,7 +12,7 @@ case "$OUT_DIR_REAL" in
 esac
 
 # Copy default runtime configs if present.
-for cfg in sbc.ini ehbasic.ini fpga.ini chess.ini soundtest.ini avdemo.ini c64.ini nes.ini nes-sbc.ini; do
+for cfg in sbc.ini ehbasic.ini fpga.ini chess.ini soundtest.ini avdemo.ini c64.ini nes.ini nes-sbc.ini apple2.ini; do
     if [[ -f "$cfg" ]]; then
         cp -f "$cfg" "$OUT_DIR/"
     fi
@@ -23,12 +23,14 @@ shopt -s nullglob
 for rom in roms/*.rom; do
     cp -f "$rom" "$OUT_DIR/roms/"
 done
-if [[ -d roms/c64 ]]; then
-    mkdir -p "$OUT_DIR/roms/c64"
-    for rom in roms/c64/*.rom; do
-        cp -f "$rom" "$OUT_DIR/roms/c64/"
-    done
-fi
+for machine in c64 apple2; do
+    if [[ -d "roms/$machine" ]]; then
+        mkdir -p "$OUT_DIR/roms/$machine"
+        for rom in "roms/$machine"/*.rom; do
+            cp -f "$rom" "$OUT_DIR/roms/$machine/"
+        done
+    fi
+done
 shopt -u nullglob
 
 FPGA_ROM_DIR="../6502-sbc-fpga/roms/6502"

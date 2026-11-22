@@ -4,13 +4,13 @@
 [![License: MIT](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 A C99 emulator for 6502-based systems with SDL2 video and audio. It runs the
-project's **6502 SBC**, the **Commodore 64 (PAL)**, and the
-**Nintendo NES / Famicom**.
+project's **6502 SBC**, the **Commodore 64 (PAL)**, the
+**Apple II Plus**, and the **Nintendo NES / Famicom**.
 
 The SBC and [C64](docs/C64.md) share the project's 6502 core and interactive
 machine monitor. The [NES / Famicom profiles](#nintendo-nes--famicom) use
 FCEUmm and support either its CPU or the project's 6502 core in 2A03 mode.
-Users supply their own original C64 and NES / Famicom ROMs.
+Original C64, Apple II Plus and NES / Famicom ROMs are local runtime files.
 
 ## Highlights
 
@@ -23,6 +23,8 @@ Users supply their own original C64 and NES / Famicom ROMs.
 - SDL2 display and audio backend
 - **C64 mode** with PAL VIC-II raster graphics and sprites, SID audio, read-only
   D64 loading, and an F12 menu for keyboard and joystick remapping
+- **[Apple II Plus mode](docs/APPLE2.md)** with Applesoft BASIC, 40-column text,
+  color graphics, speaker audio, and a read-only Disk II drive
 - **NES / Famicom mode** with the FCEUmm reference profile (`nes.ini`)
   and the profile using the project's CPU (`nes-sbc.ini`)
 - Interactive machine monitor (registers, memory dump, disassembly, stepping, breakpoints)
@@ -147,6 +149,21 @@ a `.d64` onto the open menu to choose a startup image.
 Set the C64 joystick to port 1 or 2 to enable it. The default keyboard
 joystick uses the arrow keys and Right Ctrl for fire. The first connected
 SDL joystick or gamepad also works and can be remapped on the Joystick page.
+
+### Apple II Plus
+
+Start from the project directory. With the three firmware ROMs in
+`roms/apple2/`, the profile opens at the Applesoft BASIC `]` prompt.
+
+```powershell
+.\bin\sbc6502.exe apple2.ini
+.\bin\sbc6502.exe apple2.ini --load ".\data\apple2\apple2plus-diagnostics.dsk"
+```
+
+![Apple II Plus at the Applesoft BASIC prompt](docs/manual/screenshots/apple2-basic.png)
+
+The [Apple II Plus guide](docs/APPLE2.md#test-disks) includes commands and
+screenshots for DOS 3.3, the diagnostics disk and two graphics demos.
 
 ### Nintendo NES / Famicom
 
@@ -464,6 +481,7 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 ## Documentation Index
 
 - [Commodore 64 (PAL) mode](docs/C64.md)
+- [Apple II Plus mode](docs/APPLE2.md)
 - [German user manual (PDF)](output/pdf/6502-SBC-Emulator-Handbuch.pdf) and [editable LuaLaTeX source](docs/manual/6502-SBC-Emulator-Handbuch.tex)
 - [FPGA repository](https://github.com/rudolfstepan/6502-sbc-fpga) and [FPGA Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki) — board builds, simulation, and hardware documentation
 - [docs/FPGA_COMPATIBILITY_STATUS.md](docs/FPGA_COMPATIBILITY_STATUS.md) — emulator-side FPGA compatibility changes, rationale, timing, and test flow

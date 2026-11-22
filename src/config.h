@@ -44,6 +44,11 @@ typedef struct {
     int       window_scale;
     bool      c64;
     bool      nes;
+    bool      apple2;
+    char      apple2_system_rom[CFG_PATH_MAX];
+    char      apple2_video_rom[CFG_PATH_MAX];
+    char      apple2_disk_rom[CFG_PATH_MAX];
+    char      apple2_disk_image[CFG_PATH_MAX];
     bool      nes_sbc_cpu;
     char      nes_core[CFG_PATH_MAX];
     char      nes_rom_dir[CFG_PATH_MAX];

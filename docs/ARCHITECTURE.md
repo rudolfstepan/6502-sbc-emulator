@@ -61,6 +61,23 @@ scancodes in `[keyboard]` in the active INI.
 See [Commodore 64 Programmer's Reference Guide, memory management](https://www.commodore.ca/manuals/c64_programmers_reference/c64-programmers_reference_guide-05-basic_to_machine_language.pdf)
 and [graphics programming](https://www.commodore.ca/wp-content/uploads/2018/11/c64-programmers_reference_guide-03-programming_graphics.pdf), and [Christian Bauer's VIC-II analysis](https://www.cebix.net/VIC-Article.txt).
 
+## Apple II Plus Profile
+
+`apple2.ini` selects the project's NMOS 6502 core at approximately 1.02 MHz.
+The machine maps 48 KiB of main RAM at `$0000-$BFFF`, I/O at `$C000-$C0FF`,
+and the Applesoft and Autostart Monitor firmware at `$D000-$FFFF`. The
+16 KiB Language Card can overlay the upper ROM region. Its switches at
+`$C080-$C08F` control reading, write protection, and the two `$D000` banks.
+
+The SDL frontend renders the two text and graphics pages from RAM at the end of
+each frame. Keyboard data and strobe use `$C000` and `$C010`, and accesses to
+`$C030` toggle the built-in speaker. A mounted Disk II exposes its boot ROM
+at `$C600-$C6FF`. The switches at `$C0E0-$C0EF` control the stepper, motor,
+drive select, and read latch. Sector images are encoded into 6-and-2 GCR tracks
+on mount. Nibble images already contain encoded tracks.
+
+See the [Apple II Plus guide](APPLE2.md) for firmware and disk formats.
+
 ## NES / Famicom Profiles
 
 The SDL2 frontend loads FCEUmm through Libretro and handles video output,

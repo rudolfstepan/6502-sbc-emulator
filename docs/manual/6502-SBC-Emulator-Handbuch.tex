@@ -25,10 +25,10 @@
 \definecolor{Muted}{HTML}{526171}
 \definecolor{Rule}{HTML}{CBD8E0}
 \newcommand{\ManualTitle}{6502-Systeme emulieren}
-\newcommand{\ManualSubtitle}{6502-SBC, Commodore 64 (PAL) und Nintendo NES/Famicom}
+\newcommand{\ManualSubtitle}{6502-SBC, Commodore 64 (PAL), Apple II Plus und Nintendo NES/Famicom}
 \newcommand{\ManualScope}{Bedienung, Architektur und Entwicklung}
 \newcommand{\ManualDate}{22. November 2026}
-\newcommand{\SourceRevision}{ef51d23}
+\newcommand{\SourceRevision}{71834eb}
 \newcommand{\ui}[1]{\textbf{#1}}
 \newcommand{\metaSize}{\fontsize{8bp}{10bp}\selectfont}
 \newcommand{\tableSize}{\fontsize{9bp}{11bp}\selectfont}
@@ -169,7 +169,8 @@ gemacht haben.
 \bigskip
 \textbf{Schneller Einstieg.} Starten Sie den C64 wie in Kapitel~\ref{ch:start}
 beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Kapitel~\ref{ch:menu}
-beschreibt das F12-Menü. Abschnitt~\ref{sec:fpga-roms} zeigt, wie Sie dieselbe
+beschreibt das F12-Menü. Kapitel~\ref{ch:apple2} führt zum Applesoft-BASIC-Prompt
+und zu den Apple-II-Testdisketten. Abschnitt~\ref{sec:fpga-roms} zeigt, wie Sie dieselbe
 ROM-Datei im Emulator und auf dem FPGA verwenden. Zum NES-Kompatibilitätsmodus
 führt Abschnitt~\ref{sec:nes-sbc-start}.
 
@@ -183,8 +184,8 @@ führt Abschnitt~\ref{sec:nes-sbc-start}.
 \chapter{Start und erster Test}\label{ch:start}
 
 \section{Windows-Build und Profil}
-Der Emulator bietet ein SBC-Profil mit eigenen ROMs, ein PAL-C64-Profil mit
-separaten C64-ROMs und Profile für NES/Famicom. Beim Start bestimmt die
+Der Emulator bietet Profile für den 6502-SBC, den PAL-C64, den Apple II Plus
+und NES/Famicom. Beim Start bestimmt die
 gewählte INI-Datei die Maschine und ihre Einstellungen. Dieses Handbuch
 beschreibt den lokalen Programmstand auf Basis von \texttt{\SourceRevision}.
 Die Abbildungen stammen aus dem Emulator.
@@ -193,6 +194,8 @@ Wählen Sie das SBC-Profil, wenn Sie den Projekt-Kernel, die zugehörigen ROMs
 oder Software für die Speicher- und Gerätebelegung des Projekts ausführen.
 Wählen Sie das C64-Profil für Commodore BASIC und Programme für einen
 PAL-C64. Die SBC- und C64-Profile verwenden denselben Maschinenmonitor.
+Für Applesoft BASIC und Disk-II-Abbilder verwenden Sie das Apple-II-Plus-Profil
+aus Kapitel~\ref{ch:apple2}.
 NES-Spielmodule starten Sie mit einem der Profile aus
 Abschnitt~\ref{sec:nes-sbc-start}. Programme erwarten jeweils die
 ROM-Einsprungpunkte und Geräteregister ihrer Zielmaschine. Die praktische
@@ -571,6 +574,121 @@ Modus. Unter Windows liegen Spielstände aus dem batteriegepufferten Modul-RAM
 im Ordner \texttt{\%APPDATA\%\textbackslash{}6502-sbc-emulator\textbackslash{}NES SBC CPU}.
 Die Architektur beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
 
+\chapter{Apple II Plus}\label{ch:apple2}
+
+\section{Firmware und erster Start}\label{sec:apple2-start}
+Das Profil \path{apple2.ini} emuliert einen Apple II Plus mit 48 KiB RAM,
+16 KiB auf der Language Card, 40-Spalten-Text, Lo-Res- und Hi-Res-Grafik sowie
+dem eingebauten Lautsprecher. Zum Start benötigen Sie einen Windows-Build
+und drei ROM-Dateien in \path{roms/apple2/} unter dem Projektordner.
+
+\begin{referenceTable}{l r Y}
+\textbf{Datei} & \textbf{Bytes} & \textbf{Funktion} \\
+\midrule
+\texttt{Apple2\_Plus.rom} & 12\,288 & Applesoft BASIC und Autostart Monitor \\
+\texttt{Apple2\_Video.rom} & 2048 & US-Zeichengenerator \\
+\texttt{DISK2.rom} & 256 & Disk-II-Boot-ROM für 16 Sektoren pro Spur \\
+\end{referenceTable}
+
+Die drei Dateien stehen im
+\href{https://github.com/AppleWin/AppleWin/tree/7fd7fd7cbabdb7a28a3f7ba329a2517aa64d6e94/resource}{Ressourcenordner des verwendeten AppleWin-Stands}.
+Legen Sie die ROMs lokal ab.
+
+\begin{enumerate}
+  \item Öffnen Sie PowerShell im Projektordner und starten Sie das Profil.
+\begin{commandblock}
+.\bin\sbc6502.exe apple2.ini
+\end{commandblock}
+  \item Warten Sie auf den Prompt \texttt{]}. Geben Sie \texttt{PRINT 2+2}
+    ein und drücken Sie \ui{Enter}.
+\end{enumerate}
+
+\textbf{Erwartetes Ergebnis.} Applesoft BASIC zeigt \texttt{4} an und
+kehrt zum Prompt \texttt{]} zurück.
+
+\shot{.67\linewidth}{apple2-basic}{Startbild des Apple II Plus mit dem
+  Applesoft-BASIC-Prompt.}
+
+\clearpage
+\section{Testdisketten aufrufen}\label{sec:apple2-disks}
+Legen Sie die Abbilder unter \path{data/apple2/} im Projektordner ab.
+Die Dateinamen in der Tabelle entsprechen den folgenden Aufrufen.
+Die Dateien bleiben lokal und sind in Git ausgeschlossen.
+
+\begin{referenceTable}{l Y}
+\textbf{Datei} & \textbf{Was beim Test zu sehen ist} \\
+\midrule
+\texttt{dos33-system-master.do} & DOS-3.3-Startbild. Warten Sie auf \texttt{]}
+  und geben Sie \texttt{CATALOG} ein, um das Verzeichnis zu lesen. \\
+\texttt{apple2plus-diagnostics.dsk} & Menü \ui{APPLE II CONFIDENCE PROGRAM}.
+  Drücken Sie \ui{A} zum Auswählen oder \ui{S} zum Überspringen. \\
+\texttt{waterfall.dsk} & Farbige Lo-Res-Szene mit einem Wasserfall. \\
+\texttt{lores-escape.dsk} & Grafikdemo nach etwa 45 Sekunden Ladezeit. \\
+\end{referenceTable}
+
+\begin{commandblock}
+.\bin\sbc6502.exe apple2.ini --load ".\data\apple2\dos33-system-master.do"
+.\bin\sbc6502.exe apple2.ini --load ".\data\apple2\apple2plus-diagnostics.dsk"
+.\bin\sbc6502.exe apple2.ini --load ".\data\apple2\waterfall.dsk"
+.\bin\sbc6502.exe apple2.ini --load ".\data\apple2\lores-escape.dsk"
+\end{commandblock}
+
+\begin{figure}[H]
+  \begin{minipage}[t]{.48\linewidth}
+    \includegraphics[width=\linewidth]{screenshots/apple2-dos33.png}
+    \caption{DOS 3.3 System Master beim Start.}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{.48\linewidth}
+    \includegraphics[width=\linewidth]{screenshots/apple2-diagnostics.png}
+    \caption{Hauptmenü der Apple-II-Diagnose.}
+  \end{minipage}
+\end{figure}
+
+Die Abbilder stammen aus der Sammlung
+\href{https://github.com/cmosher01/Apple-II-System-Masters/tree/master/dos330}{Apple II System Masters},
+dem \href{https://mirrors.apple2.org.za/ftp.apple.asimov.net/images/disk_utils/diagnostics/}{Asimov-Diagnosearchiv}
+und den Projektseiten zu
+\href{https://www.deater.net/weave/vmwprod/waterfall_demo/}{Waterfall} sowie
+\href{https://www.deater.net/weave/vmwprod/lores_escape/}{Lo-Res Escape}.
+
+\clearpage
+\section{Diskettenwechsel und Bedienung}\label{sec:apple2-controls}
+Zum Wechseln ziehen Sie ein neues Abbild auf das Emulatorfenster. Das Profil
+legt es ein und startet neu. Für eine feste Startdiskette tragen Sie den
+Pfad als \path{disk_image} im Abschnitt \texttt{[apple2]} der
+\path{apple2.ini} ein. Ein Aufruf mit \path{--load} hat Vorrang.
+Relative Pfade beziehen sich auf das Arbeitsverzeichnis.
+
+\begin{referenceTable}{l Y}
+\textbf{Taste} & \textbf{Funktion im Apple-II-Plus-Profil} \\
+\midrule
+\ui{F2} & Reset mit Versuch eines Warmstarts \\
+\ui{F3} & Autostart-Sequenz neu ausführen \\
+\ui{F4} & Diskette auswerfen \\
+\ui{Pfeil links} oder \ui{Rücktaste} & Apple-II-Linkspfeil \\
+\ui{Pfeil rechts} & Apple-II-Rechtspfeil \\
+\ui{Esc} & Apple-II-Escape \\
+\ui{Strg+A} bis \ui{Strg+Z} & Apple-II-Steuerzeichen \\
+\end{referenceTable}
+
+Das Disk-II-Laufwerk in Slot 6 akzeptiert schreibgeschützte 35-Spur-Abbilder
+in DOS-Reihenfolge (\path{.dsk}, \path{.do}), in ProDOS-Reihenfolge (\path{.po})
+oder als Nibble-Abbild (\path{.nib}, 6656 Byte pro Spur). ProDOS 2.4.3 meldete
+im Test \texttt{RELOCATION/CONFIGURATION ERROR}. Die Hi-Res-Farben sind eine
+Annäherung an NTSC. Paddles, Kassetten-I/O und zusätzliche Slots sind in
+diesem Profil nicht implementiert.
+
+\begin{figure}[H]
+  \begin{minipage}[t]{.48\linewidth}
+    \includegraphics[width=\linewidth]{screenshots/apple2-waterfall.png}
+    \caption{Lo-Res-Grafik der Demo Waterfall.}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{.48\linewidth}
+    \includegraphics[width=\linewidth]{screenshots/apple2-lores-escape.png}
+    \caption{Szene aus der Demo Lo-Res Escape.}
+  \end{minipage}
+\end{figure}
+
 \part{Konfiguration, Diagnose und Referenz}
 \chapter{Softwarearchitektur}\label{ch:architecture}
 
@@ -674,6 +792,21 @@ beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
 \end{figure}
 
 \clearpage
+\section{Apple-II-Plus-Profil}\label{sec:apple2-architecture}
+Das Apple-II-Plus-Profil verwendet den gemeinsamen NMOS-6502-Kern bei rund
+1{,}02 MHz. Seine eigene Hauptschleife verbindet den Kern direkt mit
+der Apple-II-Speicherbelegung und den Apple-II-Geräten. Das Profil
+verwendet SDL2 für Fenster, Tastaturereignisse und Audioausgabe.
+Tastaturlatch, Video, Lautsprecher, Disk II und Language Card sind im
+Apple-II-Plus-Profil implementiert. VIA, UART, VIC und Festkomma-Koprozessor
+gehören zur SBC-Hardware.
+
+Die Language Card kann das System-ROM bei \texttt{\$D000} bis
+\texttt{\$FFFF} mit RAM überblenden. Bei eingelegter Diskette liegt das
+Boot-ROM in Slot 6 bei \texttt{\$C600} bis \texttt{\$C6FF}.
+Der Start mit Original-Firmware und die Diskettenaufrufe stehen in
+Kapitel~\ref{ch:apple2}.
+
 \section{Festkomma-Koprozessor des SBC}\label{sec:math-copro}
 Der Koprozessor ist im SBC-Adressraum bei \texttt{\$88B0--\$88BF} verfügbar.
 Er multipliziert zwei vorzeichenbehaftete 32-Bit-Operanden zu einem
@@ -1170,7 +1303,7 @@ am BASIC-Prompt oder im gestarteten Programm weiterarbeiten möchten.
 
 \begin{description}
   \item[Original-ROMs] Benutzer stellen Original-Spielmodule und
-    System-ROMs selbst bereit, etwa für NES, Famicom und C64.
+    System-ROMs selbst bereit, etwa für NES, Famicom, C64 und Apple II Plus.
     Halten Sie diese Dateien ausschließlich in der lokalen ROM-Sammlung.
   \item[Eigene ROMs] Für eine Veröffentlichung müssen alle erforderlichen
     Rechte vorliegen. Prüfen Sie auch übernommene Bestandteile wie Code,
@@ -1252,6 +1385,8 @@ Bytes am PC und auf der Platine ausführen. Sie können zuerst
 Gerätezugriffe auf VIA, Tastatur, Grafik, Klang oder Festkomma-Koprozessor
 im Monitor prüfen und anschließend dasselbe Abbild auf den FPGA laden.
 Für Commodore-Software steht zusätzlich das PAL-C64-Profil zur Verfügung.
+Das Apple-II-Plus-Profil startet Applesoft BASIC und liest Disk-II-Abbilder
+(Kapitel~\ref{ch:apple2}).
 Die INI macht Startparameter und Eingabebelegung als Text nachvollziehbar.
 Das integrierte F12-Menü unterstützt den Wechsel der Belegung während
 eines C64-Tests. Für NES/Famicom stehen das FCEUmm-Referenzprofil und
@@ -1271,7 +1406,7 @@ mitten in einer Rasterzeile.
 \textbf{Emulator} & \textbf{Relevante Funktionen} & \textbf{Passender Einsatz} \\
 \midrule
 6502 SBC Emulator &
-Projekt-SBC, PAL-C64 und NES/Famicom. Monitor für SBC und C64,
+Projekt-SBC, PAL-C64, Apple II Plus und NES/Famicom. Monitor für SBC und C64,
 virtueller D64-Lader und F12-Belegung im C64-Profil. &
 Eigene SBC-ROMs, projektnahe FPGA-Softwaretests und C64-BASIC oder PRGs
 mit Standard-Ladeweg. NES-ROMs mit Referenzkern oder SBC-CPU prüfen. \\

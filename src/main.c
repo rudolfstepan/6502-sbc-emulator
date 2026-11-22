@@ -34,6 +34,7 @@
 #include "c64_floppy.h"
 #include "c64_vic.h"
 #include "nes.h"
+#include "apple2.h"
 
 /* ── Global emulator state ────────────────────────────────── */
 static volatile int g_sigint = 0;
@@ -133,7 +134,7 @@ static void usage(const char *prog)
         "Options:\n"
         "  -r <rom>      load ROM file (overrides config)\n"
         "  -s <speed>    CPU speed in Hz (0=unlimited, default 27MHz FPGA)\n"
-        "  --load <file> load .prg/.rom/.bin, C64 .d64, or NES cartridge/ZIP\n"
+        "  --load <file> load SBC programs, C64 .d64, NES cartridge/ZIP, or Apple II disk\n"
         "  --load-data <prg> load PRG bytes without changing CPU state\n"
         "  --screenshot <bmp> save a framebuffer screenshot and exit\n"
         "  --screenshot-frames <n> rendered frames before screenshot (default 120)\n"
@@ -497,6 +498,18 @@ int main(int argc, char *argv[])
         fprintf(stderr, "No config file found, using defaults.\n");
     }
     config_defaults(&cfg);
+
+    if (cfg.apple2) {
+        if (auto_load_count > 1 || (auto_load_count && !auto_load_starts[0]) ||
+            debug_flag || show_map || trace_flag || profile_flag || speed_override >= 0 ||
+            rom_override[0]) {
+            fprintf(stderr, "Apple II Plus mode takes a single disk via --load.\n"
+                            "Configure firmware in the [apple2] INI section.\n");
+            return 1;
+        }
+        return apple2_run(&cfg, auto_load_count ? auto_load_files[0] : NULL,
+                          screenshot_file, screenshot_frames);
+    }
 
     if (cfg.nes) {
         if (auto_load_count > 1 || (auto_load_count && !auto_load_starts[0]) ||

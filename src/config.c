@@ -63,7 +63,7 @@ static void read_c64_input(Config *cfg, const char *section, const char *key, co
 
 void config_defaults(Config *cfg)
 {
-    if (!cfg->c64 && !cfg->nes && cfg->num_devs == 0) {
+    if (!cfg->c64 && !cfg->nes && !cfg->apple2 && cfg->num_devs == 0) {
         /* SBC ROM layout, matching sbc.ini. */
         cfg->devs[0] = (DevConfig){ .type=DEV_SRAM, .base=0x0000, .size=0x8000 };
         cfg->devs[1] = (DevConfig){ .type=DEV_ROM,  .base=0xC000, .size=0x1000,
@@ -83,6 +83,14 @@ void config_defaults(Config *cfg)
         cfg->window_scale = DEFAULT_WINDOW_SCALE;
     if (cfg->c64_floppy_device == 0)
         cfg->c64_floppy_device = C64_FLOPPY_DEFAULT_DEVICE;
+    if (cfg->apple2) {
+        if (!cfg->apple2_system_rom[0])
+            strcpy(cfg->apple2_system_rom, "roms/apple2/Apple2_Plus.rom");
+        if (!cfg->apple2_video_rom[0])
+            strcpy(cfg->apple2_video_rom, "roms/apple2/Apple2_Video.rom");
+        if (!cfg->apple2_disk_rom[0])
+            strcpy(cfg->apple2_disk_rom, "roms/apple2/DISK2.rom");
+    }
 }
 
 int config_load(Config *cfg, const char *filename)
@@ -130,7 +138,8 @@ int config_load(Config *cfg, const char *filename)
         char *key = trim(p);
         char *val = trim(eq + 1);
         /* strip inline comment */
-        char *cm = strcmp(section, "nes") == 0 ? NULL : strchr(val, '#');
+        char *cm = (strcmp(section, "nes") == 0 || strcmp(section, "apple2") == 0)
+            ? NULL : strchr(val, '#');
         if (cm) { *cm = 0; val = trim(val); }
 
         if (strcmp(section, "cpu") == 0) {
@@ -152,6 +161,7 @@ int config_load(Config *cfg, const char *filename)
             if (strcmp(key, "type") == 0) {
                 cfg->c64 = strcmp(val, "c64") == 0;
                 cfg->nes = strcmp(val, "nes") == 0;
+                cfg->apple2 = strcmp(val, "apple2") == 0;
             } else if (strcmp(key, "basic") == 0) {
                 strncpy(cfg->c64_basic, val, sizeof(cfg->c64_basic) - 1);
             } else if (strcmp(key, "kernal") == 0) {
@@ -159,6 +169,18 @@ int config_load(Config *cfg, const char *filename)
             } else if (strcmp(key, "chargen") == 0) {
                 strncpy(cfg->c64_chargen, val, sizeof(cfg->c64_chargen) - 1);
             }
+        } else if (strcmp(section, "apple2") == 0) {
+            char *target = NULL;
+            if (strcmp(key, "system_rom") == 0) target = cfg->apple2_system_rom;
+            else if (strcmp(key, "video_rom") == 0) target = cfg->apple2_video_rom;
+            else if (strcmp(key, "disk_rom") == 0) target = cfg->apple2_disk_rom;
+            else if (strcmp(key, "disk_image") == 0) target = cfg->apple2_disk_image;
+            if (target && strlen(val) >= CFG_PATH_MAX) {
+                fprintf(stderr, "config: %s: [apple2] %s path is too long\n", filename, key);
+                fclose(f);
+                return -2;
+            }
+            if (target) strcpy(target, val);
         } else if (strcmp(section, "nes") == 0) {
             if (strcmp(key, "cpu") == 0) {
                 if (strcmp(val, "sbc") == 0) {

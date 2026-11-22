@@ -111,9 +111,11 @@ $(OBJDIR)/miniz.o: third_party/miniz/miniz.c third_party/miniz/miniz.h | $(OBJDI
 
 $(OBJDIR)/nes.o: $(SRCDIR)/nes.h $(SRCDIR)/nes_content.h third_party/libretro/libretro.h
 $(OBJDIR)/nes_content.o: $(SRCDIR)/nes_content.h third_party/miniz/miniz.h
-$(OBJDIR)/main.o: $(SRCDIR)/nes.h $(SRCDIR)/config.h
-$(addprefix $(OBJDIR)/,config.o config_c64_save.o c64_menu.o c64_input.o vic_sdl.o nes.o): $(SRCDIR)/config.h
-$(addprefix $(OBJDIR)/,cpu6502.o c64_floppy.o main.o monitor.o): $(SRCDIR)/cpu6502.h
+$(OBJDIR)/main.o: $(SRCDIR)/nes.h $(SRCDIR)/apple2.h $(SRCDIR)/config.h
+$(addprefix $(OBJDIR)/,apple2.o apple2_disk.o): $(SRCDIR)/apple2_disk.h
+$(OBJDIR)/apple2.o: $(SRCDIR)/apple2.h
+$(addprefix $(OBJDIR)/,config.o config_c64_save.o c64_menu.o c64_input.o vic_sdl.o nes.o apple2.o): $(SRCDIR)/config.h
+$(addprefix $(OBJDIR)/,cpu6502.o c64_floppy.o main.o monitor.o apple2.o): $(SRCDIR)/cpu6502.h
 $(OBJDIR)/disasm.o: $(SRCDIR)/disasm.h
 
 $(TARGET): $(OBJS) | $(BINDIR)
@@ -127,12 +129,15 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-.PHONY: test-config test-c64 test-sbc-boot test-nes test-2a03 nes-sbc-core test-nes-sbc
+.PHONY: test-config test-c64 test-sbc-boot test-apple2 test-nes test-2a03 nes-sbc-core test-nes-sbc
 
-check: all test-config test-sbc-boot test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02 test-2a03
+check: all test-config test-sbc-boot test-apple2 test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02 test-2a03
 
 test-sbc-boot: $(TARGET)
 	python3 tests/test_sbc_boot.py $(TARGET)
+
+test-apple2: $(TARGET)
+	python3 tests/test_apple2.py $(TARGET)
 
 test-nes: $(TARGET)
 	python3 tests/test_nes.py $(TARGET)

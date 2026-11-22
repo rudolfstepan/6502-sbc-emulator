@@ -13,6 +13,8 @@ __pycache__/
 *.pyc
 !roms/.gitkeep
 /roms/c64/
+/roms/apple2/
+/data/apple2/
 tools/roms/
 data/disk/*.prg
 !data/disk/.gitkeep

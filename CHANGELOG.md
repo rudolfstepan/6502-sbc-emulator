@@ -4,6 +4,9 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a native Apple II Plus profile with Applesoft BASIC, color graphics,
+  speaker audio, and read-only Disk II image support.
+
 - Matched signed fixed-point scaling to the FPGA math coprocessor and staged
   its accelerated Mandelbrot demo when available in the sibling FPGA checkout.
 
