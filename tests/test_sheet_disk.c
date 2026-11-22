@@ -1,6 +1,6 @@
 /*
  * End-to-end test of the MultiCalc disk save/load path.  It drives the real
- * emulator disk device (src/diskdev.c) through the exact MVP register sequence
+ * emulator disk device (src/machines/sbc/diskdev.c) through the exact MVP register sequence
  * the 6502 program uses (SAVE/LOAD at the fpga.ini base $8824), round-tripping
  * a serialized worksheet image through a file on disk, then reloads it into the
  * engine and checks a computed value survives.
@@ -10,9 +10,9 @@
 #include <stdio.h>
 #include <string.h>
 
-#include "bus.h"
-#include "sram.h"
-#include "diskdev.h"
+#include "core/bus/bus.h"
+#include "devices/memory/sram.h"
+#include "machines/sbc/diskdev.h"
 #include "sheet.h"
 
 #define DISK_BASE 0x8824

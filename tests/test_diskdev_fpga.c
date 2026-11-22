@@ -2,8 +2,8 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "bus.h"
-#include "diskdev.h"
+#include "core/bus/bus.h"
+#include "machines/sbc/diskdev.h"
 
 static void wr(DiskDev *disk, uint16_t offset, uint8_t value)
 {

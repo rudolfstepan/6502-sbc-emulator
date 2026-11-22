@@ -10,9 +10,9 @@
 #include <sys/types.h>
 #include <unistd.h>
 
-#include "bus.h"
-#include "diskdev.h"
-#include "sram.h"
+#include "core/bus/bus.h"
+#include "machines/sbc/diskdev.h"
+#include "devices/memory/sram.h"
 
 static void must_create_file(const char *dir, const char *name)
 {

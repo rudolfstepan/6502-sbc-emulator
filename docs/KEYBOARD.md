@@ -72,7 +72,7 @@ static inline uint8_t kb_getc_blocking(void) {
 
 ## Related Files
 
-- [src/via6522.c](../src/via6522.c)
-- [src/vic_sdl.c](../src/vic_sdl.c)
+- [src/devices/io/via6522.c](../src/devices/io/via6522.c)
+- [src/host/vic_sdl.c](../src/host/vic_sdl.c)
 - [examples/keyboard_io.s](../examples/keyboard_io.s)
 - [examples/keyboard_io.c](../examples/keyboard_io.c)

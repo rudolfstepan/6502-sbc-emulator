@@ -82,8 +82,15 @@ endif
 KLAUS_BIN = $(OBJDIR)/klaus/6502_functional_test.bin
 KLAUS_URL = https://raw.githubusercontent.com/Klaus2m5/6502_65C02_functional_tests/master/bin_files/6502_functional_test.bin
 
-SRCS = $(wildcard $(SRCDIR)/*.c)
-OBJS = $(patsubst $(SRCDIR)/%.c,$(OBJDIR)/%.o,$(SRCS)) $(OBJDIR)/miniz.o
+COMPONENTS = app config core/cpu core/bus debug devices/memory devices/io devices/audio \
+             host machines/apple2 machines/c64 machines/nes machines/sbc media
+SRCS = $(foreach component,$(COMPONENTS),$(wildcard $(SRCDIR)/$(component)/*.c))
+EMULATOR_OBJDIR = $(OBJDIR)/emulator
+OBJS = $(patsubst $(SRCDIR)/%.c,$(EMULATOR_OBJDIR)/%.o,$(SRCS)) $(EMULATOR_OBJDIR)/vendor/miniz.o
+EMULATOR_DIRS = $(sort $(patsubst %/,%,$(dir $(OBJS))))
+DEPS = $(OBJS:.o=.d)
+CPU_SRCS = $(SRCDIR)/core/cpu/cpu6502.c $(SRCDIR)/core/cpu/disasm.c
+SID_SRCS = $(SRCDIR)/devices/audio/sid_stub.c $(SRCDIR)/devices/audio/sid6581_core.c
 
 BENCH_CFLAGS = -std=c99 -Wall -Wextra -O3 -DNDEBUG $(SIMD_CFLAGS)
 
@@ -103,23 +110,20 @@ $(OBJDIR):
 $(BINDIR):
 	@$(call MKDIR_P,$(BINDIR))
 
-$(OBJDIR)/%.o: $(SRCDIR)/%.c | $(OBJDIR)
-	$(CC) $(CFLAGS) -I$(SRCDIR) -c $< -o $@
+$(EMULATOR_DIRS):
+	@$(call MKDIR_P,$@)
 
-$(OBJDIR)/miniz.o: third_party/miniz/miniz.c third_party/miniz/miniz.h | $(OBJDIR)
-	$(CC) $(CFLAGS) -DMINIZ_NO_ZLIB_APIS -c $< -o $@
+.SECONDEXPANSION:
+$(EMULATOR_OBJDIR)/%.o: $(SRCDIR)/%.c | $$(@D)
+	$(CC) $(CPPFLAGS) -I$(SRCDIR) -Ithird_party $(CFLAGS) -MMD -MP -c $< -o $@
 
-$(OBJDIR)/nes.o: $(SRCDIR)/nes.h $(SRCDIR)/nes_content.h third_party/libretro/libretro.h
-$(OBJDIR)/nes_content.o: $(SRCDIR)/nes_content.h third_party/miniz/miniz.h
-$(OBJDIR)/main.o: $(SRCDIR)/nes.h $(SRCDIR)/apple2.h $(SRCDIR)/config.h
-$(addprefix $(OBJDIR)/,apple2.o apple2_disk.o): $(SRCDIR)/apple2_disk.h
-$(OBJDIR)/apple2.o: $(SRCDIR)/apple2.h
-$(addprefix $(OBJDIR)/,config.o config_c64_save.o c64_menu.o c64_input.o vic_sdl.o nes.o apple2.o): $(SRCDIR)/config.h
-$(addprefix $(OBJDIR)/,cpu6502.o c64_floppy.o main.o monitor.o apple2.o): $(SRCDIR)/cpu6502.h
-$(OBJDIR)/disasm.o: $(SRCDIR)/disasm.h
+$(EMULATOR_OBJDIR)/vendor/miniz.o: third_party/miniz/miniz.c | $(EMULATOR_OBJDIR)/vendor
+	$(CC) $(CPPFLAGS) $(CFLAGS) -DMINIZ_NO_ZLIB_APIS -MMD -MP -c $< -o $@
 
-$(TARGET): $(OBJS) | $(BINDIR)
-	$(CC) $(CFLAGS) $^ -o $@ $(LDFLAGS)
+-include $(DEPS)
+
+$(TARGET): $(OBJS) Makefile | $(BINDIR)
+	$(CC) $(CFLAGS) $(OBJS) -o $@ $(LDFLAGS)
 	$(if $(filter Windows_NT,$(OS)),@$(call COPY_IF_EXISTS,$(SDL2_DLL),$(BINDIR)/SDL2.dll))
 	$(if $(filter Windows_NT,$(OS)),@$(call COPY_IF_EXISTS,$(WINPTHREAD_DLL),$(BINDIR)/libwinpthread-1.dll))
 	$(if $(filter Windows_NT,$(OS)),@$(call COPY_IF_EXISTS,$(LIBGCC_DLL),$(BINDIR)/libgcc_s_seh-1.dll))
@@ -129,15 +133,23 @@ $(TARGET): $(OBJS) | $(BINDIR)
 clean:
 	@$(call RM_RF,$(OBJDIR) $(BINDIR))
 
-.PHONY: test-config test-c64 test-sbc-boot test-apple2 test-nes test-2a03 nes-sbc-core test-nes-sbc
+.PHONY: test-config test-c64 test-sbc-boot test-apple2 test-nes test-2a03 test-sid-rom test-sid6581 nes-sbc-core test-nes-sbc
 
-check: all test-config test-sbc-boot test-apple2 test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02 test-2a03
+check: all test-config test-sbc-boot test-apple2 test-c64 test-sheet test-sheet-disk test-diskdir test-fpga-disk test-chess-rom test-peek-poke test-klaus-6502 test-65c02 test-2a03 test-sid-rom test-sid6581
 
 test-sbc-boot: $(TARGET)
 	python3 tests/test_sbc_boot.py $(TARGET)
 
 test-apple2: $(TARGET)
 	python3 tests/test_apple2.py $(TARGET)
+
+test-sid-rom: $(TARGET)
+	python3 tests/test_sid_rom.py $(TARGET)
+
+test-sid6581: | $(OBJDIR)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_sid6581.c $(SRCDIR)/devices/audio/sid6581_core.c \
+	    -o $(OBJDIR)/test_sid6581$(EXEEXT)
+	$(call RUN_BIN,$(OBJDIR)/test_sid6581$(EXEEXT))
 
 test-nes: $(TARGET)
 	python3 tests/test_nes.py $(TARGET)
@@ -149,19 +161,23 @@ test-nes-sbc: $(TARGET)
 	python3 tests/test_nes.py $(TARGET) --sbc-cpu
 
 test-2a03: | $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_2a03.c src/cpu6502.c src/disasm.c -o $(OBJDIR)/test_2a03$(EXEEXT)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_2a03.c $(CPU_SRCS) -o $(OBJDIR)/test_2a03$(EXEEXT)
 	$(call RUN_BIN,$(OBJDIR)/test_2a03$(EXEEXT))
 
 test-c64: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_c64.c src/bus.c src/c64.c src/c64_vic.c src/cia6526.c \
-	    src/c64_floppy.c src/diskdev.c src/cpu6502.c src/disasm.c src/sid_stub.c src/soundchip.c \
-	    src/vic_sdl.c src/vic.c src/via6522.c src/keyboard_regs.c \
-	    src/c64_input.c src/c64_menu.c src/config.c src/config_c64_save.c \
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_c64.c $(SRCDIR)/core/bus/bus.c $(CPU_SRCS) \
+	    $(SRCDIR)/machines/c64/c64.c $(SRCDIR)/machines/c64/c64_vic.c \
+	    $(SRCDIR)/machines/c64/c64_floppy.c $(SRCDIR)/machines/c64/c64_input.c \
+	    $(SRCDIR)/machines/c64/c64_menu.c $(SRCDIR)/machines/sbc/diskdev.c \
+	    $(SRCDIR)/machines/sbc/vic.c $(SRCDIR)/machines/sbc/keyboard_regs.c \
+	    $(SRCDIR)/devices/io/cia6526.c $(SRCDIR)/devices/io/via6522.c \
+	    $(SID_SRCS) $(SRCDIR)/devices/audio/soundchip.c \
+	    $(SRCDIR)/host/vic_sdl.c $(SRCDIR)/config/config.c $(SRCDIR)/config/config_c64_save.c \
 	    -o $(OBJDIR)/test_c64$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_c64$(EXEEXT))
 
 test-config: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_config.c src/config.c -o $(OBJDIR)/test_config$(EXEEXT)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_config.c $(SRCDIR)/config/config.c -o $(OBJDIR)/test_config$(EXEEXT)
 	$(call RUN_BIN,$(OBJDIR)/test_config$(EXEEXT)) $(OBJDIR)
 
 test-sheet: $(OBJDIR)
@@ -169,7 +185,10 @@ test-sheet: $(OBJDIR)
 	$(call RUN_BIN,$(OBJDIR)/test_sheet$(EXEEXT))
 
 test-sheet-disk: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) -Iexamples/spreadsheet tests/test_sheet_disk.c src/bus.c src/sram.c src/diskdev.c src/soundchip.c examples/spreadsheet/sheet.c -o $(OBJDIR)/test_sheet_disk$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) -Iexamples/spreadsheet tests/test_sheet_disk.c \
+	    $(SRCDIR)/core/bus/bus.c $(SRCDIR)/devices/memory/sram.c $(SRCDIR)/machines/sbc/diskdev.c \
+	    $(SRCDIR)/devices/audio/soundchip.c examples/spreadsheet/sheet.c \
+	    -o $(OBJDIR)/test_sheet_disk$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_sheet_disk$(EXEEXT))
 
 software-test: all
@@ -180,28 +199,41 @@ $(KLAUS_BIN):
 	curl -fsSL $(KLAUS_URL) -o $@
 
 test-diskdir: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_diskdev_dir.c src/bus.c src/sram.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_diskdev_dir$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_diskdev_dir.c $(SRCDIR)/core/bus/bus.c \
+	    $(SRCDIR)/devices/memory/sram.c $(SRCDIR)/machines/sbc/diskdev.c \
+	    $(SRCDIR)/devices/audio/soundchip.c -o $(OBJDIR)/test_diskdev_dir$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_diskdev_dir$(EXEEXT))
 
 test-fpga-disk: $(OBJDIR) data/sdcard/spreadsheet.d64
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_diskdev_fpga.c src/bus.c src/diskdev.c src/soundchip.c -o $(OBJDIR)/test_diskdev_fpga$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_diskdev_fpga.c $(SRCDIR)/core/bus/bus.c \
+	    $(SRCDIR)/machines/sbc/diskdev.c $(SRCDIR)/devices/audio/soundchip.c \
+	    -o $(OBJDIR)/test_diskdev_fpga$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_diskdev_fpga$(EXEEXT))
 
 test-chess-rom: $(OBJDIR)
 	$(BASH) tools/make_chess_rom.sh
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c src/bus.c src/cpu6502.c src/disasm.c src/sram.c src/rom.c src/vic.c src/via6522.c src/soundchip.c src/keyboard_regs.c -o $(OBJDIR)/test_chess_rom$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_chess_rom.c $(SRCDIR)/core/bus/bus.c $(CPU_SRCS) \
+	    $(SRCDIR)/devices/memory/sram.c $(SRCDIR)/devices/memory/rom.c \
+	    $(SRCDIR)/machines/sbc/vic.c $(SRCDIR)/machines/sbc/keyboard_regs.c \
+	    $(SRCDIR)/devices/io/via6522.c $(SRCDIR)/devices/audio/soundchip.c \
+	    -o $(OBJDIR)/test_chess_rom$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_chess_rom$(EXEEXT))
 
 test-peek-poke: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_peek_poke_addrs.c src/bus.c src/sram.c src/vic.c src/via6522.c src/diskdev.c src/soundchip.c src/math_copro.c src/keyboard_regs.c src/cia6526.c src/sid_stub.c -o $(OBJDIR)/test_peek_poke_addrs$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_peek_poke_addrs.c $(SRCDIR)/core/bus/bus.c \
+	    $(SRCDIR)/devices/memory/sram.c $(SRCDIR)/devices/io/via6522.c $(SRCDIR)/devices/io/cia6526.c \
+	    $(SRCDIR)/machines/sbc/vic.c $(SRCDIR)/machines/sbc/diskdev.c \
+	    $(SRCDIR)/machines/sbc/math_copro.c $(SRCDIR)/machines/sbc/keyboard_regs.c \
+	    $(SRCDIR)/devices/audio/soundchip.c $(SID_SRCS) \
+	    -o $(OBJDIR)/test_peek_poke_addrs$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_peek_poke_addrs$(EXEEXT))
 
 test-klaus-6502: $(OBJDIR) $(KLAUS_BIN)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_klaus_6502.c src/cpu6502.c src/disasm.c -o $(OBJDIR)/test_klaus_6502$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_klaus_6502.c $(CPU_SRCS) -o $(OBJDIR)/test_klaus_6502$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_klaus_6502$(EXEEXT))
 
 test-65c02: $(OBJDIR)
-	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_65c02.c src/cpu6502.c src/disasm.c -o $(OBJDIR)/test_65c02$(EXEEXT) $(TEST_LDFLAGS)
+	$(CC) $(TEST_CFLAGS) -I$(SRCDIR) tests/test_65c02.c $(CPU_SRCS) -o $(OBJDIR)/test_65c02$(EXEEXT) $(TEST_LDFLAGS)
 	$(call RUN_BIN,$(OBJDIR)/test_65c02$(EXEEXT))
 
 roms:

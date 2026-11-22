@@ -3,7 +3,7 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "cpu6502.h"
+#include "core/cpu/cpu6502.h"
 
 #define KLAUS_START_PC 0x0400u
 #define KLAUS_PASS_PC  0x3469u

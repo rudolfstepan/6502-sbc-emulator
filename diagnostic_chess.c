@@ -4,12 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "bus.h"
-#include "cpu6502.h"
-#include "rom.h"
-#include "sram.h"
-#include "via6522.h"
-#include "vic.h"
+#include "core/bus/bus.h"
+#include "core/cpu/cpu6502.h"
+#include "devices/memory/rom.h"
+#include "devices/memory/sram.h"
+#include "devices/io/via6522.h"
+#include "machines/sbc/vic.h"
 
 void vic_sdl_init(void) {}
 void vic_sdl_shutdown(void) {}

@@ -20,6 +20,7 @@ Original C64, Apple II Plus and NES / Famicom ROMs are local runtime files.
 - **FPGA ROM compatibility** for the SBC split-ROM layout, including the
   fixed-point math coprocessor and the accelerated Mandelbrot demo
 - **4-voice sound chip** with ADSR envelopes and per-voice waveform selection (sine, square, sawtooth, triangle, noise)
+- **Native SID soundtrack ROMs** with `sid.ini`, ASCII title screens, and a desktop SID converter
 - SDL2 display and audio backend
 - **C64 mode** with PAL VIC-II raster graphics and sprites, SID audio, read-only
   D64 loading, and an F12 menu for keyboard and joystick remapping
@@ -117,7 +118,7 @@ the project directory's `c64.ini` at each launch.
 From a terminal, run `sbc6502 c64.ini` while in `bin/`.
 
 The C64 profile supports BASIC, keyboard input, raster-split text and bitmap
-modes, hardware sprites, and basic SID audio. See [C64 architecture and current coverage](docs/ARCHITECTURE.md#c64-profile).
+modes, hardware sprites, and digital 6581 SID audio. See [C64 architecture and current coverage](docs/ARCHITECTURE.md#c64-profile).
 
 Drop a 35-track `.d64` onto the C64 window to mount it read-only. In BASIC,
 enter `LOAD "$",8` and `LIST` to see its directory, or `LOAD "*",8,1` to
@@ -385,6 +386,27 @@ The **soundtest ROM** (`soundtest.ini`) is a standalone 16 KB ROM that demonstra
 cd bin && ./sbc6502 soundtest.ini
 ```
 
+### Native SID soundtrack ROMs
+
+Use `sid.ini` for a 16 KiB SID split ROM. From the project root, run
+the default Commando ROM or select another local ROM with `-r`.
+The default image is `roms/sid/fpga/sound_commando.rom`. Generate it from a
+local `Commando.sid` with the converter if it is missing.
+
+```powershell
+.\bin\sbc6502.exe .\sid.ini
+.\bin\sbc6502.exe .\sid.ini -r ".\roms\sid\fpga\sound_arkanoid.rom"
+```
+
+The ROM draws a title screen in the SBC VIC and runs the original music
+player against the SID registers at `$D400`. `-r` updates both ROM windows.
+The [SID ROM converter](tools/sid_convert/README.md) accepts supported PAL
+PSID files. Run `python tools/sid_convert/sid_gui.py` to select the source,
+preview the title, and export. The separate
+`soundtest.ini` profile loads music exports for the SBC four-voice chip.
+
+![Commando running in the native SID profile](docs/manual/screenshots/sid-commando.png)
+
 ## Monitor
 
 Press `CTRL+C` while emulation is running to enter monitor mode.
@@ -463,6 +485,7 @@ bin/
   ehbasic.ini
   chess.ini
   soundtest.ini
+  sid.ini
   roms/
     kernel.rom
     msbasic.rom
@@ -488,6 +511,7 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 
 - [Commodore 64 (PAL) mode](docs/C64.md)
 - [Apple II Plus mode](docs/APPLE2.md)
+- [SID ROM converter and playback](tools/sid_convert/README.md)
 - [German user manual (PDF)](output/pdf/6502-SBC-Emulator-Handbuch.pdf) and [editable LuaLaTeX source](docs/manual/6502-SBC-Emulator-Handbuch.tex)
 - [FPGA repository](https://github.com/rudolfstepan/6502-sbc-fpga) and [FPGA Wiki](https://github.com/rudolfstepan/6502-sbc-fpga/wiki) — board builds, simulation, and hardware documentation
 - [docs/FPGA_COMPATIBILITY_STATUS.md](docs/FPGA_COMPATIBILITY_STATUS.md) — emulator-side FPGA compatibility changes, rationale, timing, and test flow
@@ -504,7 +528,7 @@ make soundtest-rom          # assemble soundtest.s and stage to bin/roms/
 ## Project Layout
 
 ```text
-src/        emulator core and devices
+src/        application, reusable components, and machine profiles
 tools/      ROM builders and helper scripts
 bin/        generated runtime bundle (created by make)
 roms/       ROM binaries
@@ -514,6 +538,9 @@ data/disk/  host-backed fallback BASIC disk files
 data/sdcard/ virtual SD-card folder for mountable D64 images
 ../6502-sbc-fpga/  sibling FPGA checkout (optional)
 ```
+
+See the [source tree guide](docs/ARCHITECTURE.md#source-tree) for component
+responsibilities and dependencies.
 
 With `fpga.ini`, the FPGA ROM uses its own D64 GoDrive commands:
 

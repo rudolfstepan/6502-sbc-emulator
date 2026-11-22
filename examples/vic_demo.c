@@ -47,7 +47,7 @@
  */
 
 #include <stdio.h>
-#include "../src/vic.h"
+#include "machines/sbc/vic.h"
 
 int main(void) {
     printf("VIC Demo Program\n");

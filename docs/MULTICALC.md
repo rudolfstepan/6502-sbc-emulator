@@ -109,7 +109,7 @@ MultiCalc enables the VIC underline attribute by writing `$06` to `TEXT_ATTR`
 character whose **bit 7** is set is underlined and the glyph index is the low 7
 bits. This is how the command hot-keys are underlined without a second
 attribute plane (there is no room for one in the 2 KiB text window). The
-attribute is implemented in both the emulator ([src/vic_sdl.c](../src/vic_sdl.c),
+attribute is implemented in both the emulator ([src/host/vic_sdl.c](../src/host/vic_sdl.c),
 [docs/VIC.md](./VIC.md)) and the FPGA VIC (`vic_vga.vhd`, `underline_mode`).
 
 ## Disk save/load

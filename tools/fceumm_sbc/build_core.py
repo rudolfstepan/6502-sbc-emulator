@@ -48,8 +48,16 @@ def replace_once(text, before, after):
 
 def integrate(upstream):
     source = upstream / "src"
-    for filename in ("cpu6502.c", "cpu6502.h", "disasm.c", "disasm.h", "bus.c", "bus.h"):
-        shutil.copyfile(ROOT / "src" / filename, source / filename)
+    for relative_path in (
+        "core/cpu/cpu6502.c",
+        "core/cpu/cpu6502.h",
+        "core/cpu/disasm.c",
+        "core/cpu/disasm.h",
+        "core/bus/bus.c",
+        "core/bus/bus.h",
+    ):
+        local_file = ROOT / "src" / relative_path
+        shutil.copyfile(local_file, source / local_file.name)
     shutil.copyfile(TOOL_DIR / "cpu_adapter.inc", source / "sbc_cpu_adapter.inc")
 
     path = source / "x6502.c"

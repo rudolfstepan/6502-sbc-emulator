@@ -409,7 +409,7 @@ STA $8400        ; color RAM offset 0
 
 ## C API
 
-Defined in [src/vic.h](../src/vic.h):
+Defined in [src/machines/sbc/vic.h](../src/machines/sbc/vic.h):
 
 ### Initialization and Bus Interface
 

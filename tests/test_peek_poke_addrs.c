@@ -2,16 +2,16 @@
 #include <stdint.h>
 #include <stdio.h>
 
-#include "bus.h"
-#include "diskdev.h"
-#include "cia6526.h"
-#include "keyboard_regs.h"
-#include "math_copro.h"
-#include "sid_stub.h"
-#include "soundchip.h"
-#include "sram.h"
-#include "via6522.h"
-#include "vic.h"
+#include "core/bus/bus.h"
+#include "machines/sbc/diskdev.h"
+#include "devices/io/cia6526.h"
+#include "machines/sbc/keyboard_regs.h"
+#include "machines/sbc/math_copro.h"
+#include "devices/audio/sid_stub.h"
+#include "devices/audio/soundchip.h"
+#include "devices/memory/sram.h"
+#include "devices/io/via6522.h"
+#include "machines/sbc/vic.h"
 
 static void poke(Bus *bus, uint16_t addr, uint8_t value)
 {

@@ -1,7 +1,7 @@
 #include <stdio.h>
 #include <stdint.h>
 #include <string.h>
-#include "../src/cpu6502.h"
+#include "core/cpu/cpu6502.h"
 
 static uint8_t ram[65536];
 

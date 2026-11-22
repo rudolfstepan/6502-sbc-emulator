@@ -28,7 +28,7 @@
 \newcommand{\ManualSubtitle}{6502-SBC, Commodore 64 (PAL), Apple II Plus und Nintendo NES/Famicom}
 \newcommand{\ManualScope}{Bedienung, Architektur und Entwicklung}
 \newcommand{\ManualDate}{22. November 2026}
-\newcommand{\SourceRevision}{8608135}
+\newcommand{\SourceRevision}{d01bda5}
 \newcommand{\ui}[1]{\textbf{#1}}
 \newcommand{\metaSize}{\fontsize{8bp}{10bp}\selectfont}
 \newcommand{\tableSize}{\fontsize{9bp}{11bp}\selectfont}
@@ -172,12 +172,15 @@ beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Abschnitt~\r
 beschreibt das F12-Menü. Kapitel~\ref{ch:apple2} führt zum Applesoft-BASIC-Prompt
 und zu den Apple-II-Testdisketten. Abschnitt~\ref{sec:fpga-roms} zeigt, wie Sie dieselbe
 ROM-Datei im Emulator und auf dem FPGA verwenden. Zum NES-Kompatibilitätsmodus
-führt Abschnitt~\ref{sec:nes-sbc-start}.
+führt Abschnitt~\ref{sec:nes-sbc-start}. Kapitel~\ref{ch:sid} zeigt,
+wie Sie Original-SID-Musik starten und ein eigenes Musik-ROM erzeugen.
 
 \begingroup
 \linespread{1.0}\selectfont
 \tableofcontents
 \endgroup
+
+\listoffigures
 
 \mainmatter
 \part{Einstieg und Bedienung}
@@ -526,6 +529,142 @@ Der Emulator-Test hat alle 200 Zeilen mit dem unveränderten ROM gezeichnet.
 Auf der Platine prüfen Sie anschließend das HDMI-Bild und bei Bedarf die
 Ansteuerung des seriellen Monitors.
 
+\chapter{SID-Musik als Standalone-ROM}\label{ch:sid}
+
+\section{Ein vorhandenes SID-ROM starten}\label{sec:sid-start}
+Das Profil \path{sid.ini} startet SID-Musik im 6502-SBC. Das ROM enthält
+den Player und seine Musikdaten. Beim Start zeigt der SBC-VIC einen
+ASCII-Titelbildschirm mit Spieltitel, Musik-Credits und Konverterhinweis.
+
+\begin{enumerate}
+  \item Öffnen Sie PowerShell im Projektordner. Führen Sie \texttt{make}
+    aus, falls \path{bin/sbc6502.exe} noch fehlt.
+  \item Prüfen Sie, ob \path{roms/sid/fpga/sound_commando.rom} vorhanden
+    ist. Solche Musik-ROMs sind lokale Dateien. Der Konverter aus
+    Abschnitt~\ref{sec:sid-export} kann das ROM aus einer passenden
+    \path{Commando.sid} erzeugen.
+  \item Starten Sie das Profil. Mit \texttt{-r} wählen Sie bei Bedarf ein
+    anderes Split-ROM aus, beispielsweise Arkanoid.
+\end{enumerate}
+
+\begin{commandblock}
+.\bin\sbc6502.exe .\sid.ini
+.\bin\sbc6502.exe .\sid.ini -r ".\roms\sid\fpga\sound_arkanoid.rom"
+\end{commandblock}
+
+\textbf{Erwartetes Ergebnis.} Das Standard-ROM zeigt \texttt{COMMANDO} und
+den Musik-Credit für Rob Hubbard. Der Player startet danach die Musik
+des gewählten Stücks. Der Titel bleibt während der Wiedergabe sichtbar.
+
+\shot{.8\linewidth}{sid-commando}{Commando im Profil \texttt{sid.ini}.
+  Die Anzeige nennt Rob Hubbard als Komponisten, Rudolf Stepan beim
+  ROM-Hinweis und den SID-ROM-Konverter.}
+
+\clearpage
+\section{Eine SID-Datei mit der GUI konvertieren}\label{sec:sid-export}
+Für die grafische Oberfläche benötigen Sie Python ab 3.10 mit Tkinter
+sowie \texttt{ca65} und \texttt{ld65} aus cc65 im Suchpfad. Der optionale
+Export für den Vierstimmenchip benötigt außerdem GCC.
+
+\begin{commandblock}
+python tools/sid_convert/sid_gui.py
+\end{commandblock}
+
+\begin{enumerate}
+  \item Wählen Sie unter \ui{SID-Datei} die Quelldatei und unter
+    \ui{ROM-Ziel} einen Dateinamen mit der Endung \path{.rom}.
+    Die Anwendung liest den Spieltitel und die Standard-Stücknummer.
+  \item Prüfen Sie \ui{Spieltitel} und \ui{Name im Hinweis}. Als Name
+    ist Rudolf Stepan voreingestellt. Wählen Sie bei Bedarf ein anderes
+    Stück unter \ui{Stücknummer}. Mit \ui{Vorschau} sehen Sie den
+    40-spaltigen ASCII-Bildschirm.
+  \item Lassen Sie für die native Wiedergabe
+    \ui{Original-SID an \$D400 (sid.ini)} aktiviert. Der Standardwert
+    \texttt{200} für \ui{Frame-Verzögerung in 0,1 ms} ergibt 20~ms
+    zwischen den Player-Aufrufen.
+  \item Wählen Sie \ui{ROM erstellen}. Starten Sie die gespeicherte
+    Datei mit \path{sid.ini} und \texttt{-r}.
+\end{enumerate}
+
+\textbf{Erwartetes Ergebnis.} Der Konverter speichert ein 16-KiB-ROM mit
+eigenem Resetvektor. In der Vorschau und im Emulator erscheinen dieselben
+Titel- und Creditzeilen. Der native Export übernimmt ein PAL-PSID-Stück
+mit bildsynchroner Taktung, expliziter Play-Adresse und Nutzdaten im
+SBC-RAM unterhalb von \texttt{\$6000}.
+
+\Needspace{8\baselineskip}
+\subsection{Kommandozeile und Exportvarianten}
+Für einen reproduzierbaren Export verwenden Sie dasselbe Werkzeug ohne
+GUI. Legen Sie den Zielordner vor dem Aufruf an.
+
+\begin{commandblock}
+$source = "..\6502-sbc-fpga\sid_orig\Commando.sid"
+$target = ".\roms\sid\fpga\sound_commando.rom"
+python tools/sid_convert/build_sid_rom.py $source $target --native
+\end{commandblock}
+
+\begin{referenceTable}{P{31mm} P{38mm} Y}
+\textbf{Export} & \textbf{Emulatorprofil} & \textbf{Wiedergabe} \\
+\midrule
+Original-SID & \path{sid.ini} & Split-ROM mit Originalplayer und SID-Registern an \texttt{\$D400}. \\
+Vierstimmenchip & \path{soundtest.ini} & Zusammenhängendes ROM ab \texttt{\$C000}. Aus SID-Registerframes entstehen Tonhöhen- und Notenereignisse. Filter, Pulsbreite und Ringmodulation entfallen. \\
+\end{referenceTable}
+
+Die GUI aktiviert \ui{Ausschnitt in Sekunden} für den Vierstimmenchip.
+Auf der Kommandozeile wählen Sie ihn durch Weglassen von \texttt{--native}
+und setzen die Länge mit \texttt{--seconds}. Für SID-Musik mit ihrem
+Originalplayer wählen Sie den nativen Export.
+
+\clearpage
+\section{Vorhandene ROMs und Fehlersuche}\label{sec:sid-existing}
+Das Werkzeug \path{tools/sid_convert/title_fpga_roms.py} ergänzt
+vorhandene native FPGA-SID-ROMs um einen Titelbildschirm. Es verwendet
+freien Platz ab \texttt{\$F800} und springt danach in die vorhandene
+Startsequenz. Die Musikdaten und die Vektoren bleiben im Split-ROM
+erhalten. Auf diese Weise lassen sich auch vorhandene, speziell
+angepasste Player wie Arkanoid mit \path{sid.ini} starten. Der direkte
+PSID-Export der GUI hat den in Abschnitt~\ref{sec:sid-export} angegebenen
+Formatumfang.
+
+\begin{figure}[H]
+  \centering
+  \begin{minipage}[t]{.485\linewidth}
+    \includegraphics[width=\linewidth]{screenshots/sid-arkanoid.png}
+    \caption{Arkanoid aus einem bereits vorhandenen, um den Titel
+      ergänzten FPGA-SID-ROM.}
+  \end{minipage}\hfill
+  \begin{minipage}[t]{.485\linewidth}
+    \includegraphics[width=\linewidth]{screenshots/sid-world-record-2.png}
+    \caption{World Record 2 aus dem nativen Split-ROM
+      \texttt{soundsid.rom}.}
+  \end{minipage}
+\end{figure}
+
+\begin{commandblock}
+.\bin\sbc6502.exe .\sid.ini -r ".\roms\sid\fpga\soundsid.rom"
+\end{commandblock}
+
+\Needspace{10\baselineskip}
+\begin{referenceTable}{P{42mm} Y}
+\textbf{Symptom} & \textbf{Prüfen und beheben} \\
+\midrule
+Titel oder Ton fehlt beim Start & Starten Sie im Projektordner und
+  prüfen Sie Pfad und ROM-Format. Verwenden Sie \path{sid.ini} für
+  Split-ROMs und \path{soundtest.ini} für Exporte für den Vierstimmenchip. \\
+Der Klang weicht deutlich ab & Prüfen Sie den Exportmodus, die
+  Stücknummer und die Frame-Verzögerung. Für native PAL-Wiedergabe
+  verwenden Sie das Original-SID-Profil mit 20 ms pro Player-Aufruf. \\
+Export passt nicht ins ROM & Für den Vierstimmenchip wählen Sie einen
+  kürzeren Ausschnitt. Der native Export benötigt Platz für den
+  vollständigen Player samt Musikdaten und Titelanzeige. \\
+\end{referenceTable}
+
+Für Speicheraufteilung, SID-Register und Audioausgabe siehe
+Abschnitt~\ref{sec:sid-signal-path}. Dort steht auch, welche digitalen
+Vergleiche für Emulator und FPGA durchgeführt wurden.
+
+
+
 \chapter{Nintendo NES/Famicom}\label{ch:nes}
 \section{NES-Kompatibilitätsmodus mit SBC-CPU}\label{sec:nes-sbc-start}
 
@@ -789,6 +928,67 @@ beschreibt Abschnitt~\ref{sec:nes-sbc-architecture}.
 \end{figure}
 
 \clearpage
+\section{Quellbaum und gemeinsame Komponenten}\label{sec:source-tree}
+Der Startcode in \path{src/app/} wählt das Profil und verbindet CPU, Bus
+und Geräte. Die Verzeichnisse im Quellbaum folgen den Verantwortlichkeiten
+dieser Komponenten.
+
+\begin{referenceTable}{P{40mm} Y}
+\textbf{Verzeichnis} & \textbf{Aufgabe} \\
+\midrule
+\path{src/core/cpu/} und \path{src/core/bus/} & CPU-Kern, Disassembler
+  und Adressbus. Der CPU-Kern bindet Speicher über Lese- und
+  Schreibfunktionen an. \\
+\path{src/devices/} & Wiederverwendbare Speicher-, I/O- und Audiogeräte. \\
+\path{src/machines/} & Hardware und Integration für SBC, C64, Apple II und NES. \\
+\path{src/host/}, \path{src/config/}, \path{src/debug/} und \path{src/media/}
+  & SDL-Oberfläche für SBC und C64, INI-Konfiguration, Monitor
+  und gemeinsame Datenträgerformate. \\
+\end{referenceTable}
+
+\section{Signalpfad für native SID-ROMs}\label{sec:sid-signal-path}
+Beim Reset zeichnet der ROM-Startcode den Titel in den Text- und
+Farbspeicher des SBC-VIC an \texttt{\$8000} und \texttt{\$8400}.
+Eine PSID-Datei enthält 6502-Code und Musikdaten. Der Konverter liest
+die Einsprungadressen aus ihrem Kopf und übernimmt die Nutzdaten
+bytegleich ins ROM. Der Startcode kopiert sie in den RAM und ruft die
+Initialisierung für das gewählte Stück einmal auf. Der Millisekundenzähler
+an \texttt{\$883A} taktet die Play-Routine mit 50 Aufrufen pro Sekunde.
+
+Für Commando liegen die Nutzdaten ab \texttt{\$5000}. Die Init-Routine
+beginnt an \texttt{\$5F80}, die Play-Routine an \texttt{\$5012}.
+
+\begin{referenceTable}{P{45mm} P{39mm} Y}
+\textbf{Dateioffset} & \textbf{CPU-Adressen} & \textbf{Rolle} \\
+\midrule
+\texttt{\$0000--\$2FFF} & \texttt{\$A000--\$CFFF} & Player und ROM-Daten \\
+\texttt{\$3000--\$3FFF} & \texttt{\$F000--\$FFFF} & Zweites ROM-Fenster
+  mit den Vektoren \\
+\end{referenceTable}
+
+Die zwei ROM-Fenster lassen die SID-Register an \texttt{\$D400} frei.
+\path{sid.ini} definiert beide Fenster. \texttt{-r} ersetzt das gemeinsame
+Abbild in beiden Einträgen. Der Originalcode schreibt direkt in die
+SID-Register und bestimmt dadurch unter anderem Frequenz, Pulsbreite,
+Hüllkurve und Filter.
+
+Im Emulator erzeugt \path{sid6581_core.c} digitale PCM-Werte mit dem
+PAL-SID-Takt von 985\,248~Hz. Die CPU-Takte bestimmen den Zeitpunkt der
+Registerzugriffe. Die Samples werden für SDL auf 44,1~kHz umgesetzt und
+gepuffert. Der SBC-VIC zählt seine Bildschritte auch bei einem statischen
+Titel weiter. SDL erhält neue Pixel bei Änderungen oder wenn das Fenster
+erneut präsentiert werden muss. Auf dem FPGA erzeugt der VHDL-SID-Kern
+die digitalen Samples für den DAC.
+
+\textbf{Prüfergebnisse.} Für Commando stimmten 150 Wiedergabeschritte in
+allen 25 abgefragten SID-Registern mit der Original-PSID überein.
+Für eine gemeinsame Registerfolge lieferten der Emulator-Kern und
+die FPGA-Simulation 50\,000 bitgleiche digitale Samples.
+Ein analoger Vergleich an der Platine steht aus.
+
+
+
+\clearpage
 \section{Apple-II-Plus-Profil}\label{sec:apple2-architecture}
 Das Apple-II-Plus-Profil verwendet den gemeinsamen NMOS-6502-Kern bei rund
 1{,}02 MHz. Seine eigene Hauptschleife verbindet den Kern direkt mit
@@ -934,41 +1134,11 @@ Registerwerte im selben Zahlenformat. Der dokumentierte Emulatorlauf
 zeichnete alle 200 Bildzeilen. Abschnitt~\ref{sec:fpga-mandelbrot} zeigt
 auch, wie dasselbe Abbild für den Test auf der Platine geladen wird.
 
-Die Übernahme von C64-SID-Musik ist ein weiteres Beispiel für diese
-gemeinsame Schnittstelle. Der angepasste SID-Player startet zusammen
-mit dem Musikcode als eigenes ROM. Dasselbe Abbild läuft unverändert
-im FPGA-kompatiblen Profil des PC-Emulators und auf dem FPGA-SBC.
-
-\clearpage
-\subsection{Von der C64-SID-Datei zum 6502-ROM}
-
-Eine PSID- oder RSID-Datei enthält den bereits assemblierten 6502-Code
-des Musikstücks samt Daten. \path{tools/build_native_sid_rom.py} liest
-den Kopf der Datei und ermittelt Ladeadresse, Startstück sowie die
-Einsprungadressen für Initialisierung und Wiedergabe. Steht die
-Ladeadresse im Datenblock, liest der Generator sie aus dessen ersten
-beiden Bytes. Er übernimmt den Musikcode byteweise in die
-Assemblerquelle und erzeugt den Start- und Wiedergabecode darum herum.
-
-Mit \texttt{ca65} und \texttt{ld65} entsteht daraus ein eigenständig
-startendes 16-KiB-Split-ROM mit einem eigenen Resetvektor. Der Player
-stellt den Musikcode an seiner ursprünglichen Ladeadresse bereit. Je nach
-Stück kopiert er ihn ins RAM oder der Linker platziert ihn direkt im
-Fenster \texttt{\$A000--\$CFFF}. Beim Beispiel
-\path{World_Record_2.sid} zeigt \path{sw/6502/soundsid.s} den Ablauf:
-Der Player kopiert den Code nach \texttt{\$1000}, ruft dort einmal
-die Initialisierung auf und springt etwa alle 20~ms per \texttt{JSR}
-zur Wiedergaberoutine bei \texttt{\$1006}. Den Takt liefert der
-SBC-Millisekundenzähler. Der Musikcode erzeugt die SID-Registerzugriffe
-bei \texttt{\$D400} weiterhin selbst.
-
-Gibt der SID-Kopf keinen Wiedergabeeinsprung an, kann das Stück seinen
-CIA-Interrupt selbst einrichten. Dafür leitet der Player den IRQ über
-den gewohnten Vektor bei \texttt{\$0314} weiter. Im FPGA-Profil behält
-der CIA-Timer~A seine 1-MHz-Zeitbasis bei höherem CPU-Takt. Hängt ein
-Stück von einem VIC-II-Rasterinterrupt ab, kann eine Anpassung pro Stück
-nötig sein. Für \path{Arkanoid.sid} ruft der Player die per
-Disassemblierung ermittelte Aktualisierungsroutine direkt auf.
+Die Übernahme von C64-SID-Musik nutzt ebenfalls die gemeinsame
+Schnittstelle. Der Player führt den Musikcode auf dem 6502 aus und
+schreibt an die SID-Register. Kapitel~\ref{ch:sid} zeigt den Start
+im Emulator und den neuen Konverter. Abschnitt~\ref{sec:sid-signal-path}
+beschreibt den gemeinsamen digitalen Signalpfad.
 
 \section{Erweiterte Hardware als Teil des Rechnerkonzepts}
 
@@ -1111,13 +1281,11 @@ eine Hexdatei für die Simulation oder ein Split-ROM für die Platine.
 Auch die Beispieldaten entstehen in eigenen Werkzeugketten. Die
 Bildkonverter bereiten Fotos und Grafiken für die Speicherformate und
 Paletten der Video-Hardware auf. Andere Generatoren erzeugen
-Zeichensätze oder HDMI-InfoFrames. Für SID-Musik entstanden sowohl die
-nativen ROMs aus Abschnitt~\ref{sec:common-machine} als auch PRG- und
-Diskettenpakete für unterschiedliche Zielsysteme. Die frühere
-Konvertierung in \path{tools/sid_convert/} zeichnete SID-Registeränderungen
-auf und übersetzte sie in Ereignisse für den eigenen Vierstimmen-Klangchip.
-Sie dokumentiert den Aufwand, den Klang zweier verschiedener
-Synthesizer aufeinander abzubilden.
+Zeichensätze oder HDMI-InfoFrames. Für SID-Musik stehen der grafische
+Konverter und seine Kommandozeile unter \path{tools/sid_convert/} zur
+Verfügung. Sie erzeugen native Split-ROMs oder Ausschnitte für den
+eigenen Vierstimmenchip. Die Titelanzeige lässt sich vor dem Export
+prüfen. Kapitel~\ref{ch:sid} beschreibt beide Exportwege.
 
 \subsection{Programmstände auf die Platine bringen}
 
@@ -1471,12 +1639,12 @@ der Sprite-DMA. Hinzu kämen die Pixel außerhalb der aktiven
 Bildaufteilungen ab. Bei Rahmen- und anderen taktgenauen Effekten kann
 das Ergebnis abweichen.
 
-\textbf{Klang.} Drei Stimmen erzeugen Grundwellenformen und Lautstärkehüllkurven.
-Die Implementierung berechnet ihren Zustand im Audiopfad. Filter,
-Oszillatorsynchronisation und Ringmodulation fehlen. Für den Klang und
-das Verhalten verschiedener SID-Revisionen wären unter anderem getrennte
-Filtermodelle und genauere Wechselwirkungen der Oszillatoren erforderlich.
-VICE dokumentiert diese Funktionen und die detailliertere reSID-Engine.
+\textbf{Klang.} Der digitale SID-Kern modelliert drei Oszillatoren,
+Hüllkurven, Filter, Synchronisation und Ringmodulation. Das Modell
+berücksichtigt die analoge DAC-Nichtlinearität und Unterschiede zwischen
+6581- und 8580-Revisionen nur eingeschränkt. VICE dokumentiert seine
+detailliertere reSID-Engine. Der digitale Vergleich mit dem FPGA-Kern
+steht in Abschnitt~\ref{sec:sid-signal-path}.
 
 \textbf{PAL und NTSC.} Das Profil setzt PAL-Zeilen- und Bildtiming voraus.
 Eine andere \texttt{speed\_hz} verändert die Zielgeschwindigkeit des

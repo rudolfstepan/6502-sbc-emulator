@@ -2,9 +2,9 @@
  * 16-bit frame counter (ZP $18/$19) to diagnose looping/restart behaviour.
  * The delay routine is patched to RTS so frames advance fast.
  *
- * gcc -O2 -I src tools/sid_convert/playtest.c src/cpu6502.c src/disasm.c -o tools/sid_convert/playtest
+ * gcc -O2 -I src tools/sid_convert/playtest.c src/core/cpu/cpu6502.c src/core/cpu/disasm.c -o tools/sid_convert/playtest
  */
-#include "cpu6502.h"
+#include "core/cpu/cpu6502.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>

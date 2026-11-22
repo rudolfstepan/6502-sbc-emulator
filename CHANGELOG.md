@@ -4,6 +4,11 @@ All notable changes to this project will be documented in this file.
 
 ## Unreleased
 
+- Added a SID ROM converter with a desktop preview, ASCII title screens,
+  native split-ROM playback in `sid.ini`, and an optional four-voice export.
+- Reorganized emulator sources by component and machine profile, with one
+  source list for native and cross builds.
+
 - Added a native Apple II Plus profile with Applesoft BASIC, color graphics,
   speaker audio, and read-only Disk II image support.
 

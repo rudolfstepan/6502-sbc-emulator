@@ -14,6 +14,7 @@ __pycache__/
 !roms/.gitkeep
 /roms/c64/
 /roms/apple2/
+/roms/sid/
 /data/apple2/
 tools/roms/
 data/disk/*.prg

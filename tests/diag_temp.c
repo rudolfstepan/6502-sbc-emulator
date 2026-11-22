@@ -3,12 +3,12 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
-#include "bus.h"
-#include "cpu6502.h"
-#include "rom.h"
-#include "sram.h"
-#include "via6522.h"
-#include "vic.h"
+#include "core/bus/bus.h"
+#include "core/cpu/cpu6502.h"
+#include "devices/memory/rom.h"
+#include "devices/memory/sram.h"
+#include "devices/io/via6522.h"
+#include "machines/sbc/vic.h"
 
 static uint8_t cpu_bus_read(void *ctx, uint16_t addr) { return bus_read((Bus *)ctx, addr); }
 static void cpu_bus_write(void *ctx, uint16_t addr, uint8_t val) { bus_write((Bus *)ctx, addr, val); }

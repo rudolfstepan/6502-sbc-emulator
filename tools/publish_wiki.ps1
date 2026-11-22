@@ -18,6 +18,7 @@ $pages = @(
     @{ Source = "README.md"; Page = "Home"; Title = "Home" }
     @{ Source = "docs/C64.md"; Page = "Commodore-64-Mode"; Title = "Commodore 64 (PAL) Mode" }
     @{ Source = "docs/APPLE2.md"; Page = "Apple-II-Plus-Mode"; Title = "Apple II Plus Mode" }
+    @{ Source = "tools/sid_convert/README.md"; Page = "SID-ROM-Converter"; Title = "SID ROM Converter" }
     @{ Source = "docs/FPGA_COMPATIBILITY_STATUS.md"; Page = "FPGA-Compatibility-Status"; Title = "FPGA Compatibility Status" }
     @{ Source = "docs/software-test.md"; Page = "FPGA-Software-Test"; Title = "FPGA Software Test" }
     @{ Source = "docs/ARCHITECTURE.md"; Page = "Architecture-Overview"; Title = "Architecture Overview" }
@@ -187,6 +188,7 @@ $sidebar = @(
     "- [Home]($repoUrl/wiki/Home)",
     "- [Commodore 64 (PAL) Mode]($repoUrl/wiki/Commodore-64-Mode)",
     "- [Apple II Plus Mode]($repoUrl/wiki/Apple-II-Plus-Mode)",
+    "- [SID ROM Converter]($repoUrl/wiki/SID-ROM-Converter)",
     "- [Architecture Overview]($repoUrl/wiki/Architecture-Overview)",
     "- [VIC Video Interface Controller]($repoUrl/wiki/VIC-Video-Interface-Controller)",
     "- [Keyboard Integration]($repoUrl/wiki/Keyboard-Integration)",

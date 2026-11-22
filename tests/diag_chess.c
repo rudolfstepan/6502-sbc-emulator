@@ -4,12 +4,12 @@
 #include <stdlib.h>
 #include <string.h>
 
-#include "src/bus.h"
-#include "src/cpu6502.h"
-#include "src/rom.h"
-#include "src/sram.h"
-#include "src/via6522.h"
-#include "src/vic.h"
+#include "core/bus/bus.h"
+#include "core/cpu/cpu6502.h"
+#include "devices/memory/rom.h"
+#include "devices/memory/sram.h"
+#include "devices/io/via6522.h"
+#include "machines/sbc/vic.h"
 
 static uint8_t cpu_bus_read(void *ctx, uint16_t addr)
 {

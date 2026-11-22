@@ -28,7 +28,7 @@
 #  include <time.h>
 #endif
 
-#include "../src/simd.h"
+#include "host/simd.h"
 
 #if defined(SIMD_SSE2)
 #  include <xmmintrin.h>   /* _mm_cmple_ps, _mm_movemask_ps (SSE, pulled in by emmintrin.h) */

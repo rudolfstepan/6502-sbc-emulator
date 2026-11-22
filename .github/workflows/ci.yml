@@ -67,15 +67,9 @@ jobs:
 
       - name: Cross-compile Windows runtime bundle
         run: |
-          mkdir -p bin
-
-          x86_64-w64-mingw32-gcc \
-            -std=c99 -Wall -Wextra -O2 -g \
-            -I"${SDL_PREFIX}/include" -I"${SDL_PREFIX}/include/SDL2" -Dmain=SDL_main \
-            -DMINIZ_NO_ZLIB_APIS \
-            src/*.c third_party/miniz/miniz.c \
-            -o bin/sbc6502.exe \
-            -L"${SDL_PREFIX}/lib" -lmingw32 -lSDL2main -lSDL2 -lm
+          make all CC=x86_64-w64-mingw32-gcc EXEEXT=.exe OBJDIR=build/windows-cross \
+            SDL2_CFLAGS="-I${SDL_PREFIX}/include -I${SDL_PREFIX}/include/SDL2 -Dmain=SDL_main" \
+            SDL2_LIBS="-L${SDL_PREFIX}/lib -lmingw32 -lSDL2main -lSDL2"
 
           cp "${SDL_PREFIX}/bin/SDL2.dll" bin/SDL2.dll
 
@@ -85,8 +79,6 @@ jobs:
               cp "$path" "bin/${dll}"
             fi
           done
-
-          bash tools/stage_runtime.sh bin
 
       - name: Verify Windows cross bundle
         run: |

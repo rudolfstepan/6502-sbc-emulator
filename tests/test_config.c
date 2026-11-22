@@ -6,7 +6,7 @@
 #include <string.h>
 #include <unistd.h>
 
-#include "config.h"
+#include "config/config.h"
 
 static void write_config(const char *path, const char *contents)
 {

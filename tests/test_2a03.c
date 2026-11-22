@@ -1,5 +1,5 @@
-#include "cpu6502.h"
-#include "disasm.h"
+#include "core/cpu/cpu6502.h"
+#include "core/cpu/disasm.h"
 
 #include <assert.h>
 #include <stdio.h>

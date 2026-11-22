@@ -1,73 +1,92 @@
-# SID → sound_chip4 converter
+# SID-ROM-Konverter
 
-Converts a C64 PSID tune into a 6502 player ROM that plays an excerpt on the
-FPGA's 4-voice sound chip (`sound_chip4`).
+Die Desktop-Oberfläche erstellt aus einer SID-Datei ein bootfähiges
+16-KiB-ROM für den 6502 SBC. Der VIC zeigt den Spielnamen
+als ASCII-Titel, die Musik-Credits aus der SID-Datei und den Hinweis
+`CONVERTED WITH SID ROM CONVERTER`. Der Name unter `ROM:` ist editierbar
+und steht standardmäßig auf `Rudolf Stepan`.
 
-## Why it's an approximation
+## Oberfläche starten
 
-A SID file is 6502 player code that drives the MOS 6581 SID chip. The SID and
-our chip differ fundamentally:
-
-| | SID (6581) | our `sound_chip4` |
-|---|---|---|
-| Voices | 3 | 4 |
-| Note model | gate (held) | trigger + duration |
-| Pitch | live, per frame | live (after the `sound_voice_full` update) |
-| Extras | pulse width, filter, ring-mod, sync | none |
-
-So the converter reproduces **pitch contour (vibrato/slides), waveform, ADSR and
-note length**, but drops filter / pulse-width / ring-mod. Drums become noise
-hits. Only a short excerpt is converted (a full 50 Hz register stream for a
-multi-minute tune would be ~150–200 KB — far larger than the 16 KB ROM).
-
-## Pipeline
-
-```sh
-# 1. build the SID register extractor (uses the project's 6502 core)
-gcc -O2 -I src tools/sid_convert/siddump.c src/cpu6502.c src/disasm.c \
-    -o tools/sid_convert/siddump.exe
-
-# 2. dump ~58 s of SID register frames (50 Hz) to a raw blob
-#    (~58 s is about the most that fits in the 16 KB ROM after compression)
-tools/sid_convert/siddump.exe sid_demo/World_Record_2.sid 58 \
-    --raw tools/sid_convert/wr2.raw
-
-# 3. convert the frames into a player ROM source (live-freq stream + note events)
-python tools/sid_convert/convert_sid.py tools/sid_convert/wr2.raw \
-    fpga/sw/soundsid.s 200          # last arg = frame-delay tuning (tempo)
-
-# 4. assemble the 16 KB ROM
-make -C fpga/sw soundsid
-
-# 5. upload + run via the UART monitor (board in monitor mode: press KEY0)
-make -C fpga/sw upload-soundsid
-#   or: python fpga/tools/upload_monitor_hex.py fpga/sw/soundsid.rom \
-#            --port COM15 --baud 230400 --address 0xC000 --run --verbose
+```powershell
+python tools/sid_convert/sid_gui.py
 ```
 
-The player triggers a note on each SID gate-on (note length = the gate-high
-span) and applies **frequency changes** as they happen so vibrato/slides/
-arpeggios track. The frequency stream is compressed — only stored when the SID
-frequency actually changes — so held notes cost nothing and ~55-60 s of music
-fits in the 16 KB shadow ROM. It loops the excerpt forever.
+Benötigt Python 3.10 oder neuer mit Tkinter sowie `ca65` und `ld65` aus
+dem cc65-Paket im Suchpfad. Der Export für den Vierstimmenchip benötigt
+zusätzlich GCC. Bei Bedarf lassen sich die Werkzeuge über `CC`, `CA65`
+und `LD65` auswählen.
 
-> Note: a true >16 KB ("32 KB") player would have to run from main RAM at
-> `$0200`, but the monitor's `G 0200` reset/vector path lands in EhBASIC on this
-> board, so the reliable path is the 16 KB ROM at `$C000` (`G C000`). The
-> frequency-change compression is what makes ~58 s fit there.
+1. SID-Datei wählen. Der Konverter übernimmt Titel und Standardstück aus
+   dem PSID-Header.
+2. ROM-Ziel wählen und bei Bedarf Titel, Namenshinweis und Stücknummer ändern.
+   **Original-SID an $D400** ist standardmäßig aktiviert.
+3. Mit **Vorschau** den ASCII-Bildschirm prüfen und **ROM erstellen** wählen.
 
-## Tuning
+## Auf der Kommandozeile
 
-- **Tempo**: the player paces frames with a calibrated delay loop. Adjust the
-  last `convert_sid.py` argument (default 200) — larger = slower.
-- **Length**: change the seconds in step 2.
-- Requires the **4-voice bitstream** (with the live-frequency `sound_voice_full`)
-  running on the board.
+```powershell
+.\bin\sbc6502.exe .\sid.ini
+.\bin\sbc6502.exe .\sid.ini -r ".\roms\sid\fpga\sound_commando.rom"
+```
 
-## Files
+`sid.ini` lädt standardmäßig Commando. Das Profil erwartet ein Split-ROM mit
+den Fenstern `$A000–$CFFF` und `$F000–$FFFF`. `-r` ersetzt beide Bänke.
+Der Originalplayer schreibt an `$D400`. Für Commando übernimmt das ROM die
+Nutzdaten und Einsprungadressen aus der PSID-Datei.
+Der native Export unterstützt PAL-PSID-Stücke mit eigener Play-Adresse und
+Nutzdaten im SBC-RAM unterhalb von `$6000`.
 
-| File | Role |
-|---|---|
-| `siddump.c` | runs the PSID player on the C 6502 core, dumps SID regs/frame |
-| `convert_sid.py` | frames → `soundsid.s` (player + data) |
-| `fpga/sw/soundsid.s` / `.rom` | generated player + 16 KB ROM image |
+```powershell
+python tools/sid_convert/build_sid_rom.py ../6502-sbc-fpga/sid_orig/Commando.sid roms/sid/fpga/sound_commando.rom --native
+```
+
+### Eigener Vierstimmenchip
+
+Mit deaktiviertem **Original-SID** oder ohne `--native` erzeugt der Konverter
+einen Ausschnitt für `sound_chip4`.
+
+```powershell
+python tools/sid_convert/build_sid_rom.py sid_demo/World_Record_2.sid roms/sid/sbc/World_Record_2.rom
+.\bin\sbc6502.exe soundtest.ini -r roms/sid/sbc/World_Record_2.rom
+```
+
+Der Zielordner muss existieren. `--title`, `--credit`, `--seconds` und
+`--song` überschreiben die Vorgaben. `--delay` stellt die Framezeit in
+Zehntelmillisekunden ein und wird auf ganze Millisekunden gerundet. Der
+Standardwert `200` ergibt 20 ms pro Frame. Das ROM startet bei `$C000`
+und wiederholt standardmäßig einen 30-Sekunden-Ausschnitt.
+
+Der Konverter verarbeitet einzelne PAL-PSID-Stücke mit VBI-Taktung und
+expliziter Play-Adresse. Er überträgt Tonhöhe, Wellenform und Hüllkurve
+auf den Soundchip. SID-Filter, Pulsbreite und Ringmodulation entfallen.
+Wie viel Musik in 16 KiB passt, hängt von der Häufigkeit der Tonwechsel ab.
+
+## Vorhandene FPGA-SID-ROMs mit Titel versehen
+
+```powershell
+python tools/sid_convert/title_fpga_roms.py ../6502-sbc-fpga/roms/6502 ../6502-sbc-fpga/sid_orig roms/sid/fpga-titled
+```
+
+Das Werkzeug erzeugt Kopien der vorhandenen Split-ROMs mit Titelbildschirm.
+Der separate Zielordner hält diese Kopien neben den direkt aus der PSID
+erzeugten ROMs.
+Es verwendet den freien Kernel-ROM-Bereich ab `$F800` und kehrt danach
+zur ursprünglichen Startsequenz zurück. Die Musikdaten, der native Player
+und die Interruptvektoren bleiben erhalten. Das ROM-Layout ist `$A000–$CFFF`
+plus `$F000–$FFFF`. Beim manuellen Start im FPGA-Monitor dient der
+Resetvektor des jeweiligen ROMs als Einstiegspunkt.
+
+![Commando im SID-Profil des Emulators](../../docs/manual/screenshots/sid-commando.png)
+
+Das [Handbuch](../../output/pdf/6502-SBC-Emulator-Handbuch.pdf) enthält
+weitere Beispiele sowie eine Beschreibung des Reset- und Audioablaufs.
+
+## Entwicklertest
+
+`make test-sid-rom` erzeugt kleine Test-ROMs und prüft Bildschirmtext,
+Soundregister und den ROM-Wechsel in beiden Bänken. `make test-sid6581`
+prüft den digitalen Emulator-SID gegen 50.000 Referenzsamples des FPGA-Kerns.
+`siddump.c` und `convert_sid.py` lassen sich
+auch einzeln verwenden, um SID-Registerframes als Rohdaten zu erfassen
+und daraus ca65-Quelltext zu erzeugen.

@@ -1,5 +1,29 @@
 # Architecture Overview
 
+## Source Tree
+
+| Directory | Responsibility |
+| --- | --- |
+| `src/app/` | Command-line entry point, profile selection, and the shared SBC/C64 runtime |
+| `src/config/` | INI parsing, profile defaults, and C64 settings persistence |
+| `src/core/cpu/` | 6502-family CPU and instruction disassembler |
+| `src/core/bus/` | Device registration, address dispatch, and peripheral ticks |
+| `src/devices/` | SRAM and ROM, MOS I/O chips, and sound devices |
+| `src/machines/` | Profile-specific hardware and integration for the SBC, C64, Apple II Plus, and NES |
+| `src/media/` | Disk-image helpers shared by profiles, including the D64 format |
+| `src/host/` | SDL frontend shared by the SBC and C64, host path helpers, and SIMD routines |
+| `src/debug/` | Interactive debugger for the shared SBC/C64 runtime |
+
+The CPU and bus can be built independently of SDL and the machine profiles.
+The CPU accesses memory through callbacks. The SBC and C64 route these through
+the device bus, and the Apple II supplies its own memory and I/O handlers.
+The NES SBC CPU adapter builds the same CPU and bus sources into FCEUmm.
+
+Includes within a component use local header names. Includes across components
+use paths relative to `src/`, for example `"core/cpu/cpu6502.h"`. The Makefile
+uses a shared list of component directories for native and cross builds and
+tracks header dependencies for each object file.
+
 ## Core Components
 
 - `CPU6502`: instruction execution, interrupt handling, cycle accounting
@@ -14,7 +38,7 @@
 - `Soundchip`: 4-voice synthesizer — ADSR envelopes, selectable waveforms (sine/square/sawtooth/triangle/noise), SDL audio mix
 - `Monitor`: debugger shell (`CTRL+C`)
 
-## Boot and Runtime Flow
+## SBC and C64 Runtime
 
 1. Parse configuration (`sbc.ini` or user-provided INI).
 2. Create bus and register fixed devices (VIC + SOUND).
@@ -35,8 +59,9 @@ ROM or I/O at `$D000-$DFFF` over 64 KiB of RAM.
 CIA1 scans the keyboard matrix and drives IRQ. CIA2 selects the VIC-II
 video bank and drives NMI. The VIC-II renders the 320×200 active picture
 with standard, multicolor, and extended-background text, as well as
-standard and multicolor bitmap modes. The existing SID synthesizer provides
-basic sound. The VIC-II samples the graphics registers per raster line,
+standard and multicolor bitmap modes. SID playback uses the same digital
+6581 core as the SBC's native SID path. The VIC-II samples the graphics
+registers per raster line,
 latches screen codes and colors on bad lines, and hands the completed frame
 to SDL. This supports raster splits, fine scrolling, the 24/25-row and
 38/40-column windows, and eight sprites with multicolor, expansion, priority,
@@ -135,7 +160,13 @@ VIC provides two rendering paths:
 
 Hardware sprites (up to 8, 8×8 or 16×16 pixels) and a blitter (fill, copy, line, circle, scroll, invert) operate on the bitmap RAM.
 
-`vic_sdl.c` translates VIC state into an SDL window and handles keyboard events.
+`src/host/vic_sdl.c` translates VIC state into an SDL window and handles keyboard
+events. The SBC runtime supplies the VIA and keyboard registers to the frontend
+when configuring its devices.
+For SBC text video without sprites, the SDL frontend compares text memory,
+attributes, scroll state and cursor visibility. Unchanged pixels stay in
+the existing texture while emulated video timing continues. Window expose,
+resize and restore events can request another presentation.
 
 Normal ROM and application console I/O is VIC output plus VIA/PS2 keyboard
 input.  The UART device remains memory-mapped, but kernel `CHROUT` does not
@@ -184,6 +215,27 @@ All four voices are mixed by `audio_callback()` in `soundchip.c`; a hard clip pr
 
 **Soundtest ROM** (`soundtest.ini`) is a 16 KB standalone ROM that exercises all four voices and all waveforms in a ~60 s looping composition. Build with `make soundtest-rom`; run with `./sbc6502 soundtest.ini` from `bin/`.
 
+### Native SID playback
+
+`sid.ini` maps a 16 KiB file at `$A000-$CFFF` and `$F000-$FFFF` using offsets
+`$0000` and `$3000`. An explicit `-r` replaces both windows when they refer
+to the same image and have explicit offsets. This leaves `$D400-$D41C`
+available for the native SID. The SBC millisecond register at `$883A`
+advances from CPU time when the SID is mapped and paces the ROM player.
+
+The [native exporter](../tools/sid_convert/README.md) embeds original PSID
+code, copies it to the specified RAM address, calls the selected subtune's
+init entry once, then calls play at 20 ms by default. The title routine
+writes the ASCII screen and attributes to `$8000` and `$8400` before init.
+Original SID register writes reach `sid6581_core.c` through the device bus.
+The adapter clocks the core at 985,248 Hz, averages its digital samples
+into a 44.1 kHz stream and buffers them for the SDL audio callback.
+The FPGA VHDL core supplies the corresponding digital samples to its DAC.
+
+`make test-sid-rom` covers the split mapping, the rendered title in video
+RAM, and the SID writes from the preserved player. `make test-sid6581`
+checks 50,000 samples against a reference from the FPGA simulation.
+
 ## Debugging and Observability
 
 The monitor supports:
@@ -212,5 +264,6 @@ This provides broad opcode/flag behavior validation in addition to emulator inte
 | `ehbasic.ini`   | `kernel.rom` + `ehbasic.rom` | EhBASIC with the same kernel shell         |
 | `chess.ini`     | `chess.rom`                  | Standalone 16 KB chess ROM                 |
 | `soundtest.ini` | `soundtest.rom`              | 4-voice sound demo, pure 6502 machine code |
+| `sid.ini`       | `sound_commando.rom` by default | Native SID playback from a local split ROM |
 
 ROM helper scripts under [tools](../tools) generate project ROMs reproducibly. The soundtest ROM is rebuilt and staged with `make soundtest-rom`; all other ROMs with `make roms`.

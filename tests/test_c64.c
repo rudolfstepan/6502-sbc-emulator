@@ -9,28 +9,18 @@
 #define SDL_MAIN_HANDLED
 #include <SDL2/SDL.h>
 
-#include "bus.h"
-#include "c64.h"
-#include "c64_floppy.h"
-#include "c64_vic.h"
-#include "cpu6502.h"
-#include "d64.h"
-#include "keyboard.h"
-#include "vic_sdl.h"
+#include "core/bus/bus.h"
+#include "machines/c64/c64.h"
+#include "machines/c64/c64_floppy.h"
+#include "machines/c64/c64_vic.h"
+#include "core/cpu/cpu6502.h"
+#include "media/d64.h"
+#include "host/vic_sdl.h"
+#include "machines/sbc/vic.h"
 
 static const char *const rom_paths[] = {
     "roms/c64/basic.rom", "roms/c64/kernal.rom", "roms/c64/chargen.rom"
 };
-
-VIA6522 *get_keyboard_via(void)
-{
-    return NULL;
-}
-
-KeyboardRegs *get_keyboard_regs(void)
-{
-    return NULL;
-}
 
 static bool send_key(uint32_t type, SDL_Keycode symbol)
 {
@@ -47,6 +37,63 @@ static bool send_key(uint32_t type, SDL_Keycode symbol)
     }
     assert(false);
     return false;
+}
+
+static void test_sdl_sbc_keyboard(void)
+{
+    VIA6522 via;
+    KeyboardRegs registers;
+    via_init(&via);
+    keyboard_regs_init(&registers);
+
+    assert(SDL_setenv("SDL_VIDEODRIVER", "dummy", 1) == 0);
+    assert(vic_sdl_init(1) == 0);
+    vic_sdl_set_sbc_keyboard(&via, &registers);
+    assert(send_key(SDL_KEYDOWN, SDLK_RETURN));
+    assert(keyboard_regs_irq(&registers));
+    assert(keyboard_regs_read(&registers, 3) == '\r');
+    assert(!via_keyboard_available(&via));
+
+    vic_sdl_set_sbc_keyboard(&via, NULL);
+    assert(send_key(SDL_KEYDOWN, SDLK_RETURN));
+    assert(via_keyboard_available(&via));
+    assert(via_keyboard_pop(&via) == '\r');
+    assert(!keyboard_regs_irq(&registers));
+
+    vic_sdl_set_sbc_keyboard(NULL, NULL);
+    vic_sdl_shutdown();
+}
+
+static void test_sdl_sbc_text_refresh(void)
+{
+    char path[] = "sbc-text-XXXXXX";
+    int fd = mkstemp(path);
+    assert(fd >= 0);
+    assert(close(fd) == 0);
+
+    assert(SDL_setenv("SDL_VIDEODRIVER", "dummy", 1) == 0);
+    vic_init();
+    vic_reg_write(NULL, 1, 0xFF);
+    vic_reg_write(NULL, 2, 0xFF);
+    assert(vic_sdl_init(1) == 0);
+
+    vic_sdl_render();
+    vic_sdl_render();
+    assert(vic_sdl_save_screenshot(path) == 0);
+    SDL_Surface *before = SDL_LoadBMP(path);
+    assert(before);
+
+    vic_write_video_ram(0, 'A');
+    vic_sdl_render();
+    assert(vic_sdl_save_screenshot(path) == 0);
+    SDL_Surface *after = SDL_LoadBMP(path);
+    assert(after && after->pitch == before->pitch && after->h == before->h);
+    assert(memcmp(before->pixels, after->pixels, (size_t)before->pitch * before->h) != 0);
+
+    SDL_FreeSurface(after);
+    SDL_FreeSurface(before);
+    assert(unlink(path) == 0);
+    vic_sdl_shutdown();
 }
 
 static void test_sdl_run_stop(void)
@@ -546,6 +593,8 @@ static void test_rom_boot(void)
 
 int main(int argc, char *argv[])
 {
+    test_sdl_sbc_keyboard();
+    test_sdl_sbc_text_refresh();
     test_sdl_run_stop();
     test_sdl_config_menu();
     test_memory_map();

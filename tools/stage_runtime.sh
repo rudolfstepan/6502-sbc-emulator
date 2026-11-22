@@ -12,7 +12,7 @@ case "$OUT_DIR_REAL" in
 esac
 
 # Copy default runtime configs if present.
-for cfg in sbc.ini ehbasic.ini fpga.ini chess.ini soundtest.ini avdemo.ini c64.ini nes.ini nes-sbc.ini apple2.ini; do
+for cfg in sbc.ini ehbasic.ini fpga.ini chess.ini soundtest.ini sid.ini avdemo.ini c64.ini nes.ini nes-sbc.ini apple2.ini; do
     if [[ -f "$cfg" ]]; then
         cp -f "$cfg" "$OUT_DIR/"
     fi
