@@ -402,8 +402,10 @@ The ROM draws a title screen in the SBC VIC and runs the original music
 player against the SID registers at `$D400`. `-r` updates both ROM windows.
 The [SID ROM converter](tools/sid_convert/README.md) accepts supported PAL
 PSID files. Run `python tools/sid_convert/sid_gui.py` to select the source,
-preview the title, and export. The separate
-`soundtest.ini` profile loads music exports for the SBC four-voice chip.
+preview the title, and export. With `soundtest.ini`, the SBC's own four-voice
+chip plays converted note events through its own registers. The native export
+for `sid.ini` preserves the SID player's register writes, including pulse
+width and filter settings.
 
 ![Commando running in the native SID profile](docs/manual/screenshots/sid-commando.png)
 

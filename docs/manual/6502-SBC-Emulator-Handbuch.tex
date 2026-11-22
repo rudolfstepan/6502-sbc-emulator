@@ -152,6 +152,12 @@ ergänzend zur FPGA-Version einsetze. Mit diesem Handbuch möchte ich
 zeigen, wie sich dieser Arbeitsablauf auch für eigene Experimente mit
 dem 6502 nutzen lässt.
 
+Der Emulator bietet heute Maschinenprofile für den eigenen 6502-SBC,
+den Commodore 64 (PAL), den Apple II Plus und das Nintendo NES/Famicom.
+Das gewählte Maschinenprofil verbindet den Prozessorkern mit den jeweils
+passenden Geräten. Kapitel~\ref{ch:architecture} beschreibt die gemeinsamen
+Bausteine und die Unterschiede zwischen den Maschinen.
+
 Heute gehören der FPGA-SBC, der Softwareemulator und die Werkzeuge,
 die ich für beide entwickelt habe, für mich zusammen. Dieselbe ROM-Datei
 verbindet den Test am PC mit dem Versuch auf der Platine. Um beide
@@ -532,9 +538,14 @@ Ansteuerung des seriellen Monitors.
 \chapter{SID-Musik als Standalone-ROM}\label{ch:sid}
 
 \section{Ein vorhandenes SID-ROM starten}\label{sec:sid-start}
-Das Profil \path{sid.ini} startet SID-Musik im 6502-SBC. Das ROM enthält
-den Player und seine Musikdaten. Beim Start zeigt der SBC-VIC einen
-ASCII-Titelbildschirm mit Spieltitel, Musik-Credits und Konverterhinweis.
+Das Profil \path{sid.ini} startet den Originalplayer im 6502-SBC. Er steuert
+die SID-kompatible Klangerzeugung über die Register ab \texttt{\$D400}.
+Das Profil \path{soundtest.ini} verwendet den eigenen Vierstimmenchip des
+SBC mit dessen eigenen Klangregistern. Der Konverter kann dafür einen
+Ausschnitt als Notenereignisse exportieren.
+
+Beim Start zeigt der SBC-VIC einen ASCII-Titelbildschirm mit Spieltitel,
+Musik-Credits und Konverterhinweis.
 
 \begin{enumerate}
   \item Öffnen Sie PowerShell im Projektordner. Führen Sie \texttt{make}
