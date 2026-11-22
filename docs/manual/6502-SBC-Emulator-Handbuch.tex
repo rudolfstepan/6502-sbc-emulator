@@ -571,6 +571,19 @@ des gewählten Stücks. Der Titel bleibt während der Wiedergabe sichtbar.
   Die Anzeige nennt Rob Hubbard als Komponisten, Rudolf Stepan beim
   ROM-Hinweis und den SID-ROM-Konverter.}
 
+\subsection{ROMs mit dem Launcher auswählen}\label{sec:sid-launcher}
+Starten Sie den Launcher im Projektordner mit Python und Tkinter.
+
+\begin{commandblock}
+python tools/sid_convert/sid_launcher.py
+\end{commandblock}
+
+Suchen Sie nach einem Titel und öffnen Sie das ROM per Doppelklick oder
+mit \ui{Starten}. Der Launcher verwendet \path{sid.ini} für
+\path{roms/sid/fpga/} und \path{roms/sid/fpga-titled/} sowie
+\path{soundtest.ini} für \path{roms/sid/sbc/}. Mit \ui{Aktualisieren}
+laden Sie neu exportierte ROMs in die Liste. \ui{Stoppen} beendet die Wiedergabe.
+
 \clearpage
 \section{Eine SID-Datei mit der GUI konvertieren}\label{sec:sid-export}
 Für die grafische Oberfläche benötigen Sie Python ab 3.10 mit Tkinter

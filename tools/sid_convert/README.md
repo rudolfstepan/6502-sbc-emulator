@@ -23,6 +23,19 @@ und `LD65` auswählen.
    **Original-SID an $D400** ist standardmäßig aktiviert.
 3. Mit **Vorschau** den ASCII-Bildschirm prüfen und **ROM erstellen** wählen.
 
+## Vorhandene ROMs per Klick starten
+
+```powershell
+python tools/sid_convert/sid_launcher.py
+```
+
+Der Launcher benötigt Python mit Tkinter und den gebauten Emulator in `bin/`.
+Er listet ROMs aus `roms/sid/fpga/` und `roms/sid/fpga-titled/` mit `sid.ini`
+sowie aus `roms/sid/sbc/` mit `soundtest.ini`. Nach dem Konvertieren lädt
+**Aktualisieren** die Liste neu. Ein Doppelklick auf ein ROM oder **Starten**
+öffnet das Emulatorfenster. Beim Wechsel zu einem anderen ROM wird die laufende
+Wiedergabe beendet. Mit **Stoppen** schließen Sie das Emulatorfenster.
+
 ## Auf der Kommandozeile
 
 ```powershell

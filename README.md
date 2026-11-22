@@ -388,6 +388,9 @@ cd bin && ./sbc6502 soundtest.ini
 
 ### Native SID soundtrack ROMs
 
+Run `python tools/sid_convert/sid_launcher.py` to browse and start local
+SID ROMs. The launcher selects `sid.ini` or `soundtest.ini` from the ROM folder.
+
 Use `sid.ini` for a 16 KiB SID split ROM. From the project root, run
 the default Commando ROM or select another local ROM with `-r`.
 The default image is `roms/sid/fpga/sound_commando.rom`. Generate it from a
