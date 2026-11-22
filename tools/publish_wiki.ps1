@@ -17,6 +17,7 @@ $wikiRemote = "https://github.com/$Owner/$Repo.wiki.git"
 $pages = @(
     @{ Source = "README.md"; Page = "Home"; Title = "Home" }
     @{ Source = "docs/C64.md"; Page = "Commodore-64-Mode"; Title = "Commodore 64 (PAL) Mode" }
+    @{ Source = "docs/APPLE2.md"; Page = "Apple-II-Plus-Mode"; Title = "Apple II Plus Mode" }
     @{ Source = "docs/FPGA_COMPATIBILITY_STATUS.md"; Page = "FPGA-Compatibility-Status"; Title = "FPGA Compatibility Status" }
     @{ Source = "docs/software-test.md"; Page = "FPGA-Software-Test"; Title = "FPGA Software Test" }
     @{ Source = "docs/ARCHITECTURE.md"; Page = "Architecture-Overview"; Title = "Architecture Overview" }
@@ -140,6 +141,16 @@ function Convert-MarkdownForWiki {
     return [regex]::Replace($convertedMarkdown, '\[(?<text>[^\]]+)\]\((?<url>[^)]+)\)', $callback)
 }
 
+function Write-WikiPage {
+    param(
+        [string]$Path,
+        [string]$Content
+    )
+
+    $utf8 = [System.Text.UTF8Encoding]::new($false)
+    [System.IO.File]::WriteAllText($Path, $Content + [Environment]::NewLine, $utf8)
+}
+
 if (-not (Test-Path $wikiPath)) {
     New-Item -ItemType Directory -Path $wikiPath | Out-Null
 }
@@ -166,7 +177,7 @@ foreach ($page in $pages) {
     $converted = Convert-MarkdownForWiki -SourceFile $source -Markdown $markdown
     $header = "[Source file]($repoUrl/blob/$Branch/$source)"
     $body = "$header`n`n$($converted.TrimEnd([char[]]"`r`n"))"
-    Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "$($page.Page).md") -Value $body
+    Write-WikiPage -Path (Join-Path $wikiPath "$($page.Page).md") -Content $body
 }
 
 $sidebar = @(
@@ -175,6 +186,7 @@ $sidebar = @(
     "## Main",
     "- [Home]($repoUrl/wiki/Home)",
     "- [Commodore 64 (PAL) Mode]($repoUrl/wiki/Commodore-64-Mode)",
+    "- [Apple II Plus Mode]($repoUrl/wiki/Apple-II-Plus-Mode)",
     "- [Architecture Overview]($repoUrl/wiki/Architecture-Overview)",
     "- [VIC Video Interface Controller]($repoUrl/wiki/VIC-Video-Interface-Controller)",
     "- [Keyboard Integration]($repoUrl/wiki/Keyboard-Integration)",
@@ -196,13 +208,13 @@ $sidebar = @(
     "- [Code of Conduct]($repoUrl/wiki/Code-of-Conduct)",
     "- [Archived Bug Fixes - May 2026]($repoUrl/wiki/Archived-Bug-Fixes-May-2026)"
 )
-Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "_Sidebar.md") -Value ($sidebar -join "`n")
+Write-WikiPage -Path (Join-Path $wikiPath "_Sidebar.md") -Content ($sidebar -join "`n")
 
 $fpgaRepoUrl = "https://github.com/rudolfstepan/6502-sbc-fpga"
 $footer = "Generated from [$Repo]($repoUrl) Markdown documentation. " +
     "FPGA hardware track: [6502-sbc-fpga]($fpgaRepoUrl) " +
     "([FPGA Wiki]($fpgaRepoUrl/wiki))."
-Set-Content -Encoding UTF8 -Path (Join-Path $wikiPath "_Footer.md") -Value $footer
+Write-WikiPage -Path (Join-Path $wikiPath "_Footer.md") -Content $footer
 
 Push-Location $wikiPath
 try {

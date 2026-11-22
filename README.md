@@ -154,16 +154,22 @@ SDL joystick or gamepad also works and can be remapped on the Joystick page.
 
 Start from the project directory. With the three firmware ROMs in
 `roms/apple2/`, the profile opens at the Applesoft BASIC `]` prompt.
+It runs on the project's NMOS 6502 core with Apple II memory and devices,
+including the 16 KiB Language Card and the Disk II drive.
 
 ```powershell
 .\bin\sbc6502.exe apple2.ini
 .\bin\sbc6502.exe apple2.ini --load ".\data\apple2\apple2plus-diagnostics.dsk"
 ```
 
+On Linux, use `./bin/sbc6502 apple2.ini` with the same options.
+
 ![Apple II Plus at the Applesoft BASIC prompt](docs/manual/screenshots/apple2-basic.png)
 
-The [Apple II Plus guide](docs/APPLE2.md#test-disks) includes commands and
-screenshots for DOS 3.3, the diagnostics disk and two graphics demos.
+Use `--load` or drag a disk image onto the emulator window to boot from it.
+The drive accepts read-only 35-track `.dsk`, `.do`, `.po` and `.nib` images.
+The [test disk guide](docs/APPLE2.md#test-disks) has download sources, launch
+commands and screenshots for DOS 3.3, the diagnostics disk and two graphics demos.
 
 ### Nintendo NES / Famicom
 

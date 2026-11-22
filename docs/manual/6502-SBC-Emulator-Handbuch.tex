@@ -28,7 +28,7 @@
 \newcommand{\ManualSubtitle}{6502-SBC, Commodore 64 (PAL), Apple II Plus und Nintendo NES/Famicom}
 \newcommand{\ManualScope}{Bedienung, Architektur und Entwicklung}
 \newcommand{\ManualDate}{22. November 2026}
-\newcommand{\SourceRevision}{71834eb}
+\newcommand{\SourceRevision}{8608135}
 \newcommand{\ui}[1]{\textbf{#1}}
 \newcommand{\metaSize}{\fontsize{8bp}{10bp}\selectfont}
 \newcommand{\tableSize}{\fontsize{9bp}{11bp}\selectfont}
@@ -168,7 +168,7 @@ gemacht haben.
 
 \bigskip
 \textbf{Schneller Einstieg.} Starten Sie den C64 wie in Kapitel~\ref{ch:start}
-beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Kapitel~\ref{ch:menu}
+beschrieben. Der erste Prüfbefehl erzeugt die Ausgabe \texttt{42}. Abschnitt~\ref{ch:menu}
 beschreibt das F12-Menü. Kapitel~\ref{ch:apple2} führt zum Applesoft-BASIC-Prompt
 und zu den Apple-II-Testdisketten. Abschnitt~\ref{sec:fpga-roms} zeigt, wie Sie dieselbe
 ROM-Datei im Emulator und auf dem FPGA verwenden. Zum NES-Kompatibilitätsmodus
@@ -181,7 +181,7 @@ führt Abschnitt~\ref{sec:nes-sbc-start}.
 
 \mainmatter
 \part{Einstieg und Bedienung}
-\chapter{Start und erster Test}\label{ch:start}
+\chapter{Commodore 64 (PAL)}\label{ch:start}
 
 \section{Windows-Build und Profil}
 Der Emulator bietet Profile für den 6502-SBC, den PAL-C64, den Apple II Plus
@@ -249,9 +249,10 @@ Terminals. Dadurch kann ein identischer INI-Dateiname aus zwei
 unterschiedlichen Startordnern auf verschiedene Dateien und ROM-Pfade
 verweisen. Einzelheiten stehen in Kapitel~\ref{ch:ref}.
 
-\chapter{Konfigurationsmenü}\label{ch:menu}
+\clearpage
+\section{Konfigurationsmenü}\label{ch:menu}
 
-\section{Einstellungen ändern und speichern}
+\subsection{Einstellungen ändern und speichern}
 Drücken Sie im C64-Fenster \ui{F12}. Die Emulation pausiert und das Menü öffnet
 die zuletzt gewählte Seite. Beim ersten Aufruf erscheint \ui{SETTINGS}.
 
@@ -269,7 +270,7 @@ die zuletzt gewählte Seite. Beim ersten Aufruf erscheint \ui{SETTINGS}.
 \ui{F12} & Menü schließen, ungespeicherte Änderungen verwerfen und die Emulation fortsetzen. \\
 \end{referenceTable}
 
-\section{Sofortige und spätere Wirkung}
+\subsection{Sofortige und spätere Wirkung}
 Der Zoom und die Eingabebelegungen gelten nach \ui{F2} sofort. Einstellungen
 mit Stern, etwa \ui{CPU SPEED HZ}, \ui{START IMAGE} und die ROM-Pfade, werden
 beim nächsten Emulatorstart übernommen. Bestätigen Sie eine Texteingabe mit
@@ -281,9 +282,10 @@ nach dem Beenden erhalten. Soll eine Testkonfiguration von der üblichen
 Belegung getrennt bleiben, starten Sie mit einer eigenen Kopie der INI.
 Beide Dateien können denselben ROM-Bestand verwenden.
 
-\chapter{Tastatur und Joystick}\label{ch:input}
+\clearpage
+\section{Tastatur und Joystick}\label{ch:input}
 
-\section{C64-Tastatur belegen}
+\subsection{C64-Tastatur belegen}
 Öffnen Sie mit \ui{F12} das Menü und wechseln Sie mit \ui{Tab} zu \ui{KEYBOARD}.
 
 \shot{116mm}{c64-keyboard}{\ui{KEYBOARD} zeigt die emulierte Taste links und die PC-Taste rechts.}
@@ -309,7 +311,7 @@ Beide Dateien können denselben ROM-Bestand verwenden.
 den Emulator. \ui{Escape} wird an die emulierte Tastatur weitergegeben.
 
 \clearpage
-\section{Joystick-Port und Eingabegerät}\label{sec:joystick}
+\subsection{Joystick-Port und Eingabegerät}\label{sec:joystick}
 Auf der Seite \ui{JOYSTICK} steuert die erste Zeile den emulierten Port.
 Wählen Sie \ui{PORT 1} oder \ui{PORT 2} passend zum Programm. \ui{OFF}
 deaktiviert die Joystick-Eingaben und ist in der mitgelieferten
@@ -327,7 +329,7 @@ Port. Die Portnummer bezeichnet den Anschluss des emulierten C64.
   \item Speichern Sie mit \ui{F2} und kehren Sie mit \ui{F12} zum Programm zurück.
 \end{enumerate}
 
-\section{Standardbelegung und Kontrolle}
+\subsection{Standardbelegung und Kontrolle}
 Bei aktiviertem Port verwenden die Standardbelegungen der Tastatur die
 Pfeiltasten für die Richtung und \ui{Strg rechts} für Feuer. Für USB-Eingaben
 verwendet der Emulator das erste von SDL geöffnete Gerät. Bei \ui{AUTO}
@@ -344,9 +346,10 @@ Ein funktionierender USB-Controller am PC kann am falschen emulierten Port
 wirkungslos bleiben. Die Portwahl und die Belegung sind zwei getrennte
 Einstellungen.
 
-\chapter{Disketten und Programme}\label{ch:disk}
+\clearpage
+\section{Disketten und Programme}\label{ch:disk}
 
-\section{D64 einlegen und Verzeichnis anzeigen}
+\subsection{D64 einlegen und Verzeichnis anzeigen}
 Voraussetzung ist ein 35-Spur-D64-Abbild und ein laufendes C64-Profil.
 Das virtuelle Laufwerk liest das Abbild schreibgeschützt.
 
@@ -365,7 +368,7 @@ LIST
 Dateieinträge. Der Verzeichnis-\texttt{LOAD} ersetzt das aktuell im
 BASIC-Speicher liegende Programm.
 
-\section{PRG laden und starten}
+\subsection{PRG laden und starten}
 Benutzen Sie den Namen zwischen den Anführungszeichen im Verzeichnis. Ohne
 Sekundäradresse lädt BASIC ein Programm an seinen Standardstart. Mit
 \texttt{,1} verwendet der Loader die im PRG gespeicherte Ladeadresse.
@@ -379,7 +382,7 @@ Das erste PRG auf einer Diskette laden Sie mit \texttt{LOAD "*",8,1} an seine
 gespeicherte Adresse. \texttt{RUN} startet PRGs mit einem BASIC-Einstieg.
 Bei reinen Maschinenprogrammen gilt der dokumentierte Einstieg des Programms.
 
-\section{Startdiskette festlegen}
+\subsection{Startdiskette festlegen}
 Öffnen Sie \ui{SETTINGS} im F12-Menü. Bearbeiten Sie \ui{START IMAGE} mit
 \ui{Enter} oder ziehen Sie ein D64 auf das geöffnete Menü. Ein leeres Feld
 lässt das Laufwerk beim Start leer. Speichern Sie mit \ui{F2} und starten Sie
@@ -392,7 +395,7 @@ device = 8
 image = data/sdcard/example.d64
 \end{commandblock}
 
-\section{Einlegen, Laden und Ausführen unterscheiden}
+\subsection{Einlegen, Laden und Ausführen unterscheiden}
 Ein D64 ist ein Abbild mit Verzeichnis und Diskettensektoren. Ein PRG ist
 ein einzelner Programmeintrag. Der Fenstertitel bestätigt nach dem Einlegen
 das Abbild und das Gerät. Der erfolgreiche Verzeichnisabruf bestätigt
@@ -407,7 +410,7 @@ Für den späteren Ladevorgang kann das Programm ein eigenes Protokoll
 verwenden. Kapitel~\ref{ch:comparison} erklärt die Grenze des virtuellen
 Laufwerks und Abschnitt~\ref{sec:disk-diagnosis} beschreibt die Prüfung.
 
-\chapter{SBC- und NES-Modi}\label{ch:sbc}
+\chapter{6502-SBC}\label{ch:sbc}
 
 \section{Ein Profil starten}
 Starten Sie SBC-Profile aus dem Projektordner mit ihrem INI-Dateinamen. Das
@@ -523,7 +526,7 @@ Der Emulator-Test hat alle 200 Zeilen mit dem unveränderten ROM gezeichnet.
 Auf der Platine prüfen Sie anschließend das HDMI-Bild und bei Bedarf die
 Ansteuerung des seriellen Monitors.
 
-\clearpage
+\chapter{Nintendo NES/Famicom}\label{ch:nes}
 \section{NES-Kompatibilitätsmodus mit SBC-CPU}\label{sec:nes-sbc-start}
 
 Mit \path{nes-sbc.ini} laufen NES- und Famicom-Spielmodule mit dem
@@ -692,12 +695,11 @@ diesem Profil nicht implementiert.
 \part{Konfiguration, Diagnose und Referenz}
 \chapter{Softwarearchitektur}\label{ch:architecture}
 
-Beim Start wählt die INI ein Maschinenprofil und damit die Speicher- und
-Gerätebelegung. SBC und PAL-C64 führen ihre Programme mit demselben
-CPU-Kern aus. Der Kern verarbeitet Befehle und Interrupts und zählt Takte.
-Für Lese- und Schreibzugriffe übergibt er die Adresse an den Speicherbus.
-Der Monitor verwendet denselben Bus und sieht die jeweils eingeblendeten
-ROMs, RAM-Bereiche und Register.
+Beim Start wählt die INI die Maschine und damit deren Speicher- und
+Gerätebelegung. Der 6502-SBC, der PAL-C64 und der Apple II Plus führen
+ihre Programme mit \texttt{CPU6502} aus. Bei NES/Famicom bestimmt das
+Profil, ob FCEUmm seine eigene CPU verwendet oder dokumentierte Befehle
+an \texttt{CPU6502} im 2A03-Modus übergibt.
 
 \begin{figure}[H]
   \centering
@@ -705,40 +707,35 @@ ROMs, RAM-Bereiche und Register.
     x=1mm,y=1mm,
     block/.style={draw=Teal!55!Ink, fill=Teal!5, rounded corners=1.5pt,
       line width=.55pt, inner sep=4pt, align=center, font=\tableSize},
-    core/.style={block, minimum width=49mm, minimum height=12mm},
-    profile/.style={block, minimum width=70mm, minimum height=17mm},
-    devices/.style={block, fill=white, minimum width=70mm, minimum height=15mm},
-    bus/.style={block, draw=Ink, fill=Ink, text=white, minimum width=150mm,
-      minimum height=9mm},
+    core/.style={block, draw=Ink, fill=Ink, text=white,
+      minimum width=74mm, minimum height=11mm},
+    profile/.style={block, text width=33mm, minimum height=22mm},
     access/.style={<->, >=Latex, draw=Teal!75!Ink, line width=.7pt}
   ]
-    \node[core] (cpu) at (-39,0)
-      {\textbf{Gemeinsamer CPU-Kern}\\\texttt{CPU6502}};
-    \node[core] (monitor) at (39,0)
-      {\textbf{Maschinenmonitor}\\Register und Speicher};
-    \node[bus] (bus) at (0,-20)
-      {\textbf{Speicherbus}\quad Adressdekodierung und Lese-/Schreibzugriffe};
-
-    \node[profile] (sbc) at (-39,-44)
-      {\textbf{SBC-Profil}\\Konfigurierte RAM-, ROM- und Gerätefenster};
-    \node[profile] (c64) at (39,-44)
-      {\textbf{PAL-C64-Profil}\\64 KiB RAM mit ROM- und I/O-Einblendung\\
-        6510-Port bei \texttt{\$0000/\$0001}};
-    \node[devices] (sbcDevices) at (-39,-66)
-      {VIA 6522, UART 6551, SBC-Disk\\SBC-VIC und Vierstimmen-Klangchip};
-    \node[devices] (c64Devices) at (39,-66)
-      {VIC-II, CIA1, CIA2 und SID\\Tastatur und Joystick über CIA1};
-
-    \draw[access] (cpu.south) -- (cpu.south |- bus.north);
-    \draw[access] (monitor.south) -- (monitor.south |- bus.north);
+    \node[core] (cpu) at (0,0)
+      {\textbf{Gemeinsamer CPU-Kern} \quad \texttt{CPU6502}};
+    \node[block, minimum width=75mm] (bus) at (-42,-25)
+      {\textbf{SBC-Speicherbus}\\mit Maschinenmonitor};
+    \node[block, minimum width=35mm] (adapter) at (63,-25)
+      {2A03-Adapter\\\texttt{nes-sbc.ini}};
+    \node[profile] (sbc) at (-63,-52)
+      {\textbf{6502-SBC}\\VIA, UART, SBC-VIC\\SBC-Disk, Klangchip};
+    \node[profile] (c64) at (-21,-52)
+      {\textbf{Commodore 64}\\VIC-II, CIA, SID\\Virtueller D64-Lader};
+    \node[profile] (apple) at (21,-52)
+      {\textbf{Apple II Plus}\\Apple-II-Adressraum\\Video, Disk II\\Lautsprecher};
+    \node[profile] (nes) at (63,-52)
+      {\textbf{NES/Famicom}\\FCEUmm mit PPU, APU\\und Cartridge-Mapper};
+    \draw[access] ([xshift=-21mm]cpu.south) -- ++(0,-6) -| (bus.north);
+    \draw[access] ([xshift=21mm]cpu.south) -- (apple.north);
+    \draw[access,dashed] (cpu.east) -| (adapter.north);
     \draw[access] (sbc.north |- bus.south) -- (sbc.north);
     \draw[access] (c64.north |- bus.south) -- (c64.north);
-    \draw[access] (sbc.south) -- (sbcDevices.north);
-    \draw[access] (c64.south) -- (c64Devices.north);
-    \node[text=Muted,font=\captionSize] at (0,-31) {Auswahl beim Start per INI};
+    \draw[access,dashed] (adapter.south) -- (nes.north);
   \end{tikzpicture}
-  \caption{Gemeinsame CPU, Monitor und Speicherbus im SBC- und
-    PAL-C64-Profil.}
+  \caption{CPU- und Gerätepfade der vier Maschinenprofile. Der gestrichelte
+    Pfad gilt für \texttt{nes-sbc.ini}. In \texttt{nes.ini} verwendet FCEUmm
+    seinen eigenen CPU-Kern.}
   \label{fig:architecture}
 \end{figure}
 
@@ -1340,7 +1337,7 @@ Die Auswahl verschwindet nach dem Schließen des Menüs. & Speichern Sie mit
 \ui{F2}, bevor Sie \ui{F12} drücken. Startwerte mit Stern gelten nach einem Neustart. \\
 Der Joystick reagiert nicht im Spiel. & Prüfen Sie \ui{PORT 1} oder \ui{PORT 2}
 und die zugehörige \ui{KEY}- beziehungsweise \ui{PAD}-Belegung. Prüfen Sie für
-USB-Eingaben die Geräteanzeige am unteren Rand der Seite. Siehe Abschnitt~\ref{sec:joystick}. \\
+USB-Eingaben die Geräteanzeige am unteren Rand der Seite. Siehe \nameref{sec:joystick}. \\
 \texttt{FILE NOT FOUND} & Prüfen Sie Datenträger und Gerätenummer im Fenstertitel.
 Vergleichen Sie den PRG-Namen mit \texttt{LOAD "\$",8} und \texttt{LIST}.
 Anschließend können Sie das erste PRG mit \texttt{LOAD "*",8,1} testen. \\
